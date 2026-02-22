@@ -1,30 +1,293 @@
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Edit, Trash2, Eye } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "@/hooks/use-toast";
 
-const mockClientes = [
-  { id: 1, tipo: "f" as const, nome: "João Silva", cpf: "123.456.789-00", cidade: "São Paulo", estado: "SP", fone_res: "(11) 98765-4321" },
-  { id: 2, tipo: "j" as const, nome: "Construtora ABC", cnpj: "12.345.678/0001-90", cidade: "Campinas", estado: "SP", fone_com: "(19) 3456-7890" },
-  { id: 3, tipo: "f" as const, nome: "Maria Santos", cpf: "987.654.321-00", cidade: "Ribeirão Preto", estado: "SP", fone_res: "(16) 99876-5432" },
-  { id: 4, tipo: "f" as const, nome: "Carlos Lima", cpf: "456.789.123-00", cidade: "Belo Horizonte", estado: "MG", fone_res: "(31) 97654-3210" },
-  { id: 5, tipo: "j" as const, nome: "Imobiliária XYZ Ltda", cnpj: "98.765.432/0001-10", cidade: "Curitiba", estado: "PR", fone_com: "(41) 3234-5678" },
-  { id: 6, tipo: "f" as const, nome: "Ana Oliveira", cpf: "321.654.987-00", cidade: "Goiânia", estado: "GO", fone_res: "(62) 98123-4567" },
-  { id: 7, tipo: "f" as const, nome: "Pedro Souza", cpf: "654.321.987-00", cidade: "Uberlândia", estado: "MG", fone_res: "(34) 99234-5678" },
-  { id: 8, tipo: "j" as const, nome: "Incorporadora Delta", cnpj: "45.678.901/0001-23", cidade: "Brasília", estado: "DF", fone_com: "(61) 3345-6789" },
-];
+interface Cliente {
+  id_cliente: number;
+  tipo: "f" | "j";
+  nome: string;
+  razao_social?: string | null;
+  cpf?: string | null;
+  cnpj?: string | null;
+  cidade?: string | null;
+  estado?: string | null;
+  fone_res?: string | null;
+  fone_com?: string | null;
+}
+
+interface ListaClientesResponse {
+  data: Cliente[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+
+const clienteFormSchema = z.object({
+  tipo: z.enum(["f", "j"]),
+  nome: z.string().min(1, "Nome é obrigatório"),
+  razao_social: z.string().optional(),
+  cpf: z.string().optional(),
+  cnpj: z.string().optional(),
+  rg: z.string().optional(),
+  estado_civil: z.string().optional(),
+  conjuge: z.string().optional(),
+  profissao: z.string().optional(),
+  endereco: z.string().optional(),
+  bairro: z.string().optional(),
+  cidade: z.string().optional(),
+  estado: z.string().optional(),
+  cep: z.string().optional(),
+  complemento: z.string().optional(),
+  fone_res: z.string().optional(),
+  fone_com: z.string().optional(),
+});
+
+type ClienteFormValues = z.infer<typeof clienteFormSchema>;
+
+function getAuthHeaders() {
+  const token = window.localStorage.getItem("token");
+  if (!token) return {};
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
 
 const Clientes = () => {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState<"all" | "f" | "j">("all");
+  const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
+  const [modo, setModo] = useState<"create" | "edit" | "view">("create");
+  const [dialogAberto, setDialogAberto] = useState(false);
 
-  const filtered = mockClientes.filter((c) => {
-    const matchSearch = c.nome.toLowerCase().includes(search.toLowerCase());
-    const matchTipo = filterTipo === "all" || c.tipo === filterTipo;
-    return matchSearch && matchTipo;
+  const queryClient = useQueryClient();
+
+  const form = useForm<ClienteFormValues>({
+    resolver: zodResolver(clienteFormSchema),
+    defaultValues: {
+      tipo: "f",
+      nome: "",
+      razao_social: "",
+      cpf: "",
+      cnpj: "",
+      rg: "",
+      estado_civil: "",
+      conjuge: "",
+      profissao: "",
+      endereco: "",
+      bairro: "",
+      cidade: "",
+      estado: "",
+      cep: "",
+      complemento: "",
+      fone_res: "",
+      fone_com: "",
+    },
   });
+
+  const { data, isLoading, isError } = useQuery<ListaClientesResponse>({
+    queryKey: ["clientes", { search, filterTipo }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      params.set("page", "1");
+      params.set("limit", "50");
+      if (search) params.set("search", search);
+      if (filterTipo !== "all") params.set("tipo", filterTipo);
+
+      const response = await fetch(`/api/clientes?${params.toString()}`);
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar clientes");
+      }
+
+      return response.json();
+    },
+  });
+
+  const clientes = data?.data ?? [];
+
+  const criarClienteMutation = useMutation({
+    mutationFn: async (values: ClienteFormValues) => {
+      const response = await fetch("/api/clientes", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(values),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao cadastrar cliente");
+      }
+
+      return response.json() as Promise<Cliente>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clientes"] });
+      setDialogAberto(false);
+      toast({ title: "Cliente cadastrado com sucesso" });
+    },
+    onError: () => {
+      toast({ title: "Erro ao cadastrar cliente", variant: "destructive" });
+    },
+  });
+
+  const atualizarClienteMutation = useMutation({
+    mutationFn: async (input: { id: number; values: ClienteFormValues }) => {
+      const response = await fetch(`/api/clientes/${input.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify(input.values),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao atualizar cliente");
+      }
+
+      return response.json() as Promise<Cliente>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clientes"] });
+      setDialogAberto(false);
+      toast({ title: "Cliente atualizado com sucesso" });
+    },
+    onError: () => {
+      toast({ title: "Erro ao atualizar cliente", variant: "destructive" });
+    },
+  });
+
+  const excluirClienteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/clientes/${id}`, {
+        method: "DELETE",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao excluir cliente");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clientes"] });
+      toast({ title: "Cliente excluído com sucesso" });
+    },
+    onError: () => {
+      toast({ title: "Erro ao excluir cliente", variant: "destructive" });
+    },
+  });
+
+  function abrirNovoCliente() {
+    setModo("create");
+    setClienteSelecionado(null);
+    form.reset({
+      tipo: "f",
+      nome: "",
+      razao_social: "",
+      cpf: "",
+      cnpj: "",
+      rg: "",
+      estado_civil: "",
+      conjuge: "",
+      profissao: "",
+      endereco: "",
+      bairro: "",
+      cidade: "",
+      estado: "",
+      cep: "",
+      complemento: "",
+      fone_res: "",
+      fone_com: "",
+    });
+    setDialogAberto(true);
+  }
+
+  function abrirEdicao(cliente: Cliente) {
+    setModo("edit");
+    setClienteSelecionado(cliente);
+    form.reset({
+      tipo: cliente.tipo,
+      nome: cliente.nome,
+      razao_social: cliente.razao_social ?? "",
+      cpf: cliente.cpf ?? "",
+      cnpj: cliente.cnpj ?? "",
+      rg: "",
+      estado_civil: "",
+      conjuge: "",
+      profissao: "",
+      endereco: "",
+      bairro: "",
+      cidade: cliente.cidade ?? "",
+      estado: cliente.estado ?? "",
+      cep: "",
+      complemento: "",
+      fone_res: cliente.fone_res ?? "",
+      fone_com: cliente.fone_com ?? "",
+    });
+    setDialogAberto(true);
+  }
+
+  function abrirVisualizacao(cliente: Cliente) {
+    setModo("view");
+    setClienteSelecionado(cliente);
+    form.reset({
+      tipo: cliente.tipo,
+      nome: cliente.nome,
+      razao_social: cliente.razao_social ?? "",
+      cpf: cliente.cpf ?? "",
+      cnpj: cliente.cnpj ?? "",
+      rg: "",
+      estado_civil: "",
+      conjuge: "",
+      profissao: "",
+      endereco: "",
+      bairro: "",
+      cidade: cliente.cidade ?? "",
+      estado: cliente.estado ?? "",
+      cep: "",
+      complemento: "",
+      fone_res: cliente.fone_res ?? "",
+      fone_com: cliente.fone_com ?? "",
+    });
+    setDialogAberto(true);
+  }
+
+  function excluirCliente(cliente: Cliente) {
+    const confirmado = window.confirm(`Deseja realmente excluir o cliente "${cliente.nome}"?`);
+    if (!confirmado) return;
+    excluirClienteMutation.mutate(cliente.id_cliente);
+  }
+
+  function onSubmit(values: ClienteFormValues) {
+    if (modo === "edit" && clienteSelecionado) {
+      atualizarClienteMutation.mutate({ id: clienteSelecionado.id_cliente, values });
+    } else {
+      criarClienteMutation.mutate(values);
+    }
+  }
 
   return (
     <AppLayout>
@@ -33,10 +296,10 @@ const Clientes = () => {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Clientes</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {mockClientes.length} clientes cadastrados
+              {data ? `${data.total} clientes cadastrados` : "Carregando clientes..."}
             </p>
           </div>
-          <Button size="sm" className="gap-2">
+          <Button size="sm" className="gap-2" onClick={abrirNovoCliente}>
             <Plus className="h-4 w-4" />
             Novo Cliente
           </Button>
@@ -82,9 +345,25 @@ const Clientes = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((cliente) => (
-                  <tr key={cliente.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-5 py-3 font-medium">{cliente.nome}</td>
+                {isLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-6 text-center text-sm text-muted-foreground">
+                      Carregando clientes...
+                    </td>
+                  </tr>
+                )}
+                {isError && !isLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-6 text-center text-sm text-destructive">
+                      Erro ao carregar clientes
+                    </td>
+                  </tr>
+                )}
+                {!isLoading &&
+                  !isError &&
+                  clientes.map((cliente) => (
+                    <tr key={cliente.id_cliente} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-5 py-3 font-medium">{cliente.nome}</td>
                     <td className="px-5 py-3">
                       <Badge variant={cliente.tipo === "f" ? "secondary" : "outline"}>
                         {cliente.tipo === "f" ? "PF" : "PJ"}
@@ -101,28 +380,328 @@ const Clientes = () => {
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => abrirVisualizacao(cliente)}>
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => abrirEdicao(cliente)}>
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive"
+                          onClick={() => excluirCliente(cliente)}
+                          disabled={excluirClienteMutation.isPending}
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </td>
                   </tr>
-                ))}
+                  ))}
               </tbody>
             </table>
           </div>
-          {filtered.length === 0 && (
+          {!isLoading && !isError && clientes.length === 0 && (
             <div className="p-12 text-center text-sm text-muted-foreground">
               Nenhum cliente encontrado
             </div>
           )}
         </div>
+
+        <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>
+                {modo === "create" && "Novo Cliente"}
+                {modo === "edit" && "Editar Cliente"}
+                {modo === "view" && "Detalhes do Cliente"}
+              </DialogTitle>
+              <DialogDescription>
+                {modo === "view"
+                  ? "Visualize os dados do cliente."
+                  : "Preencha os dados do cliente. Campos não obrigatórios podem ficar em branco."}
+              </DialogDescription>
+            </DialogHeader>
+
+            <Form {...form}>
+              <form
+                className="space-y-4"
+                onSubmit={form.handleSubmit(onSubmit)}
+              >
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="tipo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tipo</FormLabel>
+                        <FormControl>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            disabled={modo === "view"}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Selecione o tipo" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="f">Pessoa Física</SelectItem>
+                              <SelectItem value="j">Pessoa Jurídica</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="nome"
+                    render={({ field }) => (
+                      <FormItem className="md:col-span-2">
+                        <FormLabel>Nome</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {form.watch("tipo") === "f" ? (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="cpf"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CPF</FormLabel>
+                            <FormControl>
+                              <Input {...field} disabled={modo === "view"} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="rg"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>RG</FormLabel>
+                            <FormControl>
+                              <Input {...field} disabled={modo === "view"} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="estado_civil"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Estado civil</FormLabel>
+                            <FormControl>
+                              <Input {...field} disabled={modo === "view"} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="cnpj"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>CNPJ</FormLabel>
+                            <FormControl>
+                              <Input {...field} disabled={modo === "view"} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="razao_social"
+                        render={({ field }) => (
+                          <FormItem className="md:col-span-2">
+                            <FormLabel>Razão social</FormLabel>
+                            <FormControl>
+                              <Input {...field} disabled={modo === "view"} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="profissao"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Profissão</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="conjuge"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Cônjuge</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="endereco"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Endereço</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="complemento"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Complemento</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="bairro"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bairro</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="cidade"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Cidade</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="estado"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>UF</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="cep"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>CEP</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="fone_res"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Telefone residencial</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="fone_com"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Telefone comercial</FormLabel>
+                        <FormControl>
+                          <Input {...field} disabled={modo === "view"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {modo !== "view" && (
+                  <DialogFooter>
+                    <Button
+                      type="submit"
+                      disabled={criarClienteMutation.isPending || atualizarClienteMutation.isPending}
+                    >
+                      {modo === "create" ? "Cadastrar" : "Salvar alterações"}
+                    </Button>
+                  </DialogFooter>
+                )}
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
       </div>
     </AppLayout>
   );
