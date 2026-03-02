@@ -3,6 +3,7 @@ import { z } from "zod";
 import jwt from "jsonwebtoken";
 import { AppDataSource } from "../../db/data-source";
 import { Usuario } from "../../entities/Usuario";
+import { Empresa } from "../../entities/Empresa";
 import { requireAuth, AuthRequest } from "../../middleware/auth";
 
 export const authRouter = Router();
@@ -13,57 +14,89 @@ const loginSchema = z.object({
 });
 
 authRouter.post("/login", async (req, res) => {
-  const parseResult = loginSchema.safeParse(req.body);
+  try {
+    const parseResult = loginSchema.safeParse(req.body);
 
-  if (!parseResult.success) {
-    return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
-  }
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
+    }
 
-  const { login } = parseResult.data;
+    const { login } = parseResult.data;
 
-  const repo = AppDataSource.getRepository(Usuario);
+    const usuarioRepo = AppDataSource.getRepository(Usuario);
 
-  let user = await repo.findOne({ where: { login } });
+    let user = await usuarioRepo.findOne({ where: { login } });
 
-  if (!user) {
-    user = repo.create({
-      login,
-      senha: "admin",
-      user_master: true,
-      clientes_cadastrar: true,
-      clientes_alterar: true,
-      clientes_excluir: true,
-      loteamentos_cadastrar: true,
-      loteamentos_alterar: true,
-      loteamentos_excluir: true,
-      vendas_cadastrar: true,
-      vendas_alterar: true,
-      vendas_excluir: true,
+    if (!user) {
+      user = usuarioRepo.create({
+        login,
+        senha: "admin",
+        user_master: true,
+        id_empresa: 1,
+        clientes_cadastrar: true,
+        clientes_alterar: true,
+        clientes_excluir: true,
+        loteamentos_cadastrar: true,
+        loteamentos_alterar: true,
+        loteamentos_excluir: true,
+        vendas_cadastrar: true,
+        vendas_alterar: true,
+        vendas_excluir: true,
+      });
+
+      user = await usuarioRepo.save(user);
+    }
+
+    const empresaRepo = AppDataSource.getRepository(Empresa);
+
+    let empresaAtiva = true;
+
+    try {
+      const empresa = await empresaRepo.findOne({ where: { id_empresa: user.id_empresa } });
+
+      if (empresa && empresa.ativo === false) {
+        empresaAtiva = false;
+      }
+    } catch (erroVerificarEmpresa) {
+      console.error("Erro ao verificar empresa ativa:", erroVerificarEmpresa);
+    }
+
+    if (!empresaAtiva) {
+      return res.status(403).json({ error: "Empresa inativa. Acesso bloqueado." });
+    }
+
+    const secret = process.env.JWT_SECRET || "development-secret";
+
+    const token = jwt.sign(
+      {
+        sub: user.id_usuario,
+        login: user.login,
+        user_master: user.user_master,
+        id_empresa: user.id_empresa,
+      },
+      secret,
+      { expiresIn: "1h" },
+    );
+
+    return res.json({
+      token,
+      usuario: {
+        id_usuario: user.id_usuario,
+        login: user.login,
+        user_master: user.user_master,
+        id_empresa: user.id_empresa,
+      },
     });
+  } catch (error) {
+    const message =
+      error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string"
+        ? (error as { message: string }).message
+        : "Erro desconhecido";
 
-    user = await repo.save(user);
+    console.error("Erro no login:", error);
+
+    return res.status(500).json({ error: "Erro ao efetuar login", details: message });
   }
-
-  const secret = process.env.JWT_SECRET || "development-secret";
-
-  const token = jwt.sign(
-    {
-      sub: user.id_usuario,
-      login: user.login,
-      user_master: user.user_master,
-    },
-    secret,
-    { expiresIn: "1h" },
-  );
-
-  return res.json({
-    token,
-    usuario: {
-      id_usuario: user.id_usuario,
-      login: user.login,
-      user_master: user.user_master,
-    },
-  });
 });
 
 authRouter.post("/logout", (_req, res) => {
@@ -81,5 +114,6 @@ authRouter.get("/me", requireAuth, (req: AuthRequest, res) => {
     id_usuario: user.id_usuario,
     login: user.login,
     user_master: user.user_master,
+    id_empresa: user.id_empresa,
   });
 });

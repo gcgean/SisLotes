@@ -6,6 +6,9 @@ export class Loteamento {
   @PrimaryGeneratedColumn({ name: "id_loteamento" })
   id_loteamento!: number;
 
+  @Column({ type: "integer", name: "id_empresa" })
+  id_empresa!: number;
+
   @Column({ type: "varchar", length: 200 })
   nome!: string;
 

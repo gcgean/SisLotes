@@ -1,4 +1,14 @@
-import { Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedColumn, Unique, UpdateDateColumn } from "typeorm";
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  PrimaryGeneratedColumn,
+  Unique,
+  UpdateDateColumn,
+} from "typeorm";
 import { Venda } from "./Venda";
 import { Conta } from "./Conta";
 import { Usuario } from "./Usuario";
@@ -15,22 +25,28 @@ export class Pagamento {
   @PrimaryGeneratedColumn({ name: "id_pagamento" })
   id_pagamento!: number;
 
+  @Column({ type: "integer", name: "id_empresa" })
+  id_empresa!: number;
+
   @Column({ type: "integer", name: "id_venda" })
   id_venda!: number;
 
   @ManyToOne(() => Venda, (venda) => venda.pagamentos)
+  @JoinColumn({ name: "id_venda" })
   venda!: Venda;
 
   @Column({ type: "integer", name: "id_conta", nullable: true })
   id_conta!: number | null;
 
   @ManyToOne(() => Conta, (conta) => conta.pagamentos)
+  @JoinColumn({ name: "id_conta" })
   conta!: Conta | null;
 
   @Column({ type: "integer", name: "id_usuario", nullable: true })
   id_usuario!: number | null;
 
   @ManyToOne(() => Usuario, (usuario) => usuario.pagamentos)
+  @JoinColumn({ name: "id_usuario" })
   usuario!: Usuario | null;
 
   @Column({ type: "integer", name: "numero_parcela" })
@@ -66,4 +82,3 @@ export class Pagamento {
   @UpdateDateColumn({ type: "timestamp", name: "updated_at" })
   updated_at!: Date;
 }
-

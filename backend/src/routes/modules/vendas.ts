@@ -20,22 +20,36 @@ const createVendaSchema = z.object({
   valor_lote: z.number().positive(),
 });
 
-vendasRouter.get("/", requireAuth, async (_req, res) => {
+vendasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const repo = AppDataSource.getRepository(Venda);
 
+  const where: Record<string, unknown> = {};
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
   const vendas = await repo.find({
+    where,
     order: { data_venda: "DESC" },
   });
 
   return res.json(vendas);
 });
 
-vendasRouter.get("/:id", requireAuth, async (req, res) => {
+vendasRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const repo = AppDataSource.getRepository(Venda);
+
+  const where: Record<string, unknown> = { id_venda: Number(id) };
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
   const venda = await repo.findOne({
-    where: { id_venda: Number(id) },
+    where,
     relations: ["pagamentos"],
   });
 
@@ -94,6 +108,7 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
       parcelas,
       porcentagem: porcentagem.toFixed(2),
       status: "aberta",
+      id_empresa: user?.id_empresa ?? 1,
     });
 
     const savedVenda = await queryRunner.manager.save(venda);
@@ -123,6 +138,7 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
         valor: valorParcela.toFixed(2),
         multa: "0.00",
         juros: "0.00",
+        id_empresa: user?.id_empresa ?? 1,
       });
 
       pagamentos.push(pagamento);
@@ -158,12 +174,18 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
   }
 });
 
-vendasRouter.put("/:id", requireAuth, requirePermission("vendas_alterar"), async (req, res) => {
+vendasRouter.put("/:id", requireAuth, requirePermission("vendas_alterar"), async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const repo = AppDataSource.getRepository(Venda);
 
-  const venda = await repo.findOne({ where: { id_venda: Number(id) } });
+  const where: Record<string, unknown> = { id_venda: Number(id) };
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
+  const venda = await repo.findOne({ where });
 
   if (!venda) {
     return res.status(404).json({ error: "Venda não encontrada" });
@@ -176,12 +198,18 @@ vendasRouter.put("/:id", requireAuth, requirePermission("vendas_alterar"), async
   return res.json(saved);
 });
 
-vendasRouter.delete("/:id", requireAuth, requirePermission("vendas_excluir"), async (req, res) => {
+vendasRouter.delete("/:id", requireAuth, requirePermission("vendas_excluir"), async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const repo = AppDataSource.getRepository(Venda);
 
-  const venda = await repo.findOne({ where: { id_venda: Number(id) } });
+  const where: Record<string, unknown> = { id_venda: Number(id) };
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
+  const venda = await repo.findOne({ where });
 
   if (!venda) {
     return res.status(404).json({ error: "Venda não encontrada" });

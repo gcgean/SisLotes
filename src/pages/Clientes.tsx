@@ -112,7 +112,11 @@ const Clientes = () => {
       if (search) params.set("search", search);
       if (filterTipo !== "all") params.set("tipo", filterTipo);
 
-      const response = await fetch(`/api/clientes?${params.toString()}`);
+      const response = await fetch(`/api/clientes?${params.toString()}`, {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
 
       if (!response.ok) {
         throw new Error("Erro ao carregar clientes");
@@ -135,19 +139,41 @@ const Clientes = () => {
         body: JSON.stringify(values),
       });
 
-      if (!response.ok) {
-        throw new Error("Erro ao cadastrar cliente");
+      let data: unknown;
+
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
       }
 
-      return response.json() as Promise<Cliente>;
+      if (!response.ok) {
+        const errorMessage =
+          typeof data === "object" &&
+          data !== null &&
+          "error" in data &&
+          typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "Erro ao cadastrar cliente";
+
+        throw new Error(errorMessage);
+      }
+
+      return data as Cliente;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clientes"] });
       setDialogAberto(false);
       toast({ title: "Cliente cadastrado com sucesso" });
     },
-    onError: () => {
-      toast({ title: "Erro ao cadastrar cliente", variant: "destructive" });
+    onError: (error) => {
+      const description = error instanceof Error ? error.message : "Erro ao cadastrar cliente";
+
+      toast({
+        title: "Erro ao cadastrar cliente",
+        description,
+        variant: "destructive",
+      });
     },
   });
 

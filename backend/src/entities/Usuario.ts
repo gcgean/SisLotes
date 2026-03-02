@@ -7,6 +7,9 @@ export class Usuario {
   @PrimaryGeneratedColumn({ name: "id_usuario" })
   id_usuario!: number;
 
+  @Column({ type: "integer", name: "id_empresa" })
+  id_empresa!: number;
+
   @Column({ type: "varchar", length: 50, unique: true })
   login!: string;
 

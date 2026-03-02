@@ -8,6 +8,8 @@ import { pagamentosRouter } from "./modules/pagamentos";
 import { contasRouter } from "./modules/contas";
 import { usuariosRouter } from "./modules/usuarios";
 import { logsRouter } from "./modules/logs";
+import { empresasRouter } from "./modules/empresas";
+import { relatoriosRouter } from "./modules/relatorios";
 
 export const router = Router();
 
@@ -20,3 +22,5 @@ router.use("/pagamentos", pagamentosRouter);
 router.use("/contas", contasRouter);
 router.use("/usuarios", usuariosRouter);
 router.use("/logs", logsRouter);
+router.use("/empresas", empresasRouter);
+router.use("/relatorios", relatoriosRouter);

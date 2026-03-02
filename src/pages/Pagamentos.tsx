@@ -21,8 +21,30 @@ import {
 } from "@/components/ui/dialog";
 import { Search, Upload, Plus, CheckCircle2, Clock, AlertTriangle, DollarSign } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 type PagamentoSituacao = "aberto" | "pago" | "atrasado";
+
+interface PagamentoApi {
+  id_pagamento: number;
+  numero_parcela: number;
+  tipo: string;
+  situacao: "aberto" | "pago";
+  vencimento: string;
+  valor: string;
+  pago_data: string | null;
+  valor_pago: string | null;
+  venda?: {
+    parcelas: number;
+    cliente?: {
+      nome: string;
+    };
+    lote?: {
+      quadra: string;
+      lote: string;
+    };
+  };
+}
 
 interface Pagamento {
   id: number;
@@ -47,9 +69,23 @@ const parseDateBR = (dateStr: string) => {
   return new Date(y, m - 1, d);
 };
 
+const formatDateBR = (d: Date) => {
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+};
+
 const todayStr = () => {
   const d = new Date();
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+  return formatDateBR(d);
+};
+
+const toIsoFromBr = (dateStr: string) => {
+  if (!dateStr) return "";
+  const d = parseDateBR(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
 
 const calcularJuros = (valor: number, diasAtraso: number) => {
@@ -68,19 +104,6 @@ const getDiasAtraso = (vencimentoStr: string) => {
   return Math.max(0, diff);
 };
 
-const initialPagamentos: Pagamento[] = [
-  { id: 1, cliente: "João Silva", lote: "Q.A - L.02", numero_parcela: 1, parcelas: 24, tipo: "boleto", situacao: "pago", vencimento: "15/02/2026", valor: 3187.5, pago_data: "14/02/2026", valor_pago: 3187.5, conta: "Banco do Brasil" },
-  { id: 2, cliente: "João Silva", lote: "Q.A - L.02", numero_parcela: 2, parcelas: 24, tipo: "boleto", situacao: "aberto", vencimento: "15/03/2026", valor: 3187.5, conta: "Banco do Brasil" },
-  { id: 3, cliente: "Construtora ABC", lote: "Q.B - L.01", numero_parcela: 1, parcelas: 36, tipo: "carne", situacao: "pago", vencimento: "20/02/2026", valor: 3000, pago_data: "18/02/2026", valor_pago: 3000, conta: "Caixa" },
-  { id: 4, cliente: "Construtora ABC", lote: "Q.B - L.01", numero_parcela: 2, parcelas: 36, tipo: "carne", situacao: "aberto", vencimento: "20/03/2026", valor: 3000, conta: "Caixa" },
-  { id: 5, cliente: "Carlos Lima", lote: "Q.D - L.01", numero_parcela: 1, parcelas: 48, tipo: "boleto", situacao: "atrasado", vencimento: "05/01/2026", valor: 1781.25, conta: "Itaú" },
-  { id: 6, cliente: "Carlos Lima", lote: "Q.D - L.01", numero_parcela: 2, parcelas: 48, tipo: "boleto", situacao: "atrasado", vencimento: "05/02/2026", valor: 1781.25, conta: "Itaú" },
-  { id: 7, cliente: "Pedro Souza", lote: "Q.D - L.02", numero_parcela: 1, parcelas: 36, tipo: "boleto", situacao: "pago", vencimento: "03/03/2026", valor: 2750, pago_data: "01/03/2026", valor_pago: 2750, conta: "Banco do Brasil" },
-  { id: 8, cliente: "Pedro Souza", lote: "Q.D - L.02", numero_parcela: 2, parcelas: 36, tipo: "boleto", situacao: "aberto", vencimento: "03/04/2026", valor: 2750, conta: "Banco do Brasil" },
-  { id: 9, cliente: "Imobiliária XYZ Ltda", lote: "Q.B - L.02", numero_parcela: 1, parcelas: 60, tipo: "carne", situacao: "atrasado", vencimento: "12/01/2026", valor: 825, conta: "Caixa" },
-  { id: 10, cliente: "Imobiliária XYZ Ltda", lote: "Q.B - L.02", numero_parcela: 2, parcelas: 60, tipo: "carne", situacao: "aberto", vencimento: "12/03/2026", valor: 825, conta: "Caixa" },
-];
-
 const situacaoConfig: Record<PagamentoSituacao, { label: string; icon: typeof CheckCircle2; colorClass: string }> = {
   pago: { label: "Pago", icon: CheckCircle2, colorClass: "text-success" },
   aberto: { label: "Aberto", icon: Clock, colorClass: "text-info" },
@@ -89,8 +112,87 @@ const situacaoConfig: Record<PagamentoSituacao, { label: string; icon: typeof Ch
 
 const contas = ["Banco do Brasil", "Caixa", "Itaú"];
 
+function getAuthHeaders() {
+  const token = window.localStorage.getItem("token");
+  if (!token) return {};
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
+
 const Pagamentos = () => {
-  const [pagamentos, setPagamentos] = useState<Pagamento[]>(initialPagamentos);
+  const queryClient = useQueryClient();
+  const [dataIni, setDataIni] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 3);
+    return formatDateBR(d);
+  });
+  const [dataFim, setDataFim] = useState(() => {
+    const d = new Date();
+    return formatDateBR(d);
+  });
+
+  const { data: pagamentos = [], isLoading, isError } = useQuery<Pagamento[]>({
+    queryKey: ["pagamentos", dataIni, dataFim],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const fromIso = toIsoFromBr(dataIni);
+      const toIso = toIsoFromBr(dataFim);
+      if (fromIso) params.set("from", fromIso);
+      if (toIso) params.set("to", toIso);
+
+      const response = await fetch(`/api/pagamentos?${params.toString()}`, {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar pagamentos");
+      }
+
+      const json: PagamentoApi[] = await response.json();
+
+      const hoje = new Date();
+
+      const mapSituacao = (api: PagamentoApi): PagamentoSituacao => {
+        if (api.situacao === "pago") return "pago";
+        const venc = new Date(api.vencimento);
+        venc.setHours(0, 0, 0, 0);
+        const hojeCopy = new Date(hoje.getTime());
+        hojeCopy.setHours(0, 0, 0, 0);
+        if (venc < hojeCopy) return "atrasado";
+        return "aberto";
+      };
+
+      const mapDate = (iso: string) => {
+        const [year, month, day] = iso.split("-");
+        if (!year || !month || !day) return iso;
+        return `${day}/${month}/${year}`;
+      };
+
+      return json.map<Pagamento>((p) => {
+        const clienteNome = p.venda?.cliente?.nome ?? "";
+        const loteDescricao =
+          p.venda?.lote ? `Quadra ${p.venda.lote.quadra} - Lote ${p.venda.lote.lote}` : "";
+
+        return {
+          id: p.id_pagamento,
+          cliente: clienteNome,
+          lote: loteDescricao,
+          numero_parcela: p.numero_parcela,
+          parcelas: p.venda?.parcelas ?? 0,
+          tipo: p.tipo,
+          situacao: mapSituacao(p),
+          vencimento: mapDate(p.vencimento),
+          valor: Number(p.valor),
+          pago_data: p.pago_data ? mapDate(p.pago_data) : undefined,
+          valor_pago: p.valor_pago != null ? Number(p.valor_pago) : undefined,
+          conta: "",
+        };
+      });
+    },
+  });
   const [search, setSearch] = useState("");
   const [filterSituacao, setFilterSituacao] = useState<"all" | PagamentoSituacao>("all");
   const [filterTipo, setFilterTipo] = useState("all");
@@ -101,6 +203,37 @@ const Pagamentos = () => {
   const [baixaData, setBaixaData] = useState(todayStr());
   const [baixaValorPago, setBaixaValorPago] = useState("");
   const [baixaConta, setBaixaConta] = useState("");
+
+  const baixaMutation = useMutation({
+    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number }) => {
+      const response = await fetch(`/api/pagamentos/${payload.id_pagamento}/baixa`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({
+          pago_data: payload.pago_data,
+          valor_pago: payload.valor_pago,
+          id_conta: payload.id_conta,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao baixar pagamento");
+      }
+
+      return response.json() as Promise<Pagamento>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pagamentos"] });
+      setBaixaOpen(false);
+      toast({ title: "Pagamento baixado com sucesso" });
+    },
+    onError: () => {
+      toast({ title: "Erro ao baixar pagamento", variant: "destructive" });
+    },
+  });
 
   const filtered = pagamentos.filter((p) => {
     const matchSearch = p.cliente.toLowerCase().includes(search.toLowerCase());
@@ -113,42 +246,48 @@ const Pagamentos = () => {
   const totalAtrasado = pagamentos.filter((p) => p.situacao === "atrasado").length;
   const totalPago = pagamentos.filter((p) => p.situacao === "pago").length;
 
-  const handleOpenBaixa = (pag: Pagamento) => {
-    const dias = getDiasAtraso(pag.vencimento);
-    const calc = calcularJuros(pag.valor, dias);
-    setSelectedPag(pag);
-    setBaixaData(todayStr());
-    setBaixaValorPago(calc.total.toFixed(2));
-    setBaixaConta(pag.conta);
-    setBaixaOpen(true);
-  };
-
-  const handleConfirmarBaixa = () => {
-    if (!selectedPag) return;
-    const valorPago = parseFloat(baixaValorPago);
-    if (isNaN(valorPago) || valorPago <= 0) {
-      toast({ title: "Erro", description: "Informe um valor válido.", variant: "destructive" });
-      return;
-    }
-    if (!baixaData.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-      toast({ title: "Erro", description: "Data inválida. Use dd/mm/aaaa.", variant: "destructive" });
-      return;
-    }
-
-    setPagamentos((prev) =>
-      prev.map((p) =>
-        p.id === selectedPag.id
-          ? { ...p, situacao: "pago" as PagamentoSituacao, pago_data: baixaData, valor_pago: valorPago, conta: baixaConta }
-          : p
-      )
-    );
-    setBaixaOpen(false);
-    setSelectedPag(null);
-    toast({ title: "Baixa realizada", description: `Parcela ${selectedPag.numero_parcela}/${selectedPag.parcelas} de ${selectedPag.cliente} baixada com sucesso.` });
-  };
-
   const diasAtrasoSelected = selectedPag ? getDiasAtraso(selectedPag.vencimento) : 0;
   const calcSelected = selectedPag ? calcularJuros(selectedPag.valor, diasAtrasoSelected) : null;
+
+  function handleOpenBaixa(pag: Pagamento) {
+    setSelectedPag(pag);
+    setBaixaData(todayStr());
+    setBaixaValorPago(pag.valor.toString());
+    setBaixaConta("");
+    setBaixaOpen(true);
+  }
+
+  function handleConfirmarBaixa() {
+    if (!selectedPag) return;
+
+    const valorPagoNumber = Number(baixaValorPago);
+    const idContaNumber = Number(baixaConta);
+
+    if (!baixaData || Number.isNaN(valorPagoNumber) || valorPagoNumber <= 0 || Number.isNaN(idContaNumber)) {
+      toast({
+        title: "Dados inválidos para baixa",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    baixaMutation.mutate({
+      id_pagamento: selectedPag.id,
+      pago_data: baixaData,
+      valor_pago: valorPagoNumber,
+      id_conta: idContaNumber,
+    });
+  }
+
+  if (isError) {
+    return (
+      <AppLayout>
+        <div className="p-6">
+          <p className="text-sm text-destructive">Erro ao carregar pagamentos.</p>
+        </div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout>
@@ -157,7 +296,9 @@ const Pagamentos = () => {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Pagamentos</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {totalPago} pagos · {totalAberto} em aberto · {totalAtrasado} atrasados
+              {isLoading
+                ? "Carregando pagamentos..."
+                : `${totalPago} pagos · ${totalAberto} em aberto · ${totalAtrasado} atrasados`}
             </p>
           </div>
           <div className="flex gap-2">
@@ -205,6 +346,26 @@ const Pagamentos = () => {
               onChange={(e) => setSearch(e.target.value)}
               className="pl-9"
             />
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground">Data inicial</span>
+              <Input
+                value={dataIni}
+                onChange={(e) => setDataIni(e.target.value)}
+                placeholder="dd/mm/aaaa"
+                className="h-9"
+              />
+            </div>
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground">Data final</span>
+              <Input
+                value={dataFim}
+                onChange={(e) => setDataFim(e.target.value)}
+                placeholder="dd/mm/aaaa"
+                className="h-9"
+              />
+            </div>
           </div>
           <Select value={filterTipo} onValueChange={setFilterTipo}>
             <SelectTrigger className="w-[160px]">

@@ -19,6 +19,7 @@ const usuarioBodySchema = z.object({
   vendas_cadastrar: z.boolean().optional().default(false),
   vendas_alterar: z.boolean().optional().default(false),
   vendas_excluir: z.boolean().optional().default(false),
+  id_empresa: z.number().int().positive().optional(),
 });
 
 usuariosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
@@ -29,7 +30,13 @@ usuariosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   }
 
   const repo = AppDataSource.getRepository(Usuario);
-  const usuarios = await repo.find();
+
+  const where: Record<string, unknown> = {};
+  if (currentUser.id_empresa) {
+    where.id_empresa = currentUser.id_empresa;
+  }
+
+  const usuarios = await repo.find({ where, order: { login: "ASC" } });
 
   return res.json(usuarios);
 });
@@ -55,7 +62,12 @@ usuariosRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
     return res.status(400).json({ error: "Login já em uso" });
   }
 
-  const usuario = repo.create(parseResult.data);
+  const data = parseResult.data;
+
+  const usuario = repo.create({
+    ...data,
+    id_empresa: data.id_empresa ?? currentUser.id_empresa,
+  });
   const saved = await repo.save(usuario);
 
   return res.status(201).json(saved);
@@ -78,7 +90,12 @@ usuariosRouter.put("/:id", requireAuth, async (req: AuthRequest, res) => {
 
   const repo = AppDataSource.getRepository(Usuario);
 
-  const usuario = await repo.findOne({ where: { id_usuario: Number(id) } });
+  const where: Record<string, unknown> = { id_usuario: Number(id) };
+  if (currentUser.id_empresa) {
+    where.id_empresa = currentUser.id_empresa;
+  }
+
+  const usuario = await repo.findOne({ where });
 
   if (!usuario) {
     return res.status(404).json({ error: "Usuário não encontrado" });
@@ -106,7 +123,12 @@ usuariosRouter.delete("/:id", requireAuth, async (req: AuthRequest, res) => {
 
   const repo = AppDataSource.getRepository(Usuario);
 
-  const usuario = await repo.findOne({ where: { id_usuario: Number(id) } });
+  const where: Record<string, unknown> = { id_usuario: Number(id) };
+  if (currentUser.id_empresa) {
+    where.id_empresa = currentUser.id_empresa;
+  }
+
+  const usuario = await repo.findOne({ where });
 
   if (!usuario) {
     return res.status(404).json({ error: "Usuário não encontrado" });

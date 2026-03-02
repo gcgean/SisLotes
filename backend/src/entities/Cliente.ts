@@ -5,6 +5,9 @@ export class Cliente {
   @PrimaryGeneratedColumn({ name: "id_cliente" })
   id_cliente!: number;
 
+  @Column({ type: "integer", name: "id_empresa" })
+  id_empresa!: number;
+
   @Column({ type: "char", length: 1 })
   tipo!: "f" | "j";
 
@@ -65,4 +68,3 @@ export class Cliente {
   @UpdateDateColumn({ type: "timestamp", name: "updated_at" })
   updated_at!: Date;
 }
-

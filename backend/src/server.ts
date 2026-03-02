@@ -5,7 +5,7 @@ import { AppDataSource } from "./db/data-source";
 
 dotenv.config();
 
-const port = process.env.PORT ? Number(process.env.PORT) : 3333;
+const port = process.env.PORT ? Number(process.env.PORT) : 3334;
 
 AppDataSource.initialize()
   .then(async () => {

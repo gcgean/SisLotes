@@ -6,6 +6,9 @@ export class Conta {
   @PrimaryGeneratedColumn({ name: "id_conta" })
   id_conta!: number;
 
+  @Column({ type: "integer", name: "id_empresa" })
+  id_empresa!: number;
+
   @Column({ type: "varchar", length: 100 })
   apelido!: string;
 

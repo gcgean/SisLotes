@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ILike } from "typeorm";
 import { AppDataSource } from "../../db/data-source";
 import { Cliente } from "../../entities/Cliente";
-import { requireAuth, requirePermission } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requirePermission } from "../../middleware/auth";
 
 export const clientesRouter = Router();
 
@@ -34,7 +34,7 @@ const clienteBodySchema = z.object({
   fone_com: z.string().max(20).optional(),
 });
 
-clientesRouter.get("/", async (req, res) => {
+clientesRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const parseResult = listQuerySchema.safeParse(req.query);
 
   if (!parseResult.success) {
@@ -46,6 +46,10 @@ clientesRouter.get("/", async (req, res) => {
   const repo = AppDataSource.getRepository(Cliente);
 
   const where: Record<string, unknown> = {};
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
 
   if (tipo) {
     where.tipo = tipo;
@@ -71,11 +75,18 @@ clientesRouter.get("/", async (req, res) => {
   });
 });
 
-clientesRouter.get("/:id", async (req, res) => {
+clientesRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const repo = AppDataSource.getRepository(Cliente);
-  const cliente = await repo.findOne({ where: { id_cliente: Number(id) } });
+
+  const where: Record<string, unknown> = { id_cliente: Number(id) };
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
+  const cliente = await repo.findOne({ where });
 
   if (!cliente) {
     return res.status(404).json({ error: "Cliente não encontrado" });
@@ -84,7 +95,7 @@ clientesRouter.get("/:id", async (req, res) => {
   return res.json(cliente);
 });
 
-clientesRouter.post("/", requireAuth, requirePermission("clientes_cadastrar"), async (req, res) => {
+clientesRouter.post("/", requireAuth, requirePermission("clientes_cadastrar"), async (req: AuthRequest, res) => {
   const parseResult = clienteBodySchema.safeParse(req.body);
 
   if (!parseResult.success) {
@@ -93,14 +104,36 @@ clientesRouter.post("/", requireAuth, requirePermission("clientes_cadastrar"), a
 
   const repo = AppDataSource.getRepository(Cliente);
 
-  const cliente = repo.create(parseResult.data);
+  const data = parseResult.data;
 
-  const saved = await repo.save(cliente);
+  const cliente = repo.create({
+    ...data,
+    cpf: data.cpf && data.cpf.trim() !== "" ? data.cpf : null,
+    cnpj: data.cnpj && data.cnpj.trim() !== "" ? data.cnpj : null,
+    id_empresa: req.user?.id_empresa ?? 1,
+  });
 
-  return res.status(201).json(saved);
+  try {
+    const saved = await repo.save(cliente);
+    return res.status(201).json(saved);
+  } catch (error) {
+    if (typeof error === "object" && error && "message" in error && typeof (error as { message?: unknown }).message === "string") {
+      const message = (error as { message: string }).message;
+
+      if (message.includes("clientes_cpf_key")) {
+        return res.status(400).json({ error: "CPF já cadastrado" });
+      }
+
+      if (message.includes("clientes_cnpj_key")) {
+        return res.status(400).json({ error: "CNPJ já cadastrado" });
+      }
+    }
+
+    return res.status(500).json({ error: "Erro ao salvar cliente" });
+  }
 });
 
-clientesRouter.put("/:id", requireAuth, requirePermission("clientes_alterar"), async (req, res) => {
+clientesRouter.put("/:id", requireAuth, requirePermission("clientes_alterar"), async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const parseResult = clienteBodySchema.partial().safeParse(req.body);
@@ -111,24 +144,62 @@ clientesRouter.put("/:id", requireAuth, requirePermission("clientes_alterar"), a
 
   const repo = AppDataSource.getRepository(Cliente);
 
-  const cliente = await repo.findOne({ where: { id_cliente: Number(id) } });
+  const where: Record<string, unknown> = { id_cliente: Number(id) };
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
+  const cliente = await repo.findOne({ where });
 
   if (!cliente) {
     return res.status(404).json({ error: "Cliente não encontrado" });
   }
 
-  Object.assign(cliente, parseResult.data);
+  const data = parseResult.data;
 
-  const saved = await repo.save(cliente);
+  Object.assign(cliente, data);
 
-  return res.json(saved);
+  if ("cpf" in data) {
+    cliente.cpf = data.cpf && data.cpf.trim() !== "" ? data.cpf : null;
+  }
+
+  if ("cnpj" in data) {
+    cliente.cnpj = data.cnpj && data.cnpj.trim() !== "" ? data.cnpj : null;
+  }
+
+  try {
+    const saved = await repo.save(cliente);
+    return res.json(saved);
+  } catch (error) {
+    if (typeof error === "object" && error && "message" in error && typeof (error as { message?: unknown }).message === "string") {
+      const message = (error as { message: string }).message;
+
+      if (message.includes("clientes_cpf_key")) {
+        return res.status(400).json({ error: "CPF já cadastrado" });
+      }
+
+      if (message.includes("clientes_cnpj_key")) {
+        return res.status(400).json({ error: "CNPJ já cadastrado" });
+      }
+    }
+
+    return res.status(500).json({ error: "Erro ao salvar cliente" });
+  }
 });
 
-clientesRouter.delete("/:id", requireAuth, requirePermission("clientes_excluir"), async (req, res) => {
+clientesRouter.delete("/:id", requireAuth, requirePermission("clientes_excluir"), async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const repo = AppDataSource.getRepository(Cliente);
-  const cliente = await repo.findOne({ where: { id_cliente: Number(id) } });
+
+  const where: Record<string, unknown> = { id_cliente: Number(id) };
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
+  const cliente = await repo.findOne({ where });
 
   if (!cliente) {
     return res.status(404).json({ error: "Cliente não encontrado" });
@@ -138,4 +209,3 @@ clientesRouter.delete("/:id", requireAuth, requirePermission("clientes_excluir")
 
   return res.status(204).send();
 });
-

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Log } from "../../entities/Log";
+import { AuthRequest, requireAuth } from "../../middleware/auth";
 
 export const logsRouter = Router();
 
@@ -13,7 +14,7 @@ const listLogsQuerySchema = z.object({
   to: z.string().optional(),
 });
 
-logsRouter.get("/", async (req, res) => {
+logsRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const parseResult = listLogsQuerySchema.safeParse(req.query);
 
   if (!parseResult.success) {
@@ -30,6 +31,12 @@ logsRouter.get("/", async (req, res) => {
     .orderBy("log.data_hora", "DESC")
     .skip((page - 1) * limit)
     .take(limit);
+
+  if (req.user?.id_empresa) {
+    qb.andWhere("usuario.id_empresa = :id_empresa", {
+      id_empresa: req.user.id_empresa,
+    });
+  }
 
   if (id_usuario) {
     qb.andWhere("log.id_usuario = :id_usuario", { id_usuario });
@@ -53,4 +60,3 @@ logsRouter.get("/", async (req, res) => {
     totalPages: Math.ceil(total / limit),
   });
 });
-

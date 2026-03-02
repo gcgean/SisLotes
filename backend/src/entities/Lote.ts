@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
 import { Loteamento } from "./Loteamento";
 
 @Entity({ name: "lotes" })
@@ -8,10 +8,14 @@ export class Lote {
   @PrimaryGeneratedColumn({ name: "id_lote" })
   id_lote!: number;
 
+  @Column({ type: "integer", name: "id_empresa" })
+  id_empresa!: number;
+
   @Column({ type: "integer", name: "id_loteamento" })
   id_loteamento!: number;
 
   @ManyToOne(() => Loteamento, (loteamento) => loteamento.lotes)
+  @JoinColumn({ name: "id_loteamento" })
   loteamento!: Loteamento;
 
   @Column({ type: "varchar", length: 20 })
@@ -38,4 +42,3 @@ export class Lote {
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 }
-

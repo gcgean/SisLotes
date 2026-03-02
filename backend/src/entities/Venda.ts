@@ -1,4 +1,14 @@
-import { Column, CreateDateColumn, Entity, Index, ManyToOne, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from "typeorm";
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  Index,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from "typeorm";
 import { Cliente } from "./Cliente";
 import { Lote } from "./Lote";
 import { Pagamento } from "./Pagamento";
@@ -12,16 +22,21 @@ export class Venda {
   @PrimaryGeneratedColumn({ name: "id_venda" })
   id_venda!: number;
 
+  @Column({ type: "integer", name: "id_empresa" })
+  id_empresa!: number;
+
   @Column({ type: "integer", name: "id_cliente" })
   id_cliente!: number;
 
   @ManyToOne(() => Cliente)
+  @JoinColumn({ name: "id_cliente" })
   cliente!: Cliente;
 
   @Column({ type: "integer", name: "id_lote", unique: true })
   id_lote!: number;
 
   @ManyToOne(() => Lote)
+  @JoinColumn({ name: "id_lote" })
   lote!: Lote;
 
   @Column({ type: "date", name: "data_venda" })

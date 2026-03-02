@@ -8,7 +8,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { FileText, Download, BarChart3, DollarSign, Users, Calendar } from "lucide-react";
+
+function getAuthHeaders() {
+  const token = window.localStorage.getItem("token");
+  if (!token) return {};
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -52,19 +61,28 @@ const reportTypes = [
   },
 ];
 
-// Mock report data
-const mockEntradasData = [
-  { loteamento: "Residencial Primavera", jan: 28500, fev: 31200, mar: 29800, abr: 33100, total: 122600 },
-  { loteamento: "Jardim das Flores", jan: 15000, fev: 18000, mar: 16500, abr: 17200, total: 66700 },
-  { loteamento: "Vila Verde", jan: 42000, fev: 38500, mar: 41000, abr: 39800, total: 161300 },
-  { loteamento: "Parque do Sol", jan: 22000, fev: 24500, mar: 23800, abr: 25100, total: 95400 },
-];
+interface EntradasPorLoteamento {
+  id_loteamento: number;
+  loteamento: string;
+  jan: number;
+  fev: number;
+  mar: number;
+  abr: number;
+  total: number;
+}
 
-const mockAtrasados = [
-  { cliente: "Carlos Lima", lote: "Q.D - L.01", parcela: "1/48", vencimento: "05/01/2026", valor: 1781.25, diasAtraso: 42, multa: 35.63, juros: 149.63, total: 1966.50 },
-  { cliente: "Carlos Lima", lote: "Q.D - L.01", parcela: "2/48", vencimento: "05/02/2026", valor: 1781.25, diasAtraso: 11, multa: 35.63, juros: 39.19, total: 1856.06 },
-  { cliente: "Imobiliária XYZ Ltda", lote: "Q.B - L.02", parcela: "1/60", vencimento: "12/01/2026", valor: 825.00, diasAtraso: 35, multa: 16.50, juros: 57.75, total: 899.25 },
-];
+interface TituloEmAtraso {
+  id_pagamento: number;
+  cliente: string;
+  lote: string;
+  parcela: string;
+  vencimento: string;
+  valor: number;
+  diasAtraso: number;
+  multa: number;
+  juros: number;
+  total: number;
+}
 
 const mockContaTotais = [
   { conta: "Banco do Brasil", apelido: "BB Principal", agencia: "1234", total: 185400, qtdPagamentos: 42 },
@@ -75,6 +93,43 @@ const mockContaTotais = [
 const Relatorios = () => {
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [ano, setAno] = useState("2026");
+
+  const { data: entradasData = [], isLoading: loadingEntradas } = useQuery<EntradasPorLoteamento[]>({
+    queryKey: ["relatorios", "entradas-por-loteamento", ano],
+    queryFn: async () => {
+      const params = new URLSearchParams({ ano });
+      const response = await fetch(`/api/relatorios/entradas-por-loteamento?${params.toString()}`, {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar relatório de entradas por loteamento");
+      }
+
+      return response.json();
+    },
+    enabled: selectedReport === "entradas",
+  });
+
+  const { data: atrasadosData = [], isLoading: loadingAtrasados } = useQuery<TituloEmAtraso[]>({
+    queryKey: ["relatorios", "titulos-em-atraso"],
+    queryFn: async () => {
+      const response = await fetch("/api/relatorios/titulos-em-atraso", {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar relatório de títulos em atraso");
+      }
+
+      return response.json();
+    },
+    enabled: selectedReport === "atraso",
+  });
 
   return (
     <AppLayout>
@@ -134,6 +189,9 @@ const Relatorios = () => {
                 <div className="p-5 border-b border-border">
                   <h2 className="font-semibold">Entradas por Loteamento – {ano}</h2>
                 </div>
+                {loadingEntradas ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
@@ -147,7 +205,7 @@ const Relatorios = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                      {mockEntradasData.map((row) => (
+                      {entradasData.map((row) => (
                         <tr key={row.loteamento} className="hover:bg-muted/30 transition-colors">
                           <td className="px-5 py-3 font-medium">{row.loteamento}</td>
                           <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.jan)}</td>
@@ -161,15 +219,26 @@ const Relatorios = () => {
                     <tfoot>
                       <tr className="border-t-2 border-border bg-muted/30">
                         <td className="px-5 py-3 font-bold">Total Geral</td>
-                        <td className="px-5 py-3 text-right font-bold">{formatCurrency(mockEntradasData.reduce((s, r) => s + r.jan, 0))}</td>
-                        <td className="px-5 py-3 text-right font-bold">{formatCurrency(mockEntradasData.reduce((s, r) => s + r.fev, 0))}</td>
-                        <td className="px-5 py-3 text-right font-bold">{formatCurrency(mockEntradasData.reduce((s, r) => s + r.mar, 0))}</td>
-                        <td className="px-5 py-3 text-right font-bold">{formatCurrency(mockEntradasData.reduce((s, r) => s + r.abr, 0))}</td>
-                        <td className="px-5 py-3 text-right font-bold text-primary">{formatCurrency(mockEntradasData.reduce((s, r) => s + r.total, 0))}</td>
+                        <td className="px-5 py-3 text-right font-bold">
+                          {formatCurrency(entradasData.reduce((s, r) => s + r.jan, 0))}
+                        </td>
+                        <td className="px-5 py-3 text-right font-bold">
+                          {formatCurrency(entradasData.reduce((s, r) => s + r.fev, 0))}
+                        </td>
+                        <td className="px-5 py-3 text-right font-bold">
+                          {formatCurrency(entradasData.reduce((s, r) => s + r.mar, 0))}
+                        </td>
+                        <td className="px-5 py-3 text-right font-bold">
+                          {formatCurrency(entradasData.reduce((s, r) => s + r.abr, 0))}
+                        </td>
+                        <td className="px-5 py-3 text-right font-bold text-primary">
+                          {formatCurrency(entradasData.reduce((s, r) => s + r.total, 0))}
+                        </td>
                       </tr>
                     </tfoot>
                   </table>
                 </div>
+                )}
               </div>
             )}
 
@@ -179,38 +248,42 @@ const Relatorios = () => {
                   <h2 className="font-semibold">Títulos em Atraso</h2>
                   <p className="text-xs text-muted-foreground mt-1">Multa: 2% + Juros: 0,20% ao dia</p>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-border bg-muted/50">
-                        <th className="text-left px-5 py-3 font-medium text-muted-foreground">Cliente</th>
-                        <th className="text-left px-5 py-3 font-medium text-muted-foreground">Lote</th>
-                        <th className="text-left px-5 py-3 font-medium text-muted-foreground">Parcela</th>
-                        <th className="text-left px-5 py-3 font-medium text-muted-foreground">Vencimento</th>
-                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Valor</th>
-                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Dias</th>
-                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Multa</th>
-                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Juros</th>
-                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {mockAtrasados.map((row, i) => (
-                        <tr key={i} className="hover:bg-muted/30 transition-colors">
-                          <td className="px-5 py-3 font-medium">{row.cliente}</td>
-                          <td className="px-5 py-3 text-muted-foreground">{row.lote}</td>
-                          <td className="px-5 py-3 text-muted-foreground">{row.parcela}</td>
-                          <td className="px-5 py-3 text-muted-foreground">{row.vencimento}</td>
-                          <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.valor)}</td>
-                          <td className="px-5 py-3 text-right text-destructive font-medium">{row.diasAtraso}</td>
-                          <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.multa)}</td>
-                          <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.juros)}</td>
-                          <td className="px-5 py-3 text-right font-bold text-warning">{formatCurrency(row.total)}</td>
+                {loadingAtrasados ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Cliente</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Lote</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Parcela</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Vencimento</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Valor</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Dias</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Multa</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Juros</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Total</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {atrasadosData.map((row) => (
+                          <tr key={row.id_pagamento} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-3 font-medium">{row.cliente}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.lote}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.parcela}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.vencimento}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.valor)}</td>
+                            <td className="px-5 py-3 text-right text-destructive font-medium">{row.diasAtraso}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.multa)}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.juros)}</td>
+                            <td className="px-5 py-3 text-right font-bold text-warning">{formatCurrency(row.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 

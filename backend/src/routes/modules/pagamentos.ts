@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
+import { AuthRequest, requireAuth } from "../../middleware/auth";
 
 export const pagamentosRouter = Router();
 
@@ -12,34 +13,80 @@ const baixaSchema = z.object({
   id_conta: z.number().int().positive(),
 });
 
-pagamentosRouter.get("/", async (_req, res) => {
+const listPagamentosQuerySchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+
+pagamentosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const repo = AppDataSource.getRepository(Pagamento);
-  const pagamentos = await repo.find({
-    order: { vencimento: "ASC" },
-  });
+
+  const parseResult = listPagamentosQuerySchema.safeParse(req.query);
+
+  if (!parseResult.success) {
+    return res.status(400).json({ error: "Parâmetros de filtro inválidos", issues: parseResult.error.issues });
+  }
+
+  const { from, to } = parseResult.data;
+
+  const qb = repo
+    .createQueryBuilder("pagamento")
+    .leftJoinAndSelect("pagamento.venda", "venda")
+    .leftJoinAndSelect("venda.cliente", "cliente")
+    .leftJoinAndSelect("venda.lote", "lote")
+    .where("1=1");
+
+  if (req.user?.id_empresa) {
+    qb.andWhere("pagamento.id_empresa = :id_empresa", {
+      id_empresa: req.user.id_empresa,
+    });
+  }
+
+  if (from) {
+    qb.andWhere("pagamento.vencimento >= :from", { from });
+  }
+
+  if (to) {
+    qb.andWhere("pagamento.vencimento <= :to", { to });
+  }
+
+  const pagamentos = await qb.orderBy("pagamento.vencimento", "ASC").getMany();
 
   return res.json(pagamentos);
 });
 
-pagamentosRouter.get("/atrasados", async (_req, res) => {
+pagamentosRouter.get("/atrasados", requireAuth, async (req: AuthRequest, res) => {
   const repo = AppDataSource.getRepository(Pagamento);
   const hoje = new Date().toISOString().slice(0, 10);
 
-  const atrasados = await repo
+  const qb = repo
     .createQueryBuilder("pagamento")
     .where("pagamento.vencimento < :hoje", { hoje })
-    .andWhere("pagamento.situacao = :situacao", { situacao: "aberto" })
-    .orderBy("pagamento.vencimento", "ASC")
-    .getMany();
+    .andWhere("pagamento.situacao = :situacao", { situacao: "aberto" });
+
+  if (req.user?.id_empresa) {
+    qb.andWhere("pagamento.id_empresa = :id_empresa", {
+      id_empresa: req.user.id_empresa,
+    });
+  }
+
+  const atrasados = await qb.orderBy("pagamento.vencimento", "ASC").getMany();
 
   return res.json(atrasados);
 });
 
-pagamentosRouter.get("/:id", async (req, res) => {
+pagamentosRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const repo = AppDataSource.getRepository(Pagamento);
-  const pagamento = await repo.findOne({ where: { id_pagamento: Number(id) } });
+
+  const where: Record<string, unknown> = { id_pagamento: Number(id) };
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
+  const pagamento = await repo.findOne({ where });
 
   if (!pagamento) {
     return res.status(404).json({ error: "Pagamento não encontrado" });
@@ -48,7 +95,7 @@ pagamentosRouter.get("/:id", async (req, res) => {
   return res.json(pagamento);
 });
 
-pagamentosRouter.post("/:id/baixa", async (req, res) => {
+pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;
   const parseResult = baixaSchema.safeParse(req.body);
 
@@ -61,7 +108,13 @@ pagamentosRouter.post("/:id/baixa", async (req, res) => {
   const pagamentoRepo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);
 
-  const pagamento = await pagamentoRepo.findOne({ where: { id_pagamento: Number(id) } });
+  const where: Record<string, unknown> = { id_pagamento: Number(id) };
+
+  if (req.user?.id_empresa) {
+    where.id_empresa = req.user.id_empresa;
+  }
+
+  const pagamento = await pagamentoRepo.findOne({ where });
 
   if (!pagamento) {
     return res.status(404).json({ error: "Pagamento não encontrado" });
@@ -90,12 +143,12 @@ pagamentosRouter.post("/:id/baixa", async (req, res) => {
   pagamento.multa = multa.toFixed(2);
   pagamento.juros = juros.toFixed(2);
   pagamento.id_conta = id_conta;
-  pagamento.id_usuario = 1;
+  pagamento.id_usuario = req.user?.id_usuario ?? 1;
 
   const saved = await pagamentoRepo.save(pagamento);
 
   const log = logRepo.create({
-    id_usuario: 1,
+    id_usuario: req.user?.id_usuario ?? 1,
     id_cliente: null,
     id_lote: null,
     servico: "pagamento_baixa",

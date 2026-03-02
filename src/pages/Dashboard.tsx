@@ -7,67 +7,171 @@ import {
   TrendingUp,
   AlertTriangle,
 } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
-const kpis = [
-  {
-    title: "Clientes",
-    value: "342",
-    change: "+12 este mês",
-    icon: Users,
-    color: "text-info" as const,
-  },
-  {
-    title: "Loteamentos",
-    value: "8",
-    subtitle: "1.240 lotes",
-    icon: MapPin,
-    color: "text-primary" as const,
-  },
-  {
-    title: "Vendas Ativas",
-    value: "186",
-    change: "+5 esta semana",
-    icon: ShoppingCart,
-    color: "text-success" as const,
-  },
-  {
-    title: "Recebido (mês)",
-    value: "R$ 284.500",
-    change: "+18% vs anterior",
-    icon: TrendingUp,
-    color: "text-primary" as const,
-  },
-  {
-    title: "Títulos em Atraso",
-    value: "23",
-    change: "R$ 45.200 pendente",
-    icon: AlertTriangle,
-    color: "text-warning" as const,
-  },
-  {
-    title: "Pagamentos (mês)",
-    value: "94",
-    change: "R$ 312.800 total",
-    icon: CreditCard,
-    color: "text-info" as const,
-  },
-];
+function getAuthHeaders() {
+  const token = window.localStorage.getItem("token");
+  if (!token) return {};
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
 
-const recentSales = [
-  { client: "João Silva", lot: "Quadra A - Lote 12", date: "12/02/2026", value: "R$ 85.000" },
-  { client: "Maria Santos", lot: "Quadra B - Lote 5", date: "10/02/2026", value: "R$ 72.000" },
-  { client: "Carlos Lima", lot: "Quadra C - Lote 8", date: "08/02/2026", value: "R$ 95.000" },
-  { client: "Ana Oliveira", lot: "Quadra A - Lote 3", date: "05/02/2026", value: "R$ 68.000" },
-  { client: "Pedro Souza", lot: "Quadra D - Lote 1", date: "03/02/2026", value: "R$ 110.000" },
-];
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
-const overdue = [
-  { client: "Roberto Costa", installment: "5/24", days: 15, value: "R$ 1.850" },
-  { client: "Fernanda Alves", installment: "3/12", days: 8, value: "R$ 2.400" },
-  { client: "Lucas Mendes", installment: "7/36", days: 22, value: "R$ 1.200" },
-];
+interface DashboardTituloAtraso {
+  cliente: string;
+  parcela: string;
+  diasAtraso: number;
+  valor: number;
+}
+
+interface DashboardKpis {
+  totalClientes: number;
+  vendasAtivas: number;
+  recebidoMes: number;
+}
+
+interface DashboardVendaRecente {
+  id_venda: number;
+  cliente: string;
+  lote: string;
+  data_venda: string;
+  valor_total: number;
+}
 
 const Dashboard = () => {
+  const { data: kpisData } = useQuery<DashboardKpis>({
+    queryKey: ["dashboard", "kpis"],
+    queryFn: async () => {
+      const response = await fetch("/api/relatorios/dashboard-kpis", {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar KPIs do dashboard");
+      }
+
+      return response.json();
+    },
+  });
+
+  const { data: atrasos = [] } = useQuery<DashboardTituloAtraso[]>({
+    queryKey: ["dashboard", "titulos-em-atraso"],
+    queryFn: async () => {
+      const response = await fetch("/api/relatorios/titulos-em-atraso", {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar títulos em atraso");
+      }
+
+      type AtrasoApiItem = {
+        cliente: string;
+        parcela: string;
+        diasAtraso: number;
+        total: number | string;
+      };
+
+      const data = (await response.json()) as AtrasoApiItem[];
+
+      return data.map((item) => ({
+        cliente: item.cliente,
+        parcela: item.parcela,
+        diasAtraso: Number(item.diasAtraso),
+        valor: Number(item.total),
+      }));
+    },
+  });
+
+  const { data: vendasRecentes = [] } = useQuery<DashboardVendaRecente[]>({
+    queryKey: ["dashboard", "vendas-recentes"],
+    queryFn: async () => {
+      const response = await fetch("/api/relatorios/vendas-recentes", {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar vendas recentes");
+      }
+
+      type VendaRecenteApi = {
+        id_venda: number;
+        cliente: string;
+        lote: string;
+        data_venda: string;
+        valor_total: number | string | null;
+      };
+
+      const data = (await response.json()) as VendaRecenteApi[];
+
+      return data.map((item) => ({
+        id_venda: Number(item.id_venda),
+        cliente: item.cliente,
+        lote: item.lote,
+        data_venda: item.data_venda,
+        valor_total: Number(item.valor_total ?? 0),
+      }));
+    },
+  });
+
+  const totalTitulosAtraso = atrasos.length;
+  const totalValorAtraso = atrasos.reduce((sum, item) => sum + item.valor, 0);
+
+  const kpis = [
+    {
+      title: "Clientes",
+      value: kpisData ? String(kpisData.totalClientes) : "—",
+      change: "",
+      icon: Users,
+      color: "text-info" as const,
+    },
+    {
+      title: "Loteamentos",
+      value: "—",
+      subtitle: "",
+      icon: MapPin,
+      color: "text-primary" as const,
+    },
+    {
+      title: "Vendas Ativas",
+      value: kpisData ? String(kpisData.vendasAtivas) : "—",
+      change: "",
+      icon: ShoppingCart,
+      color: "text-success" as const,
+    },
+    {
+      title: "Recebido (mês)",
+      value: kpisData ? formatCurrency(kpisData.recebidoMes) : "—",
+      change: "",
+      icon: TrendingUp,
+      color: "text-primary" as const,
+    },
+    {
+      title: "Títulos em Atraso",
+      value: String(totalTitulosAtraso),
+      change:
+        totalTitulosAtraso > 0 ? `${formatCurrency(totalValorAtraso)} pendente` : "Nenhum título em atraso",
+      icon: AlertTriangle,
+      color: "text-warning" as const,
+    },
+    {
+      title: "Pagamentos (mês)",
+      value: "—",
+      change: "",
+      icon: CreditCard,
+      color: "text-info" as const,
+    },
+  ];
+
   return (
     <AppLayout>
       <div className="space-y-6 animate-fade-in">
@@ -113,18 +217,25 @@ const Dashboard = () => {
               <h2 className="text-sm font-semibold">Vendas Recentes</h2>
             </div>
             <div className="divide-y divide-border">
-              {recentSales.map((sale, i) => (
-                <div key={i} className="px-5 py-3 flex items-center justify-between">
+              {vendasRecentes.map((sale) => (
+                <div key={sale.id_venda} className="px-5 py-3 flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium">{sale.client}</p>
-                    <p className="text-xs text-muted-foreground">{sale.lot}</p>
+                    <p className="text-sm font-medium">{sale.cliente}</p>
+                    <p className="text-xs text-muted-foreground">{sale.lote}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold">{sale.value}</p>
-                    <p className="text-xs text-muted-foreground">{sale.date}</p>
+                    <p className="text-sm font-semibold">
+                      {formatCurrency(sale.valor_total)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{sale.data_venda}</p>
                   </div>
                 </div>
               ))}
+              {vendasRecentes.length === 0 && (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  Nenhuma venda recente
+                </div>
+              )}
             </div>
           </div>
 
@@ -134,20 +245,20 @@ const Dashboard = () => {
               <h2 className="text-sm font-semibold">Títulos em Atraso</h2>
             </div>
             <div className="divide-y divide-border">
-              {overdue.map((item, i) => (
+              {atrasos.map((item, i) => (
                 <div key={i} className="px-5 py-3 flex items-center justify-between">
                   <div>
-                    <p className="text-sm font-medium">{item.client}</p>
-                    <p className="text-xs text-muted-foreground">Parcela {item.installment}</p>
+                    <p className="text-sm font-medium">{item.cliente}</p>
+                    <p className="text-xs text-muted-foreground">Parcela {item.parcela}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm font-semibold text-warning">{item.value}</p>
-                    <p className="text-xs text-destructive">{item.days} dias atraso</p>
+                    <p className="text-sm font-semibold text-warning">{formatCurrency(item.valor)}</p>
+                    <p className="text-xs text-destructive">{item.diasAtraso} dias atraso</p>
                   </div>
                 </div>
               ))}
             </div>
-            {overdue.length === 0 && (
+            {atrasos.length === 0 && (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 Nenhum título em atraso
               </div>
