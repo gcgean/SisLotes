@@ -6,9 +6,44 @@ import { AuthRequest, requireAuth } from "../../middleware/auth";
 export const relatoriosRouter = Router();
 
 const entradasQuerySchema = z.object({
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida")
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida")
+    .optional(),
+  id_loteamento: z
+    .string()
+    .regex(/^\d+$/, "Loteamento inválido")
+    .transform((value) => parseInt(value, 10))
+    .optional(),
+});
+
+const entradasContaQuerySchema = z.object({
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida")
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida")
+    .optional(),
+  id_conta: z
+    .string()
+    .regex(/^\d+$/, "Conta inválida")
+    .transform((value) => parseInt(value, 10))
+    .optional(),
+});
+
+const jurosRecebidosQuerySchema = z.object({
   ano: z
     .string()
-    .regex(/^\d{4}$/, "Ano inválido")
+    .regex(/^\d{4}$/, "Ano inválido"),
+  id_conta: z
+    .string()
+    .regex(/^\d+$/, "Conta inválida")
     .transform((value) => parseInt(value, 10)),
 });
 
@@ -22,12 +57,37 @@ relatoriosRouter.get(
       return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
     }
 
-    const { ano } = parseResult.data;
+    const { from, to, id_loteamento } = parseResult.data;
     const idEmpresa = req.user?.id_empresa;
 
     if (!idEmpresa) {
       return res.status(400).json({ error: "Empresa não definida para o usuário" });
     }
+
+    const params: unknown[] = [idEmpresa];
+
+    const conditions: string[] = [
+      "p.situacao = 'pago'",
+      "p.pago_data IS NOT NULL",
+      "p.id_empresa = $1",
+    ];
+
+    if (from) {
+      params.push(from);
+      conditions.push(`p.pago_data >= $${params.length}`);
+    }
+
+    if (to) {
+      params.push(to);
+      conditions.push(`p.pago_data <= $${params.length}`);
+    }
+
+    if (typeof id_loteamento === "number") {
+      params.push(id_loteamento);
+      conditions.push(`lot.id_loteamento = $${params.length}`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const query = `
       SELECT
@@ -39,16 +99,12 @@ relatoriosRouter.get(
       JOIN vendas v ON v.id_venda = p.id_venda
       JOIN lotes l ON l.id_lote = v.id_lote
       JOIN loteamentos lot ON lot.id_loteamento = l.id_loteamento
-      WHERE
-        p.situacao = 'pago'
-        AND p.pago_data IS NOT NULL
-        AND EXTRACT(YEAR FROM p.pago_data) = $1
-        AND p.id_empresa = $2
+      ${whereClause}
       GROUP BY lot.id_loteamento, lot.nome, mes
       ORDER BY lot.nome, mes
     `;
 
-    const rows = await AppDataSource.query(query, [ano, idEmpresa]);
+    const rows = await AppDataSource.query(query, params);
 
     type EntradasRow = {
       id_loteamento: number;
@@ -64,6 +120,14 @@ relatoriosRouter.get(
       fev: number;
       mar: number;
       abr: number;
+      mai: number;
+      jun: number;
+      jul: number;
+      ago: number;
+      set: number;
+      out: number;
+      nov: number;
+      dez: number;
       total: number;
     };
 
@@ -84,6 +148,14 @@ relatoriosRouter.get(
           fev: 0,
           mar: 0,
           abr: 0,
+          mai: 0,
+          jun: 0,
+          jul: 0,
+          ago: 0,
+          set: 0,
+          out: 0,
+          nov: 0,
+          dez: 0,
           total: 0,
         };
       }
@@ -92,6 +164,14 @@ relatoriosRouter.get(
       if (mes === 2) byLoteamento[id].fev += total;
       if (mes === 3) byLoteamento[id].mar += total;
       if (mes === 4) byLoteamento[id].abr += total;
+       if (mes === 5) byLoteamento[id].mai += total;
+       if (mes === 6) byLoteamento[id].jun += total;
+       if (mes === 7) byLoteamento[id].jul += total;
+       if (mes === 8) byLoteamento[id].ago += total;
+       if (mes === 9) byLoteamento[id].set += total;
+       if (mes === 10) byLoteamento[id].out += total;
+       if (mes === 11) byLoteamento[id].nov += total;
+       if (mes === 12) byLoteamento[id].dez += total;
       byLoteamento[id].total += total;
     }
 
@@ -104,14 +184,260 @@ relatoriosRouter.get(
 );
 
 relatoriosRouter.get(
-  "/titulos-em-atraso",
+  "/entradas-por-conta",
   requireAuth,
   async (req: AuthRequest, res: Response) => {
+    const parseResult = entradasContaQuerySchema.safeParse(req.query);
+
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+
+    const { from, to, id_conta } = parseResult.data;
     const idEmpresa = req.user?.id_empresa;
 
     if (!idEmpresa) {
       return res.status(400).json({ error: "Empresa não definida para o usuário" });
     }
+
+    const params: unknown[] = [idEmpresa];
+
+    const conditions: string[] = [
+      "p.situacao = 'pago'",
+      "p.pago_data IS NOT NULL",
+      "p.id_empresa = $1",
+      "c.id_empresa = $1",
+      "p.id_conta IS NOT NULL",
+    ];
+
+    if (from) {
+      params.push(from);
+      conditions.push(`p.pago_data >= $${params.length}`);
+    }
+
+    if (to) {
+      params.push(to);
+      conditions.push(`p.pago_data <= $${params.length}`);
+    }
+
+    if (typeof id_conta === "number") {
+      params.push(id_conta);
+      conditions.push(`p.id_conta = $${params.length}`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    const query = `
+      SELECT
+        c.id_conta,
+        c.apelido,
+        c.titular,
+        c.agencia,
+        c.conta,
+        COUNT(*) AS qtd_pagamentos,
+        SUM(COALESCE(p.valor_pago, p.valor)) AS total
+      FROM pagamentos p
+      JOIN contas c ON c.id_conta = p.id_conta
+      ${whereClause}
+      GROUP BY c.id_conta, c.apelido, c.titular, c.agencia, c.conta
+      ORDER BY c.apelido ASC
+    `;
+
+    const rows = await AppDataSource.query(query, params);
+
+    type EntradasContaRow = {
+      id_conta: number | string;
+      apelido: string;
+      titular: string;
+      agencia: string;
+      conta: string;
+      qtd_pagamentos: number | string;
+      total: number | string | null;
+    };
+
+    const resultado = (rows as EntradasContaRow[]).map((row) => ({
+      id_conta: Number(row.id_conta),
+      apelido: row.apelido,
+      titular: row.titular,
+      agencia: row.agencia,
+      conta: row.conta,
+      qtdPagamentos: Number(row.qtd_pagamentos ?? 0),
+      total: Number(row.total ?? 0),
+    }));
+
+    return res.json(resultado);
+  },
+);
+
+relatoriosRouter.get(
+  "/juros-recebidos",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = jurosRecebidosQuerySchema.safeParse(req.query);
+
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+
+    const { ano, id_conta } = parseResult.data;
+    const idEmpresa = req.user?.id_empresa;
+
+    if (!idEmpresa) {
+      return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+
+    const query = `
+      SELECT
+        c.id_conta,
+        c.apelido,
+        c.titular,
+        c.agencia,
+        c.conta,
+        EXTRACT(MONTH FROM p.pago_data) AS mes,
+        SUM(COALESCE(p.juros, 0) + COALESCE(p.multa, 0)) AS total
+      FROM pagamentos p
+      JOIN contas c ON c.id_conta = p.id_conta
+      WHERE
+        p.situacao = 'pago'
+        AND p.pago_data IS NOT NULL
+        AND p.id_empresa = $1
+        AND p.id_conta = $2
+        AND EXTRACT(YEAR FROM p.pago_data) = $3::int
+      GROUP BY
+        c.id_conta,
+        c.apelido,
+        c.titular,
+        c.agencia,
+        c.conta,
+        mes
+      ORDER BY mes
+    `;
+
+    const rows = await AppDataSource.query(query, [idEmpresa, id_conta, ano]);
+
+    type JurosRow = {
+      id_conta: number | string;
+      apelido: string;
+      titular: string;
+      agencia: string;
+      conta: string;
+      mes: number | string;
+      total: number | string | null;
+    };
+
+    if (!rows || rows.length === 0) {
+      return res.json({
+        id_conta,
+        titular: "",
+        agencia: "",
+        conta: "",
+        meses: [],
+        totalGeral: 0,
+      });
+    }
+
+    let totalGeral = 0;
+
+    const meses = (rows as JurosRow[]).map((row) => {
+      const total = Number(row.total ?? 0);
+      totalGeral += total;
+
+      return {
+        mes: Number(row.mes),
+        total,
+      };
+    });
+
+    const first = rows[0] as JurosRow;
+
+    return res.json({
+      id_conta: Number(first.id_conta),
+      titular: first.titular,
+      agencia: first.agencia,
+      conta: first.conta,
+      meses,
+      totalGeral,
+    });
+  },
+);
+
+const atrasosQuerySchema = z.object({
+  from: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida")
+    .optional(),
+  to: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida")
+    .optional(),
+  dias_atraso: z
+    .string()
+    .regex(/^\d+$/, "Dias de atraso inválidos")
+    .transform((value) => parseInt(value, 10))
+    .optional(),
+  id_loteamento: z
+    .string()
+    .regex(/^\d+$/, "Loteamento inválido")
+    .transform((value) => parseInt(value, 10))
+    .optional(),
+  cliente: z.string().min(1).optional(),
+});
+
+const enderecosCarneQuerySchema = z.object({
+  id_loteamento: z
+    .string()
+    .regex(/^\d+$/, "Loteamento inválido")
+    .transform((value) => parseInt(value, 10))
+    .optional(),
+});
+
+relatoriosRouter.get(
+  "/titulos-em-atraso",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = atrasosQuerySchema.safeParse(req.query);
+
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+
+    const { from, to, dias_atraso, id_loteamento, cliente } = parseResult.data;
+    const idEmpresa = req.user?.id_empresa;
+
+    if (!idEmpresa) {
+      return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+
+    const params: unknown[] = [idEmpresa];
+
+    const conditions: string[] = ["p.situacao = 'aberto'", "p.vencimento < CURRENT_DATE", "p.id_empresa = $1"];
+
+    if (from) {
+      params.push(from);
+      conditions.push(`p.vencimento >= $${params.length}`);
+    }
+
+    if (to) {
+      params.push(to);
+      conditions.push(`p.vencimento <= $${params.length}`);
+    }
+
+    if (typeof dias_atraso === "number") {
+      params.push(dias_atraso);
+      conditions.push(`GREATEST(0, (CURRENT_DATE - p.vencimento)) >= $${params.length}`);
+    }
+
+    if (typeof id_loteamento === "number") {
+      params.push(id_loteamento);
+      conditions.push(`l.id_loteamento = $${params.length}`);
+    }
+
+    if (cliente) {
+      params.push(`%${cliente}%`);
+      conditions.push(`c.nome ILIKE $${params.length}`);
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
     const query = `
       SELECT
@@ -130,14 +456,11 @@ relatoriosRouter.get(
       JOIN vendas v ON v.id_venda = p.id_venda
       JOIN clientes c ON c.id_cliente = v.id_cliente
       JOIN lotes l ON l.id_lote = v.id_lote
-      WHERE
-        p.situacao = 'aberto'
-        AND p.vencimento < CURRENT_DATE
-        AND p.id_empresa = $1
+      ${whereClause}
       ORDER BY p.vencimento ASC
     `;
 
-    const rows = await AppDataSource.query(query, [idEmpresa]);
+    const rows = await AppDataSource.query(query, params);
 
     type AtrasoRow = {
       id_pagamento: number;
@@ -165,6 +488,92 @@ relatoriosRouter.get(
       juros: Number(row.juros),
       diasAtraso: Number(row.dias_atraso),
       total: Number(row.total),
+    }));
+
+    return res.json(resultado);
+  },
+);
+
+relatoriosRouter.get(
+  "/enderecos-carne",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = enderecosCarneQuerySchema.safeParse(req.query);
+
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+
+    const { id_loteamento } = parseResult.data;
+    const idEmpresa = req.user?.id_empresa;
+
+    if (!idEmpresa) {
+      return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+
+    const params: unknown[] = [idEmpresa];
+
+    const conditions: string[] = ["v.id_empresa = $1", "v.status <> 'cancelada'"];
+
+    if (typeof id_loteamento === "number") {
+      params.push(id_loteamento);
+      conditions.push(`lot.id_loteamento = $${params.length}`);
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const query = `
+      SELECT
+        c.id_cliente,
+        c.nome,
+        COALESCE(c.fone_res, c.fone_com) AS telefone,
+        c.endereco,
+        c.bairro,
+        c.cidade,
+        c.estado,
+        c.cep,
+        c.complemento,
+        l.quadra,
+        l.lote,
+        lot.nome AS loteamento
+      FROM vendas v
+      JOIN clientes c ON c.id_cliente = v.id_cliente
+      JOIN lotes l ON l.id_lote = v.id_lote
+      JOIN loteamentos lot ON lot.id_loteamento = l.id_loteamento
+      ${whereClause}
+      ORDER BY c.nome ASC, l.quadra ASC, l.lote ASC
+    `;
+
+    const rows = await AppDataSource.query(query, params);
+
+    type EnderecoRow = {
+      id_cliente: number | string;
+      nome: string;
+      telefone: string | null;
+      endereco: string | null;
+      bairro: string | null;
+      cidade: string | null;
+      estado: string | null;
+      cep: string | null;
+      complemento: string | null;
+      quadra: string | number | null;
+      lote: string | number | null;
+      loteamento: string;
+    };
+
+    const resultado = (rows as EnderecoRow[]).map((row) => ({
+      id_cliente: Number(row.id_cliente),
+      nome: row.nome,
+      telefone: row.telefone ?? "",
+      endereco: row.endereco ?? "",
+      bairro: row.bairro ?? "",
+      cidade: row.cidade ?? "",
+      estado: row.estado ?? "",
+      cep: row.cep ?? "",
+      complemento: row.complemento ?? "",
+      quadra: row.quadra !== null ? String(row.quadra) : "",
+      lote: row.lote !== null ? String(row.lote) : "",
+      loteamento: row.loteamento,
     }));
 
     return res.json(resultado);

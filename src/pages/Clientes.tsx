@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -74,6 +74,7 @@ function getAuthHeaders() {
 const Clientes = () => {
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState<"all" | "f" | "j">("all");
+  const [page, setPage] = useState(1);
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [modo, setModo] = useState<"create" | "edit" | "view">("create");
   const [dialogAberto, setDialogAberto] = useState(false);
@@ -103,11 +104,15 @@ const Clientes = () => {
     },
   });
 
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterTipo]);
+
   const { data, isLoading, isError } = useQuery<ListaClientesResponse>({
-    queryKey: ["clientes", { search, filterTipo }],
+    queryKey: ["clientes", { search, filterTipo, page }],
     queryFn: async () => {
       const params = new URLSearchParams();
-      params.set("page", "1");
+      params.set("page", String(page));
       params.set("limit", "50");
       if (search) params.set("search", search);
       if (filterTipo !== "all") params.set("tipo", filterTipo);
@@ -127,6 +132,12 @@ const Clientes = () => {
   });
 
   const clientes = data?.data ?? [];
+  const totalPages = data?.totalPages ?? 1;
+
+  const handleChangePage = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setPage(newPage);
+  };
 
   const criarClienteMutation = useMutation({
     mutationFn: async (values: ClienteFormValues) => {
@@ -428,6 +439,31 @@ const Clientes = () => {
               </tbody>
             </table>
           </div>
+          {!isLoading && !isError && totalPages > 1 && (
+            <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs text-muted-foreground">
+              <span>
+                Página {page} de {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => handleChangePage(page - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= totalPages}
+                  onClick={() => handleChangePage(page + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
+            </div>
+          )}
           {!isLoading && !isError && clientes.length === 0 && (
             <div className="p-12 text-center text-sm text-muted-foreground">
               Nenhum cliente encontrado

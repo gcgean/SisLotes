@@ -21,20 +21,73 @@ const createVendaSchema = z.object({
 });
 
 vendasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
-  const repo = AppDataSource.getRepository(Venda);
+  const idEmpresa = req.user?.id_empresa;
 
-  const where: Record<string, unknown> = {};
-
-  if (req.user?.id_empresa) {
-    where.id_empresa = req.user.id_empresa;
+  if (!idEmpresa) {
+    return res.status(400).json({ error: "Empresa não definida para o usuário" });
   }
 
-  const vendas = await repo.find({
-    where,
-    order: { data_venda: "DESC" },
-  });
+  const query = `
+    SELECT
+      v.id_venda,
+      c.nome AS cliente,
+      CONCAT('Quadra ', l.quadra, ' - Lote ', l.lote) AS lote,
+      lot.nome AS loteamento,
+      TO_CHAR(v.data_venda, 'DD/MM/YYYY') AS data_venda,
+      v.valor_entrada,
+      v.parcelas,
+      v.porcentagem,
+      v.status,
+      v.valor_entrada + COALESCE(SUM(p.valor), 0) AS valor_total
+    FROM vendas v
+    JOIN clientes c ON c.id_cliente = v.id_cliente
+    JOIN lotes l ON l.id_lote = v.id_lote
+    JOIN loteamentos lot ON lot.id_loteamento = l.id_loteamento
+    LEFT JOIN pagamentos p ON p.id_venda = v.id_venda
+    WHERE v.id_empresa = $1
+    GROUP BY
+      v.id_venda,
+      c.nome,
+      l.quadra,
+      l.lote,
+      lot.nome,
+      v.data_venda,
+      v.valor_entrada,
+      v.parcelas,
+      v.porcentagem,
+      v.status
+    ORDER BY v.data_venda DESC, v.id_venda DESC
+  `;
 
-  return res.json(vendas);
+  const rows = await AppDataSource.query(query, [idEmpresa]);
+
+  type VendaRow = {
+    id_venda: number | string;
+    cliente: string;
+    lote: string;
+    loteamento: string;
+    data_venda: string;
+    valor_entrada: string | number;
+    parcelas: number | string;
+    porcentagem: string | number;
+    status: string;
+    valor_total: string | number | null;
+  };
+
+  const resultado = (rows as VendaRow[]).map((row) => ({
+    id_venda: Number(row.id_venda),
+    cliente: row.cliente,
+    lote: row.lote,
+    loteamento: row.loteamento,
+    data_venda: row.data_venda,
+    valor_entrada: Number(row.valor_entrada ?? 0),
+    parcelas: Number(row.parcelas ?? 0),
+    porcentagem: Number(row.porcentagem ?? 0),
+    status: row.status,
+    valor_total: Number(row.valor_total ?? 0),
+  }));
+
+  return res.json(resultado);
 });
 
 vendasRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {

@@ -64,6 +64,8 @@ const Lotes = () => {
   const [search, setSearch] = useState("");
   const [filterLoteamento, setFilterLoteamento] = useState("all");
   const [filterStatus, setFilterStatus] = useState<"all" | "disponivel" | "vendido">("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [dialogAberto, setDialogAberto] = useState(false);
   const queryClient = useQueryClient();
 
@@ -244,6 +246,15 @@ const Lotes = () => {
   const totalDisponivel = lotes.filter((l) => l.status === "disponivel").length;
   const totalVendido = lotes.filter((l) => l.status === "vendido").length;
 
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const handleChangePage = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setPage(newPage);
+  };
+
   function abrirNovoLote() {
     form.reset({
       id_loteamento: filterLoteamento !== "all" ? filterLoteamento : "",
@@ -333,7 +344,7 @@ const Lotes = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((lote) => {
+                {paginated.map((lote) => {
                   const nomeLoteamento = loteamentosMap.get(lote.id_loteamento)?.nome ?? "-";
 
                   return (
@@ -374,6 +385,31 @@ const Lotes = () => {
           {filtered.length === 0 && (
             <div className="p-12 text-center text-sm text-muted-foreground">
               Nenhum lote encontrado
+            </div>
+          )}
+          {filtered.length > 0 && (
+            <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs text-muted-foreground">
+              <span>
+                Página {currentPage} de {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => handleChangePage(currentPage - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => handleChangePage(currentPage + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
             </div>
           )}
         </div>

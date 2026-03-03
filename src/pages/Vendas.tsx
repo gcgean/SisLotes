@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,21 +8,32 @@ import { Search, Plus, Eye, Edit, Trash2 } from "lucide-react";
 
 type VendaStatus = "aberta" | "quitada" | "cancelada";
 
-const mockVendas = [
-  { id: 1, cliente: "João Silva", lote: "Quadra A - Lote 02", loteamento: "Residencial Primavera", data_venda: "15/01/2026", valor_entrada: 8500, parcelas: 24, porcentagem: 1.5, status: "aberta" as VendaStatus, valorTotal: 85000 },
-  { id: 2, cliente: "Construtora ABC", lote: "Quadra B - Lote 01", loteamento: "Jardim das Flores", data_venda: "20/01/2026", valor_entrada: 12000, parcelas: 36, porcentagem: 1.2, status: "aberta" as VendaStatus, valorTotal: 120000 },
-  { id: 3, cliente: "Maria Santos", lote: "Quadra C - Lote 01", loteamento: "Vila Verde", data_venda: "10/12/2025", valor_entrada: 7200, parcelas: 12, porcentagem: 1.0, status: "quitada" as VendaStatus, valorTotal: 72000 },
-  { id: 4, cliente: "Carlos Lima", lote: "Quadra D - Lote 01", loteamento: "Parque do Sol", data_venda: "05/02/2026", valor_entrada: 9500, parcelas: 48, porcentagem: 1.8, status: "aberta" as VendaStatus, valorTotal: 95000 },
-  { id: 5, cliente: "Ana Oliveira", lote: "Quadra A - Lote 03", loteamento: "Residencial Primavera", data_venda: "01/11/2025", valor_entrada: 6800, parcelas: 24, porcentagem: 1.5, status: "cancelada" as VendaStatus, valorTotal: 68000 },
-  { id: 6, cliente: "Pedro Souza", lote: "Quadra D - Lote 02", loteamento: "Parque do Sol", data_venda: "03/02/2026", valor_entrada: 11000, parcelas: 36, porcentagem: 1.3, status: "aberta" as VendaStatus, valorTotal: 110000 },
-  { id: 7, cliente: "Imobiliária XYZ Ltda", lote: "Quadra B - Lote 02", loteamento: "Jardim das Flores", data_venda: "12/01/2026", valor_entrada: 5500, parcelas: 60, porcentagem: 2.0, status: "aberta" as VendaStatus, valorTotal: 55000 },
-];
+interface VendaListItem {
+  id_venda: number;
+  cliente: string;
+  lote: string;
+  loteamento: string;
+  data_venda: string;
+  valor_entrada: number;
+  parcelas: number;
+  porcentagem: number;
+  status: VendaStatus;
+  valor_total: number;
+}
 
 const statusConfig: Record<VendaStatus, { label: string; variant: "default" | "secondary" | "destructive" }> = {
   aberta: { label: "Aberta", variant: "default" },
   quitada: { label: "Quitada", variant: "secondary" },
   cancelada: { label: "Cancelada", variant: "destructive" },
 };
+
+function getAuthHeaders() {
+  const token = window.localStorage.getItem("token");
+  if (!token) return {};
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+}
 
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
@@ -30,7 +42,29 @@ const Vendas = () => {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | VendaStatus>("all");
 
-  const filtered = mockVendas.filter((v) => {
+  const { data: vendas = [], isLoading, isError } = useQuery<VendaListItem[]>({
+    queryKey: ["vendas"],
+    queryFn: async () => {
+      const response = await fetch("/api/vendas", {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar vendas");
+      }
+
+      const data = (await response.json()) as VendaListItem[];
+
+      return data.map((venda) => ({
+        ...venda,
+        status: venda.status as VendaStatus,
+      }));
+    },
+  });
+
+  const filtered = vendas.filter((v) => {
     const matchSearch =
       v.cliente.toLowerCase().includes(search.toLowerCase()) ||
       v.lote.toLowerCase().includes(search.toLowerCase());
@@ -45,7 +79,7 @@ const Vendas = () => {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Vendas</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {mockVendas.length} vendas registradas
+              {isLoading ? "Carregando vendas..." : `${vendas.length} vendas registradas`}
             </p>
           </div>
           <Button size="sm" className="gap-2">
@@ -98,7 +132,7 @@ const Vendas = () => {
               </thead>
               <tbody className="divide-y divide-border">
                 {filtered.map((venda) => (
-                  <tr key={venda.id} className="hover:bg-muted/30 transition-colors">
+                  <tr key={venda.id_venda} className="hover:bg-muted/30 transition-colors">
                     <td className="px-5 py-3 font-medium">{venda.cliente}</td>
                     <td className="px-5 py-3 text-muted-foreground">
                       <div>
@@ -107,8 +141,10 @@ const Vendas = () => {
                       </div>
                     </td>
                     <td className="px-5 py-3 text-muted-foreground">{venda.data_venda}</td>
-                    <td className="px-5 py-3 font-medium">{formatCurrency(venda.valorTotal)}</td>
-                    <td className="px-5 py-3 text-muted-foreground">{formatCurrency(venda.valor_entrada)}</td>
+                    <td className="px-5 py-3 font-medium">{formatCurrency(venda.valor_total)}</td>
+                    <td className="px-5 py-3 text-muted-foreground">
+                      {formatCurrency(venda.valor_entrada)}
+                    </td>
                     <td className="px-5 py-3 text-muted-foreground">{venda.parcelas}x</td>
                     <td className="px-5 py-3 text-muted-foreground">{venda.porcentagem}%</td>
                     <td className="px-5 py-3">
@@ -134,10 +170,11 @@ const Vendas = () => {
               </tbody>
             </table>
           </div>
-          {filtered.length === 0 && (
-            <div className="p-12 text-center text-sm text-muted-foreground">
-              Nenhuma venda encontrada
-            </div>
+          {!isLoading && !isError && filtered.length === 0 && (
+            <div className="p-12 text-center text-sm text-muted-foreground">Nenhuma venda encontrada</div>
+          )}
+          {isError && (
+            <div className="p-12 text-center text-sm text-destructive">Erro ao carregar vendas</div>
           )}
         </div>
       </div>

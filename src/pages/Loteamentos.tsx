@@ -57,6 +57,8 @@ function getAuthHeaders() {
 
 const Loteamentos = () => {
   const [dialogAberto, setDialogAberto] = useState(false);
+  const [page, setPage] = useState(1);
+  const pageSize = 12;
   const queryClient = useQueryClient();
 
   const form = useForm<LoteamentoFormValues>({
@@ -190,7 +192,9 @@ const Loteamentos = () => {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {loteamentos.map((lot, i) => {
+          {loteamentos
+            .slice((page - 1) * pageSize, page * pageSize)
+            .map((lot, i) => {
             return (
               <div
                 key={lot.id_loteamento}
@@ -232,6 +236,31 @@ const Loteamentos = () => {
             );
           })}
         </div>
+        {loteamentos.length > pageSize && (
+          <div className="flex items-center justify-between mt-4 text-xs text-muted-foreground">
+            <span>
+              Página {page} de {Math.max(1, Math.ceil(loteamentos.length / pageSize))}
+            </span>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Anterior
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= Math.ceil(loteamentos.length / pageSize)}
+                onClick={() => setPage((p) => Math.min(Math.ceil(loteamentos.length / pageSize), p + 1))}
+              >
+                Próxima
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>

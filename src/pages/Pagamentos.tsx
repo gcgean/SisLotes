@@ -196,6 +196,8 @@ const Pagamentos = () => {
   const [search, setSearch] = useState("");
   const [filterSituacao, setFilterSituacao] = useState<"all" | PagamentoSituacao>("all");
   const [filterTipo, setFilterTipo] = useState("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
 
   // Baixa manual state
   const [baixaOpen, setBaixaOpen] = useState(false);
@@ -245,6 +247,15 @@ const Pagamentos = () => {
   const totalAberto = pagamentos.filter((p) => p.situacao === "aberto").length;
   const totalAtrasado = pagamentos.filter((p) => p.situacao === "atrasado").length;
   const totalPago = pagamentos.filter((p) => p.situacao === "pago").length;
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  const handleChangePage = (newPage: number) => {
+    if (newPage < 1 || newPage > totalPages) return;
+    setPage(newPage);
+  };
 
   const diasAtrasoSelected = selectedPag ? getDiasAtraso(selectedPag.vencimento) : 0;
   const calcSelected = selectedPag ? calcularJuros(selectedPag.valor, diasAtrasoSelected) : null;
@@ -410,7 +421,7 @@ const Pagamentos = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {filtered.map((pag) => {
+                {paginated.map((pag) => {
                   const config = situacaoConfig[pag.situacao];
                   const Icon = config.icon;
                   return (
@@ -459,6 +470,31 @@ const Pagamentos = () => {
           {filtered.length === 0 && (
             <div className="p-12 text-center text-sm text-muted-foreground">
               Nenhum pagamento encontrado
+            </div>
+          )}
+          {filtered.length > 0 && (
+            <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs text-muted-foreground">
+              <span>
+                Página {currentPage} de {totalPages}
+              </span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage <= 1}
+                  onClick={() => handleChangePage(currentPage - 1)}
+                >
+                  Anterior
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={currentPage >= totalPages}
+                  onClick={() => handleChangePage(currentPage + 1)}
+                >
+                  Próxima
+                </Button>
+              </div>
             </div>
           )}
         </div>
