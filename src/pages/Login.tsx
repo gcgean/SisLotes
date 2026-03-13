@@ -154,10 +154,6 @@ const Login = () => {
           </form>
         </Form>
 
-        <p className="text-xs text-muted-foreground text-center">
-          No ambiente de desenvolvimento, se o usuário não existir será criado automaticamente como
-          master.
-        </p>
       </div>
     </div>
   );

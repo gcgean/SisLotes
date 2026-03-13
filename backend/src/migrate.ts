@@ -1,27 +1,27 @@
 
-import { Client } from 'pg';
-import mysql from 'mysql2/promise';
+import { Client } from "pg";
+import mysql from "mysql2/promise";
 
 async function migrate() {
   console.log('Iniciando migração...');
 
   // Conexão MySQL (Origem)
   const mysqlConn = await mysql.createConnection({
-    host: '185.100.215.16',
-    user: 'root',
-    password: 'SDGdfa45342',
-    database: 'LO',
-    port: 3306
+    host: process.env.MYSQL_MIG_HOST ?? "185.100.215.16",
+    user: process.env.MYSQL_MIG_USER ?? "root",
+    password: process.env.MYSQL_MIG_PASSWORD ?? "SDGdfa45342",
+    database: process.env.MYSQL_MIG_DB ?? "LO",
+    port: Number(process.env.MYSQL_MIG_PORT ?? 3306),
   });
   console.log('Conectado ao MySQL (Origem)!');
 
   // Conexão PostgreSQL (Destino)
   const pgClient = new Client({
-    host: 'localhost',
-    port: 5433,
-    user: 'sislote',
-    password: 'sislote',
-    database: 'sislote'
+    host: process.env.PG_MIG_HOST ?? "localhost",
+    port: Number(process.env.PG_MIG_PORT ?? 5433),
+    user: process.env.PG_MIG_USER ?? "sislote",
+    password: process.env.PG_MIG_PASSWORD ?? "sislote",
+    database: process.env.PG_MIG_DB ?? "sislote",
   });
   await pgClient.connect();
   console.log('Conectado ao PostgreSQL (Destino)!');
