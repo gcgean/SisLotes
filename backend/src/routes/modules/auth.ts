@@ -21,30 +21,14 @@ authRouter.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
     }
 
-    const { login } = parseResult.data;
+    const { login, senha } = parseResult.data;
 
     const usuarioRepo = AppDataSource.getRepository(Usuario);
 
-    let user = await usuarioRepo.findOne({ where: { login } });
+    const user = await usuarioRepo.findOne({ where: { login } });
 
-    if (!user) {
-      user = usuarioRepo.create({
-        login,
-        senha: "admin",
-        user_master: true,
-        id_empresa: 1,
-        clientes_cadastrar: true,
-        clientes_alterar: true,
-        clientes_excluir: true,
-        loteamentos_cadastrar: true,
-        loteamentos_alterar: true,
-        loteamentos_excluir: true,
-        vendas_cadastrar: true,
-        vendas_alterar: true,
-        vendas_excluir: true,
-      });
-
-      user = await usuarioRepo.save(user);
+    if (!user || !user.senha || user.senha !== senha) {
+      return res.status(401).json({ error: "Usuário ou senha inválidos" });
     }
 
     const empresaRepo = AppDataSource.getRepository(Empresa);
