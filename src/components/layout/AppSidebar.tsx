@@ -21,6 +21,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarHeader,
+  useSidebar,
 } from "@/components/ui/sidebar";
 
 const mainItems = [
@@ -39,6 +40,7 @@ const secondaryItems = [
 
 export function AppSidebar() {
   const location = useLocation();
+  const { setOpenMobile } = useSidebar();
 
   return (
     <Sidebar className="border-r border-sidebar-border">
@@ -69,6 +71,7 @@ export function AppSidebar() {
                       end={item.url === "/"}
                       className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors"
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                      onClick={() => setOpenMobile(false)}
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
                       <span>{item.title}</span>
@@ -93,6 +96,7 @@ export function AppSidebar() {
                       to={item.url}
                       className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors"
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                      onClick={() => setOpenMobile(false)}
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
                       <span>{item.title}</span>

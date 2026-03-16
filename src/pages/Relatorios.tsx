@@ -559,11 +559,11 @@ const Relatorios = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Button variant="outline" size="sm" onClick={() => setSelectedReport(null)}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <Button variant="outline" size="sm" onClick={() => setSelectedReport(null)} className="w-fit">
                 ← Voltar
               </Button>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 {(selectedReport === "entradas" ||
                   selectedReport === "enderecos" ||
                   selectedReport === "atraso") && (
@@ -596,7 +596,7 @@ const Relatorios = () => {
                   </Select>
                 )}
                 {selectedReport !== "juros" && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Input
                       className="w-[120px]"
                       value={dataIniInput}
