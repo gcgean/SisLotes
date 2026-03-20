@@ -87,6 +87,38 @@ authRouter.post("/logout", (_req, res) => {
   return res.status(200).json({ message: "Logout efetuado" });
 });
 
+authRouter.post("/esqueci-senha", async (req, res) => {
+  try {
+    const { login } = req.body as { login?: string };
+
+    if (!login || typeof login !== "string" || !login.trim()) {
+      return res.status(400).json({ error: "Login é obrigatório" });
+    }
+
+    const usuarioRepo = AppDataSource.getRepository(Usuario);
+    const user = await usuarioRepo.findOne({ where: { login: login.trim() } });
+
+    if (!user) {
+      return res.status(404).json({ error: "Usuário não encontrado" });
+    }
+
+    // Gera senha temporária de 8 caracteres alfanuméricos
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let senhaTmp = "";
+    for (let i = 0; i < 8; i++) {
+      senhaTmp += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    user.senha = senhaTmp;
+    await usuarioRepo.save(user);
+
+    return res.json({ senha_temporaria: senhaTmp });
+  } catch (error) {
+    console.error("Erro ao recuperar senha:", error);
+    return res.status(500).json({ error: "Erro ao processar recuperação de senha" });
+  }
+});
+
 authRouter.get("/me", requireAuth, (req: AuthRequest, res) => {
   const user = req.user;
 

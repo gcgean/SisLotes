@@ -31,6 +31,8 @@ interface DashboardKpis {
   totalClientes: number;
   vendasAtivas: number;
   recebidoMes: number;
+  totalLoteamentos?: number;
+  pagamentosMes?: number;
 }
 
 interface DashboardVendaRecente {
@@ -136,7 +138,7 @@ const Dashboard = () => {
     },
     {
       title: "Loteamentos",
-      value: "—",
+      value: kpisData?.totalLoteamentos != null ? String(kpisData.totalLoteamentos) : "—",
       subtitle: "",
       icon: MapPin,
       color: "text-primary" as const,
@@ -165,7 +167,7 @@ const Dashboard = () => {
     },
     {
       title: "Pagamentos (mês)",
-      value: "—",
+      value: kpisData?.pagamentosMes != null ? String(kpisData.pagamentosMes) : "—",
       change: "",
       icon: CreditCard,
       color: "text-info" as const,

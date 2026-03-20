@@ -3,6 +3,8 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Loteamento } from "../../entities/Loteamento";
 import { Lote } from "../../entities/Lote";
+import { Venda } from "../../entities/Venda";
+import { Cliente } from "../../entities/Cliente";
 import { AuthRequest, requireAuth, requirePermission } from "../../middleware/auth";
 
 export const loteamentosRouter = Router();
@@ -74,21 +76,72 @@ loteamentosRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
 
 loteamentosRouter.get("/:id/lotes", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;
+  const idEmpresa = req.user?.id_empresa;
 
   const loteRepo = AppDataSource.getRepository(Lote);
+  const vendaRepo = AppDataSource.getRepository(Venda);
+  const clienteRepo = AppDataSource.getRepository(Cliente);
 
-  const where: Record<string, unknown> = { id_loteamento: Number(id) };
-
-  if (req.user?.id_empresa) {
-    where.id_empresa = req.user.id_empresa;
-  }
+  const whereLote: Record<string, unknown> = { id_loteamento: Number(id) };
+  if (idEmpresa) whereLote.id_empresa = idEmpresa;
 
   const lotes = await loteRepo.find({
-    where,
+    where: whereLote,
     order: { quadra: "ASC", lote: "ASC" },
   });
 
-  return res.json(lotes);
+  // Busca vendas ativas dos lotes deste loteamento
+  const idLotes = lotes.map((l) => l.id_lote);
+
+  let vendasMap = new Map<number, { id_cliente: number; status: string }>();
+
+  if (idLotes.length > 0) {
+    const whereVenda: Record<string, unknown> = {};
+    if (idEmpresa) whereVenda.id_empresa = idEmpresa;
+
+    const vendas = await vendaRepo
+      .createQueryBuilder("v")
+      .where("v.id_lote IN (:...ids)", { ids: idLotes })
+      .andWhere(idEmpresa ? "v.id_empresa = :emp" : "1=1", { emp: idEmpresa })
+      .andWhere("v.status != :cancelada", { cancelada: "cancelada" })
+      .getMany();
+
+    for (const v of vendas) {
+      vendasMap.set(v.id_lote, { id_cliente: v.id_cliente, status: v.status });
+    }
+  }
+
+  // Busca clientes referenciados
+  const idClientes = [...new Set([...vendasMap.values()].map((v) => v.id_cliente))];
+  let clientesMap = new Map<number, string>();
+
+  if (idClientes.length > 0) {
+    const clientes = await clienteRepo
+      .createQueryBuilder("c")
+      .where("c.id_cliente IN (:...ids)", { ids: idClientes })
+      .getMany();
+
+    for (const c of clientes) {
+      clientesMap.set(c.id_cliente, c.nome);
+    }
+  }
+
+  const result = lotes.map((lote) => {
+    const venda = vendasMap.get(lote.id_lote);
+    return {
+      id_lote: lote.id_lote,
+      lote: lote.lote,
+      quadra: lote.quadra,
+      area: lote.area ?? null,
+      frente: lote.frente ?? null,
+      fundo: lote.fundo ?? null,
+      status: venda ? "vendido" : "disponivel",
+      cliente: venda ? (clientesMap.get(venda.id_cliente) ?? null) : null,
+      status_venda: venda?.status ?? null,
+    };
+  });
+
+  return res.json(result);
 });
 
 loteamentosRouter.post("/", requireAuth, requirePermission("loteamentos_cadastrar"), async (req: AuthRequest, res) => {

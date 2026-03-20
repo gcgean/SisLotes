@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { ThemeProvider } from "next-themes";
 import Dashboard from "./pages/Dashboard";
 import Clientes from "./pages/Clientes";
 import Loteamentos from "./pages/Loteamentos";
@@ -28,6 +29,7 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 }
 
 const App = () => (
+  <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} storageKey="sislote-theme">
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
@@ -106,6 +108,7 @@ const App = () => (
       </AuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
+  </ThemeProvider>
 );
 
 export default App;

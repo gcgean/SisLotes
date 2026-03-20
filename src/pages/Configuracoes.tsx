@@ -19,6 +19,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "@/hooks/use-toast";
 
@@ -118,6 +128,8 @@ const Configuracoes = () => {
   const [dialogContaAberto, setDialogContaAberto] = useState(false);
   const [contaSelecionada, setContaSelecionada] = useState<Conta | null>(null);
   const [modoConta, setModoConta] = useState<"create" | "edit">("create");
+  const [confirmarExclusaoUsuario, setConfirmarExclusaoUsuario] = useState<Usuario | null>(null);
+  const [confirmarExclusaoConta, setConfirmarExclusaoConta] = useState<Conta | null>(null);
 
   const queryClient = useQueryClient();
 
@@ -455,9 +467,7 @@ const Configuracoes = () => {
   }
 
   function excluirUsuario(usuario: Usuario) {
-    const confirmado = window.confirm(`Deseja realmente excluir o usuário "${usuario.login}"?`);
-    if (!confirmado) return;
-    excluirUsuarioMutation.mutate(usuario.id_usuario);
+    setConfirmarExclusaoUsuario(usuario);
   }
 
   function alterarPermissaoInline(
@@ -542,9 +552,7 @@ const Configuracoes = () => {
   }
 
   function excluirConta(conta: Conta) {
-    const confirmado = window.confirm(`Deseja realmente excluir a conta "${conta.apelido}"?`);
-    if (!confirmado) return;
-    excluirContaMutation.mutate(conta.id_conta);
+    setConfirmarExclusaoConta(conta);
   }
 
   function onSubmitConta(values: ContaFormValues) {
@@ -1083,6 +1091,62 @@ const Configuracoes = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* AlertDialog - Excluir Usuário */}
+      <AlertDialog open={!!confirmarExclusaoUsuario} onOpenChange={(open) => { if (!open) setConfirmarExclusaoUsuario(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deseja realmente excluir o usuário{" "}
+              <span className="font-semibold">"{confirmarExclusaoUsuario?.login}"</span>
+              ? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => {
+                if (confirmarExclusaoUsuario) {
+                  excluirUsuarioMutation.mutate(confirmarExclusaoUsuario.id_usuario);
+                  setConfirmarExclusaoUsuario(null);
+                }
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog - Excluir Conta */}
+      <AlertDialog open={!!confirmarExclusaoConta} onOpenChange={(open) => { if (!open) setConfirmarExclusaoConta(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+            <AlertDialogDescription>
+              Deseja realmente excluir a conta{" "}
+              <span className="font-semibold">"{confirmarExclusaoConta?.apelido}"</span>
+              ? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => {
+                if (confirmarExclusaoConta) {
+                  excluirContaMutation.mutate(confirmarExclusaoConta.id_conta);
+                  setConfirmarExclusaoConta(null);
+                }
+              }}
+            >
+              Excluir
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 };

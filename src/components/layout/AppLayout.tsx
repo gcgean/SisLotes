@@ -1,10 +1,11 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Menu, LogOut } from "lucide-react";
+import { Menu, LogOut, Sun, Moon } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "next-themes";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -13,10 +14,20 @@ interface AppLayoutProps {
 export function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   function handleLogout() {
     logout();
     navigate("/login", { replace: true });
+  }
+
+  function toggleTheme() {
+    setTheme(theme === "dark" ? "light" : "dark");
   }
 
   return (
@@ -29,13 +40,29 @@ export function AppLayout({ children }: AppLayoutProps) {
               <Menu className="h-5 w-5" />
             </SidebarTrigger>
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-muted-foreground">SISLOTE</span>
+              <span className="text-sm font-semibold text-foreground">SISLOTE</span>
             </div>
-            <div className="ml-auto flex items-center gap-3">
+            <div className="ml-auto flex items-center gap-2">
               {user && (
-                <span className="text-xs text-muted-foreground">Logado como {user.login}</span>
+                <span className="text-xs text-muted-foreground hidden sm:block">
+                  Logado como <span className="font-medium text-foreground">{user.login}</span>
+                </span>
               )}
-              <Button variant="ghost" size="icon" onClick={handleLogout}>
+              {mounted && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleTheme}
+                  title={theme === "dark" ? "Mudar para modo claro" : "Mudar para modo escuro"}
+                >
+                  {theme === "dark" ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                </Button>
+              )}
+              <Button variant="ghost" size="icon" onClick={handleLogout} title="Sair">
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>

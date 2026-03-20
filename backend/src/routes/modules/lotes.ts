@@ -3,6 +3,8 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Lote } from "../../entities/Lote";
 import { Venda } from "../../entities/Venda";
+import { Cliente } from "../../entities/Cliente";
+import { Loteamento } from "../../entities/Loteamento";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
 
 export const lotesRouter = Router();
@@ -98,6 +100,92 @@ lotesRouter.get("/:id/status", requireAuth, async (req: AuthRequest, res) => {
   return res.json({
     id_lote: Number(id),
     status,
+  });
+});
+
+lotesRouter.get("/:id/cliente", requireAuth, async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const idEmpresa = req.user?.id_empresa;
+
+  const loteRepo = AppDataSource.getRepository(Lote);
+  const vendaRepo = AppDataSource.getRepository(Venda);
+  const clienteRepo = AppDataSource.getRepository(Cliente);
+  const loteamentoRepo = AppDataSource.getRepository(Loteamento);
+
+  const whereLote: Record<string, unknown> = { id_lote: Number(id) };
+  if (idEmpresa) whereLote.id_empresa = idEmpresa;
+
+  const lote = await loteRepo.findOne({ where: whereLote });
+  if (!lote) {
+    return res.status(404).json({ error: "Lote não encontrado" });
+  }
+
+  const loteamento = await loteamentoRepo.findOne({ where: { id_loteamento: lote.id_loteamento } });
+
+  const whereVenda: Record<string, unknown> = { id_lote: Number(id) };
+  if (idEmpresa) whereVenda.id_empresa = idEmpresa;
+
+  const venda = await vendaRepo.findOne({ where: whereVenda });
+
+  if (!venda || venda.status === "cancelada") {
+    return res.json({
+      lote: {
+        id_lote: lote.id_lote,
+        lote: lote.lote,
+        quadra: lote.quadra,
+        area: lote.area ?? null,
+        frente: lote.frente ?? null,
+        fundo: lote.fundo ?? null,
+        esquerdo: lote.esquerdo ?? null,
+        direito: lote.direito ?? null,
+        loteamento: loteamento?.nome ?? null,
+        cidade: loteamento?.cidade ?? null,
+        estado: loteamento?.estado ?? null,
+      },
+      status: "disponivel",
+      venda: null,
+      cliente: null,
+    });
+  }
+
+  const cliente = await clienteRepo.findOne({ where: { id_cliente: venda.id_cliente } });
+
+  return res.json({
+    lote: {
+      id_lote: lote.id_lote,
+      lote: lote.lote,
+      quadra: lote.quadra,
+      area: lote.area ?? null,
+      frente: lote.frente ?? null,
+      fundo: lote.fundo ?? null,
+      esquerdo: lote.esquerdo ?? null,
+      direito: lote.direito ?? null,
+      loteamento: loteamento?.nome ?? null,
+      cidade: loteamento?.cidade ?? null,
+      estado: loteamento?.estado ?? null,
+    },
+    status: "vendido",
+    venda: {
+      id_venda: venda.id_venda,
+      data_venda: venda.data_venda,
+      valor_entrada: Number(venda.valor_entrada ?? 0),
+      parcelas: venda.parcelas,
+      porcentagem: Number(venda.porcentagem ?? 0),
+      status: venda.status,
+    },
+    cliente: cliente
+      ? {
+          id_cliente: cliente.id_cliente,
+          nome: cliente.nome,
+          cpf: cliente.cpf ?? null,
+          cnpj: cliente.cnpj ?? null,
+          tipo: cliente.tipo,
+          fone_res: cliente.fone_res ?? null,
+          fone_com: cliente.fone_com ?? null,
+          cidade: cliente.cidade ?? null,
+          estado: cliente.estado ?? null,
+        }
+      : null,
   });
 });
 

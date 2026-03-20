@@ -10,6 +10,7 @@ import { usuariosRouter } from "./modules/usuarios";
 import { logsRouter } from "./modules/logs";
 import { empresasRouter } from "./modules/empresas";
 import { relatoriosRouter } from "./modules/relatorios";
+import { contratosRouter } from "./modules/contratos";
 
 export const router = Router();
 
@@ -24,3 +25,4 @@ router.use("/usuarios", usuariosRouter);
 router.use("/logs", logsRouter);
 router.use("/empresas", empresasRouter);
 router.use("/relatorios", relatoriosRouter);
+router.use("/contratos", contratosRouter);
