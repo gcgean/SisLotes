@@ -381,6 +381,11 @@ const atrasosQuerySchema = z.object({
     .transform((value) => parseInt(value, 10))
     .optional(),
   cliente: z.string().min(1).optional(),
+  limit: z
+    .string()
+    .regex(/^\d+$/, "Limite inválido")
+    .transform((value) => parseInt(value, 10))
+    .optional(),
 });
 
 const enderecosCarneQuerySchema = z.object({
@@ -401,7 +406,7 @@ relatoriosRouter.get(
       return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
     }
 
-    const { from, to, dias_atraso, id_loteamento, cliente } = parseResult.data;
+    const { from, to, dias_atraso, id_loteamento, cliente, limit } = parseResult.data;
     const idEmpresa = req.user?.id_empresa;
 
     if (!idEmpresa) {
@@ -439,7 +444,7 @@ relatoriosRouter.get(
 
     const whereClause = `WHERE ${conditions.join(" AND ")}`;
 
-    const query = `
+    let query = `
       SELECT
         p.id_pagamento,
         c.nome AS cliente,
@@ -459,6 +464,11 @@ relatoriosRouter.get(
       ${whereClause}
       ORDER BY p.vencimento ASC
     `;
+
+    if (typeof limit === "number") {
+      params.push(limit);
+      query += ` LIMIT $${params.length}`;
+    }
 
     const rows = await AppDataSource.query(query, params);
 
@@ -602,7 +612,21 @@ relatoriosRouter.get(
             AND p.situacao = 'pago'
             AND p.pago_data >= date_trunc('month', CURRENT_DATE)
             AND p.pago_data < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')
-        ) AS recebido_mes
+        ) AS recebido_mes,
+        (
+          SELECT COUNT(*)
+          FROM pagamentos p
+          WHERE p.id_empresa = $1
+            AND p.situacao = 'aberto'
+            AND p.vencimento < CURRENT_DATE
+        ) AS titulos_atraso_qtd,
+        (
+          SELECT COALESCE(SUM(p.valor + COALESCE(p.multa, 0) + COALESCE(p.juros, 0)), 0)
+          FROM pagamentos p
+          WHERE p.id_empresa = $1
+            AND p.situacao = 'aberto'
+            AND p.vencimento < CURRENT_DATE
+        ) AS titulos_atraso_valor
     `;
 
     const rows = await AppDataSource.query(query, [idEmpresa]);
@@ -612,6 +636,8 @@ relatoriosRouter.get(
         totalClientes: 0,
         vendasAtivas: 0,
         recebidoMes: 0,
+        titulosAtrasoQtd: 0,
+        titulosAtrasoValor: 0,
       });
     }
 
@@ -619,6 +645,8 @@ relatoriosRouter.get(
       total_clientes: string | number;
       vendas_ativas: string | number;
       recebido_mes: string | number | null;
+      titulos_atraso_qtd: string | number | null;
+      titulos_atraso_valor: string | number | null;
     };
 
     const row = rows[0] as DashboardRow;
@@ -627,6 +655,8 @@ relatoriosRouter.get(
       totalClientes: Number(row.total_clientes ?? 0),
       vendasAtivas: Number(row.vendas_ativas ?? 0),
       recebidoMes: Number(row.recebido_mes ?? 0),
+      titulosAtrasoQtd: Number(row.titulos_atraso_qtd ?? 0),
+      titulosAtrasoValor: Number(row.titulos_atraso_valor ?? 0),
     });
   },
 );

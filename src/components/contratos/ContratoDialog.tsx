@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -151,10 +151,40 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
     },
   });
 
+  const [acaoAutomatica, setAcaoAutomatica] = useState<
+    null | "recibo" | "minuta" | "minuta-sem-timbrado" | "termo-transferencia"
+  >(null);
+
   function handleSelecionarVenda(venda: VendaResumo) {
     setVendaSelecionada(venda);
     setEtapa("formulario");
   }
+
+  useEffect(() => {
+    const handleAbrirRecibo = () => setAcaoAutomatica("recibo");
+    const handleAbrirMinuta = () => setAcaoAutomatica("minuta");
+    const handleAbrirMinutaSemTimbrado = () => setAcaoAutomatica("minuta-sem-timbrado");
+    const handleAbrirTermoTransferencia = () => setAcaoAutomatica("termo-transferencia");
+
+    window.addEventListener("abrir-recibo-quitacao", handleAbrirRecibo);
+    window.addEventListener("abrir-minuta", handleAbrirMinuta);
+    window.addEventListener("abrir-minuta-sem-timbrado", handleAbrirMinutaSemTimbrado);
+    window.addEventListener("abrir-termo-transferencia", handleAbrirTermoTransferencia);
+
+    return () => {
+      window.removeEventListener("abrir-recibo-quitacao", handleAbrirRecibo);
+      window.removeEventListener("abrir-minuta", handleAbrirMinuta);
+      window.removeEventListener("abrir-minuta-sem-timbrado", handleAbrirMinutaSemTimbrado);
+      window.removeEventListener("abrir-termo-transferencia", handleAbrirTermoTransferencia);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!acaoAutomatica) return;
+    if (!vendas || vendas.length === 0) return;
+    setVendaSelecionada(vendas[0]);
+    setEtapa("formulario");
+  }, [acaoAutomatica, vendas]);
 
   function handleVoltar() {
     setEtapa("selecionar");
@@ -165,6 +195,528 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
     setEtapa("selecionar");
     setVendaSelecionada(null);
     onClose();
+  }
+
+  function gerarReciboQuitacao() {
+    if (!contratoData) return;
+    const { venda, cliente, lote, loteamento, empresa } = contratoData;
+
+    const titulo = "RECIBO DE QUITAÇÃO";
+    const vendedor = loteamento?.prop_nome ?? empresa?.nome_fantasia ?? "—";
+    
+    // Obter mês por extenso
+    const dataAtual = new Date();
+    const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    const mesExtenso = meses[dataAtual.getMonth()];
+    const dataFormatada = `${dataAtual.getDate()} de ${mesExtenso} de ${dataAtual.getFullYear()}`;
+    const cidadeContrato = loteamento?.cidade ?? empresa?.cidade ?? "Fortaleza";
+
+    const clienteNome = cliente?.nome ?? "—";
+    const clienteCpf = cliente?.cpf ?? cliente?.cnpj ?? "—";
+    const clienteRg = cliente?.rg ?? "—";
+    const clienteEnd = cliente?.endereco ? `a ${cliente.endereco}` : "—";
+    const clienteBairro = cliente?.bairro ? ` - bairro ${cliente.bairro}` : "";
+    const clienteCidade = cliente?.cidade ?? "—";
+    const clienteEstado = cliente?.estado ?? "—";
+    const clienteEstadoCivil = cliente?.estado_civil ?? "—";
+
+    const loteNum = lote?.lote ?? "—";
+    const quadraNum = lote?.quadra ?? "—";
+    const loteamentoNome = loteamento?.nome ?? "—";
+    const loteamentoCidade = loteamento?.cidade ?? "—";
+    const loteamentoEstado = loteamento?.estado ?? "—";
+    
+    const area = areaLote || lote?.area || "—";
+    const frente = lote?.frente ?? "—";
+    const fundo = lote?.fundo ?? "—";
+    const direito = lote?.direito ?? "—";
+    const esquerdo = lote?.esquerdo ?? "—";
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>${titulo}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 12pt;
+      color: #000;
+      background: #fff;
+      padding: 20mm 25mm;
+      line-height: 1.5;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 50px;
+    }
+    .logo-placeholder {
+      width: 150px;
+      height: 60px;
+      background: #eee;
+      border: 1px solid #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: #666;
+    }
+    .header-text {
+      font-size: 10pt;
+    }
+    .header-title {
+      font-size: 12pt;
+      font-weight: bold;
+    }
+    .titulo {
+      text-align: center;
+      font-weight: bold;
+      text-decoration: underline;
+      font-size: 14pt;
+      margin-bottom: 40px;
+    }
+    p { margin-bottom: 15px; text-align: justify; text-indent: 50px; }
+    .data-local {
+      margin-top: 40px;
+      margin-bottom: 60px;
+      text-indent: 0;
+    }
+    .assinatura {
+      text-align: center;
+      margin-top: 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .assinatura .linha {
+      border-top: 1px solid #000;
+      width: 400px;
+      margin: 0 auto 5px auto;
+    }
+    .assinatura .nome-ass {
+      font-size: 11pt;
+      text-align: center;
+    }
+    @media print {
+      body { padding: 15mm 20mm; }
+      .btn-print { display: none; }
+    }
+    .btn-print {
+      display: block;
+      margin: 20px auto;
+      padding: 5px 15px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="conteudo" contenteditable="true">
+    <div class="header">
+      <div class="logo-placeholder">LOGOMARCA</div>
+      <div class="header-text">
+        <div class="header-title">${empresa?.nome_fantasia || "IMOBILIÁRIA"}</div>
+        ${empresa?.endereco ? `<div>${empresa.endereco}</div>` : ""}
+        <div>${empresa?.cidade || ""}${empresa?.estado ? `-${empresa.estado}` : ""} ${empresa?.telefone ? `- TEL.: ${empresa.telefone}` : ""}</div>
+        ${empresa?.cnpj ? `<div>CNPJ: ${empresa.cnpj}</div>` : ""}
+      </div>
+    </div>
+
+    <div class="titulo">${titulo}</div>
+
+    <p>
+      Declaro, para os devidos fins, que o(a) Sr(a) <b>${clienteNome}</b>, brasileiro(a), ${clienteEstadoCivil}, inscrito no CPF nº ${clienteCpf} e Cédula de Identidade nº ${clienteRg}, residente e domiciliado ${clienteEnd}${clienteBairro}, em ${clienteCidade}/${clienteEstado}, <b>CONCLUIU</b> o pagamento do <b>lote ${loteNum} da quadra ${quadraNum}</b> do Desmembramento denominado ${loteamentoNome}, na cidade de ${loteamentoCidade}/${loteamentoEstado}, medindo ${frente} de frente, ${fundo} de fundo, ${esquerdo} de lado esquerdo e ${direito} de lado direito.
+    </p>
+    
+    <p>
+      Declaro ainda que dou plena e geral <b>QUITAÇÃO</b> e desde já cedo e transfiro a posse REAL, domínio, direito sobre o citado imóvel, para que possa o outorgado dele usar, gozar e dispor livremente como seu, que é, e fica sendo de hoje em diante por força desta declaração, obrigando-se o outorgante (vendedor) por si e seus herdeiros e sucessores a fazerem a presente firme, boa e valiosa.
+    </p>
+    
+    <p>
+      E pela <b>OUTORGADO(A)</b> compradora me foi dito que aceita a presente declaração em seus expressos termos, por se achar o mesmo de pleno acordo com o ajustado e contratado.
+    </p>
+
+    <div class="data-local">
+      ${cidadeContrato}, ${dataFormatada}
+    </div>
+
+    <div class="assinatura">
+      <div class="linha"></div>
+      <p class="nome-ass">${vendedor}</p>
+    </div>
+  </div>
+  <button class="btn-print" onclick="this.style.display='none'; window.print();">Gerar Recibo de Quitação</button>
+</body>
+</html>`;
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      toast({ title: "Bloqueado pelo navegador", description: "Permita popups para imprimir.", variant: "destructive" });
+      return;
+    }
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+  }
+
+  useEffect(() => {
+    if (!acaoAutomatica) return;
+    if (!contratoData || loadingContrato) return;
+
+    if (acaoAutomatica === "recibo") {
+      gerarReciboQuitacao();
+    } else if (acaoAutomatica === "minuta") {
+      gerarMinuta(false);
+    } else if (acaoAutomatica === "minuta-sem-timbrado") {
+      gerarMinuta(true);
+    } else if (acaoAutomatica === "termo-transferencia") {
+      gerarTermoTransferencia();
+    }
+
+    setAcaoAutomatica(null);
+  }, [acaoAutomatica, contratoData, loadingContrato]);
+
+  function gerarMinuta(semTimbrado = false) {
+    if (!contratoData) return;
+    const { venda, cliente, lote, loteamento, empresa } = contratoData;
+
+    const vendedor = loteamento?.prop_nome ?? empresa?.nome_fantasia ?? "—";
+    
+    const dataAtual = new Date();
+    const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    const mesExtenso = meses[dataAtual.getMonth()];
+    const dataFormatada = `${dataAtual.getDate()} de ${mesExtenso} de ${dataAtual.getFullYear()}`;
+    const cidadeContrato = loteamento?.cidade ?? empresa?.cidade ?? "Fortaleza";
+
+    const clienteNome = cliente?.nome ?? "—";
+    const clienteCpf = cliente?.cpf ?? cliente?.cnpj ?? "—";
+    const clienteRg = cliente?.rg ?? "—";
+    const clienteEnd = cliente?.endereco ? `a ${cliente.endereco}` : "—";
+    const clienteBairro = cliente?.bairro ? ` - bairro ${cliente.bairro}` : "";
+    const clienteCidade = cliente?.cidade ?? "—";
+    const clienteEstado = cliente?.estado ?? "—";
+    const clienteEstadoCivil = cliente?.estado_civil ?? "—";
+
+    const loteNum = lote?.lote ?? "—";
+    const quadraNum = lote?.quadra ?? "—";
+    const loteamentoNome = loteamento?.nome ?? "—";
+    const area = areaLote || lote?.area || "—";
+    const frente = lote?.frente ?? "—";
+    const fundo = lote?.fundo ?? "—";
+    const direito = lote?.direito ?? "—";
+    const esquerdo = lote?.esquerdo ?? "—";
+    
+    const valorExtenso = porExtenso(Math.floor(venda.valor_total)) + " reais";
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>MINUTA</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 11pt;
+      color: #000;
+      background: #fff;
+      padding: ${semTimbrado ? '60mm 20mm 20mm 20mm' : '15mm 20mm'};
+      line-height: 1.4;
+    }
+    .header {
+      display: ${semTimbrado ? 'none' : 'flex'};
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    .logo-placeholder {
+      width: 160px;
+      height: 70px;
+      background: #eee;
+      border: 1px solid #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      color: #666;
+    }
+    .header-text {
+      font-size: 9pt;
+      text-align: center;
+      flex: 1;
+    }
+    .header-title {
+      font-size: 14pt;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+    .titulo-caixa {
+      border: ${semTimbrado ? 'none' : '1px solid #000'};
+      width: ${semTimbrado ? 'auto' : '200px'};
+      margin: 0 auto 30px auto;
+      text-align: center;
+      padding: 4px;
+      font-weight: bold;
+      text-decoration: ${semTimbrado ? 'underline' : 'none'};
+      font-size: ${semTimbrado ? '13pt' : '11pt'};
+    }
+    .caixa-texto {
+      border: ${semTimbrado ? 'none' : '1px solid #000'};
+      padding: ${semTimbrado ? '0' : '15px'};
+      margin-bottom: ${semTimbrado ? '0' : '10px'};
+      text-align: justify;
+      text-indent: ${semTimbrado ? '50px' : '0'};
+    }
+    .caixa-texto.segundo {
+      text-indent: ${semTimbrado ? '50px' : '0'};
+    }
+    .data-local {
+      margin-bottom: 50px;
+      margin-top: ${semTimbrado ? '20px' : '0'};
+    }
+    .testemunhas-titulo {
+      margin-bottom: 20px;
+    }
+    .assinaturas-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 40px;
+      margin-top: 20px;
+    }
+    .assinatura {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 40px;
+    }
+    .assinatura .linha {
+      border-top: 1px solid #000;
+      width: 100%;
+      margin-bottom: 5px;
+    }
+    .assinatura .nome {
+      font-size: 10pt;
+    }
+    @media print {
+      body { padding: ${semTimbrado ? '60mm 15mm 15mm 15mm' : '15mm 20mm'}; }
+      .btn-print { display: none; }
+    }
+    .btn-print {
+      display: block;
+      margin: 30px auto;
+      padding: 6px 20px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="conteudo" contenteditable="true">
+    <div class="header">
+      <div class="logo-placeholder">LOGOMARCA</div>
+      <div class="header-text">
+        <div class="header-title">${empresa?.nome_fantasia || "IMOBILIÁRIA"}</div>
+        ${empresa?.endereco ? `<div>${empresa.endereco}</div>` : ""}
+        <div>${empresa?.cidade || ""}${empresa?.estado ? ` - ${empresa.estado}` : ""} ${empresa?.telefone ? `- TEL.: ${empresa.telefone}` : ""}</div>
+        ${empresa?.cnpj ? `<div>CNPJ: ${empresa.cnpj}</div>` : ""}
+      </div>
+    </div>
+ 
+    <div class="titulo-caixa">MINUTA</div>
+ 
+    <div class="caixa-texto">
+      Pela presente Minuta, como VENDEDOR <b>${vendedor}</b>, brasileiro(a), inscrito no CNPJ/CPF sob nº ${loteamento?.cnpj ?? empresa?.cnpj ?? "—"},
+      ${imprimirProcurador && procuradorTexto ? ` representado por seu procurador(a) ${procuradorTexto}, ` : ""}
+      DECLARA, para os devidos fins de direito que vendeu um terreno de sua propriedade, localizado em ${loteamento?.cidade ?? "—"}/${loteamento?.estado ?? "—"}, para o COMPRADOR <b>${clienteNome}</b> portador do CPF nº ${clienteCpf} e RG nº ${clienteRg}, residente e domiciliado ${clienteEnd}${clienteBairro}, na cidade de ${clienteCidade}/${clienteEstado}.
+    </div>
+ 
+    <div class="caixa-texto segundo">
+      O referido terreno recebeu o nome particular de "${loteamentoNome}", lote "${loteNum}", imóvel de forma regular, constituído de parte do lote nº ${loteNum} da quadra ${quadraNum} do ${loteamentoNome} com área de ${area}m².<br>
+      Medindo e extremando: AO SUL (frente): ${frente} com a Rua/Av. XXX; AO NORTE (fundos): ${fundo} com a Rua/Av. XXX; AO OESTE (lado direito): ${direito} com a Rua/Av. XXX; AO LESTE (lado esquerdo): ${esquerdo} com a Rua/Av. XXX;<br>
+      O Comprador pagou ao Vendedor o valor total de R$ ${venda.valor_total.toFixed(2)} (${valorExtenso}).<br>
+      Para registrar no Cartório Ofício Privativo de Registro de Imóveis, ${loteamento?.cidade ?? "—"}-${loteamento?.estado ?? "—"}. MATRÍCULA Nº XXXX, lavrada em Notas desse cartório, em data de XX/XX/XXXX. Por força deste termo, O VENDEDOR dá toda posse e quitação do imóvel acima citado, para o COMPRADOR, ficando o vendedor isento de qualquer taxa de impostos junto a Prefeitura Municipal de ${loteamento?.cidade ?? "—"}-${loteamento?.estado ?? "—"}, assim como, toda e qualquer ônus fiscal.
+    </div>
+ 
+    <div class="data-local">
+      ${cidadeContrato}, ${dataFormatada}
+    </div>
+ 
+    <div class="testemunhas-titulo">Testemunhas:</div>
+ 
+    <div class="assinaturas-grid">
+      <div class="coluna-esq">
+        <div class="assinatura">
+          <div class="linha"></div>
+          <div class="nome">Nome:<br>CPF Nº:</div>
+        </div>
+        <div class="assinatura">
+          <div class="linha"></div>
+          <div class="nome">Nome:<br>CPF Nº:</div>
+        </div>
+      </div>
+      
+      <div class="coluna-dir">
+        <div class="assinatura">
+          <div class="linha"></div>
+          <div class="nome">${vendedor}<br>CPF/CNPJ Nº: ${loteamento?.cnpj ?? empresa?.cnpj ?? "—"}<br>Vendedor</div>
+        </div>
+        <div class="assinatura">
+          <div class="linha"></div>
+          <div class="nome">${clienteNome}<br>CPF Nº: ${clienteCpf}<br>Comprador</div>
+        </div>
+      </div>
+    </div>
+  </div>
+ 
+  <button class="btn-print" onclick="this.style.display='none'; window.print();">Gerar Minuta</button>
+</body>
+</html>`;
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      toast({ title: "Bloqueado pelo navegador", description: "Permita popups para imprimir.", variant: "destructive" });
+      return;
+    }
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
+  }
+
+  function gerarTermoTransferencia() {
+    if (!contratoData) return;
+    const { cliente, lote, loteamento, empresa } = contratoData;
+
+    const cedenteNome = cliente?.nome ?? "—";
+    const cedenteCpf = cliente?.cpf ?? cliente?.cnpj ?? "—";
+    const cedenteRg = cliente?.rg ?? "—";
+    const cedenteEndereco = cliente?.endereco ?? "________________________________________";
+    const cedenteBairro = cliente?.bairro ?? "__________________";
+    const cedenteCidade = cliente?.cidade ?? "____________";
+    const cedenteEstado = cliente?.estado ?? "UF";
+
+    const loteNum = lote?.lote ?? "___";
+    const quadraNum = lote?.quadra ?? "___";
+    const loteamentoNome = loteamento?.nome ?? "____________________________";
+    const cidadeLote = loteamento?.cidade ?? "____________";
+    const estadoLote = loteamento?.estado ?? "UF";
+
+    const dataAtual = new Date();
+    const meses = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
+    const mesExtenso = meses[dataAtual.getMonth()];
+    const dataFormatada = `${dataAtual.getDate()} de ${mesExtenso} de ${dataAtual.getFullYear()}`;
+    const cidadeContrato = loteamento?.cidade ?? empresa?.cidade ?? "Fortaleza";
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>TERMO DE TRANSFERÊNCIA DE LOTE</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      font-size: 11pt;
+      color: #000;
+      background: #fff;
+      padding: 20mm 25mm;
+      line-height: 1.5;
+    }
+    .titulo {
+      text-align: center;
+      font-weight: bold;
+      text-decoration: underline;
+      font-size: 14pt;
+      margin-bottom: 40px;
+    }
+    p { margin-bottom: 16px; text-align: justify; text-indent: 50px; }
+    .data-local {
+      margin-top: 30px;
+      margin-bottom: 60px;
+      text-indent: 0;
+    }
+    .assinaturas {
+      margin-top: 40px;
+    }
+    .assinatura-linha {
+      border-top: 1px solid #000;
+      width: 340px;
+      margin: 50px auto 5px auto;
+      text-align: center;
+      font-size: 10pt;
+    }
+    .assinatura-label {
+      text-align: center;
+      font-size: 9pt;
+    }
+    .btn-print {
+      display: block;
+      margin: 30px auto;
+      padding: 6px 20px;
+      cursor: pointer;
+    }
+    @media print {
+      .btn-print { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="conteudo" contenteditable="true">
+    <div class="titulo">TERMO DE TRANSFERÊNCIA DE LOTE</div>
+
+    <p>
+      Pelo presente instrumento particular, e na melhor forma de direito, de um lado,
+      <b>${cedenteNome}</b>, inscrito(a) no CPF nº ${cedenteCpf} e RG nº ${cedenteRg},
+      residente e domiciliado(a) à ${cedenteEndereco}, bairro ${cedenteBairro},
+      na cidade de ${cedenteCidade}/${cedenteEstado}, na qualidade de adquirente do
+      <b>LOTE ${loteNum} DA QUADRA ${quadraNum} DO ${loteamentoNome}</b>, situado na cidade de
+      ${cidadeLote}/${estadoLote}, conforme COMPROMISSO PARTICULAR DE COMPRA E VENDA original,
+      firmado em <u>digite a data</u>.
+    </p>
+
+    <p>
+      De livre e espontânea vontade <b>TRANSFERE</b>, na integralidade, os direitos e obrigações
+      referentes ao referido lote para <u>digite o nome do novo comprador</u>, inscrito(a) no CPF nº
+      <u>digite o CPF</u>, residente e domiciliado(a) à <u>digite o endereço</u>, que doravante
+      passa a figurar como único(a) titular dos direitos oriundos do contrato mencionado.
+    </p>
+
+    <p>
+      Pelo que firmam o presente instrumento em três vias de igual teor e forma, para um só efeito,
+      com a anuência expressa do vendedor, para que surtam os devidos fins de direito.
+    </p>
+
+    <div class="data-local">
+      ${cidadeContrato}, ${dataFormatada}.
+    </div>
+
+    <div class="assinaturas">
+      <div class="assinatura-linha">${cedenteNome}</div>
+      <div class="assinatura-label">(Cedente)</div>
+
+      <div class="assinatura-linha">__________________________________________</div>
+      <div class="assinatura-label">(Comprador)</div>
+
+      <div class="assinatura-linha">${empresa?.nome_fantasia ?? loteamento?.prop_nome ?? "__________________________________________"}</div>
+      <div class="assinatura-label">(Anuente)</div>
+    </div>
+  </div>
+
+  <button class="btn-print" onclick="this.style.display='none'; window.print();">Gerar Termo de Transferência</button>
+</body>
+</html>`;
+
+    const printWindow = window.open("", "_blank", "width=900,height=700");
+    if (!printWindow) {
+      toast({
+        title: "Bloqueado pelo navegador",
+        description: "Permita popups para imprimir.",
+        variant: "destructive",
+      });
+      return;
+    }
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.focus();
   }
 
   function gerarContrato() {
@@ -722,10 +1274,20 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
                   <Button variant="outline" onClick={handleVoltar}>
                     Voltar
                   </Button>
-                  <Button onClick={gerarContrato} className="gap-2">
-                    <Printer className="h-4 w-4" />
-                    Gerar Contrato
-                  </Button>
+                  <div className="flex gap-2 flex-wrap justify-end">
+                    <Button variant="secondary" onClick={() => gerarMinuta(false)} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                      <FileText className="h-4 w-4" />
+                      Minuta
+                    </Button>
+                    <Button variant="secondary" onClick={gerarReciboQuitacao} className="gap-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200 border">
+                      <FileText className="h-4 w-4" />
+                      Recibo de Quitação
+                    </Button>
+                    <Button onClick={gerarContrato} className="gap-2">
+                      <Printer className="h-4 w-4" />
+                      Gerar Contrato
+                    </Button>
+                  </div>
                 </div>
               </>
             )}

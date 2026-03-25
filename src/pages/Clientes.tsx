@@ -992,31 +992,96 @@ const Clientes = () => {
                             Contrato À Vista
                           </Button>
 
-                          {/* Demais documentos — em desenvolvimento */}
-                          {[
-                            { label: "Recibo de Quitação",     icon: Receipt,        key: "recibo-quitacao" },
-                            { label: "Recibo s/ Timbrado",     icon: Receipt,        key: "recibo-sem-timbrado" },
-                            { label: "Minuta",                 icon: FileSignature,  key: "minuta" },
-                            { label: "Minuta s/ Timbrado",     icon: FileSignature,  key: "minuta-sem-timbrado" },
-                            { label: "Termo de Transferência", icon: ArrowRightLeft, key: "termo-transferencia" },
-                          ].map(({ label, icon: Icon, key }) => (
-                            <Button
-                              key={key}
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
-                              onClick={() =>
-                                toast({
-                                  title: label,
-                                  description: "Geração de documentos em desenvolvimento.",
-                                })
-                              }
-                            >
-                              <Icon className="h-3.5 w-3.5" />
-                              {label}
-                            </Button>
-                          ))}
+                          {/* Recibo de Quitação — abre o ContratoDialog na aba de recibo */}
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            className="gap-1.5 h-8 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200 border"
+                            onClick={() => {
+                              setDialogAberto(false);
+                              setContratoDialogAberto(true);
+                              // Um pequeno atraso para garantir que o dialog abriu antes de disparar o evento
+                              setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent('abrir-recibo-quitacao'));
+                              }, 100);
+                            }}
+                          >
+                            <Receipt className="h-3.5 w-3.5" />
+                            Recibo de Quitação
+                          </Button>
+
+                          {/* Recibo s/ Timbrado — usa o mesmo modelo do recibo, sem diferença visual por enquanto */}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
+                            onClick={() => {
+                              setDialogAberto(false);
+                              setContratoDialogAberto(true);
+                              setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent("abrir-recibo-quitacao"));
+                              }, 100);
+                            }}
+                          >
+                            <Receipt className="h-3.5 w-3.5" />
+                            Recibo s/ Timbrado
+                          </Button>
+
+                          {/* Minuta */}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
+                            onClick={() => {
+                              setDialogAberto(false);
+                              setContratoDialogAberto(true);
+                              setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent("abrir-minuta"));
+                              }, 100);
+                            }}
+                          >
+                            <FileSignature className="h-3.5 w-3.5" />
+                            Minuta
+                          </Button>
+
+                          {/* Minuta s/ Timbrado */}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
+                            onClick={() => {
+                              setDialogAberto(false);
+                              setContratoDialogAberto(true);
+                              setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent("abrir-minuta-sem-timbrado"));
+                              }, 100);
+                            }}
+                          >
+                            <FileSignature className="h-3.5 w-3.5" />
+                            Minuta s/ Timbrado
+                          </Button>
+
+                          {/* Termo de Transferência */}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
+                            onClick={() => {
+                              setDialogAberto(false);
+                              setContratoDialogAberto(true);
+                              setTimeout(() => {
+                                window.dispatchEvent(new CustomEvent("abrir-termo-transferencia"));
+                              }, 100);
+                            }}
+                          >
+                            <ArrowRightLeft className="h-3.5 w-3.5" />
+                            Termo de Transferência
+                          </Button>
                         </div>
                       </div>
                     </div>

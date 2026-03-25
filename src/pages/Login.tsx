@@ -15,6 +15,7 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Eye, EyeOff, KeyRound } from "lucide-react";
@@ -43,10 +44,21 @@ const Login = () => {
   const [loginRecuperacao, setLoginRecuperacao] = useState("");
   const [senhaTemporaria, setSenhaTemporaria] = useState<string | null>(null);
 
+  const [lembrarUsuario, setLembrarUsuario] = useState(false);
+
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { login: "", senha: "" },
   });
+
+  useEffect(() => {
+    // Carrega o usuário salvo caso exista
+    const savedLogin = localStorage.getItem("sislote:savedLogin");
+    if (savedLogin) {
+      form.setValue("login", savedLogin);
+      setLembrarUsuario(true);
+    }
+  }, [form]);
 
   useEffect(() => {
     if (token) {
@@ -158,6 +170,11 @@ const Login = () => {
   }
 
   function onSubmit(values: LoginFormValues) {
+    if (lembrarUsuario) {
+      localStorage.setItem("sislote:savedLogin", values.login);
+    } else {
+      localStorage.removeItem("sislote:savedLogin");
+    }
     loginMutation.mutate(values);
   }
 
@@ -233,6 +250,20 @@ const Login = () => {
                 </FormItem>
               )}
             />
+
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="lembrar" 
+                checked={lembrarUsuario}
+                onCheckedChange={(checked) => setLembrarUsuario(checked as boolean)}
+              />
+              <label
+                htmlFor="lembrar"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Lembrar meu usuário
+              </label>
+            </div>
 
             <Button type="submit" className="w-full" disabled={loginMutation.isPending}>
               {loginMutation.isPending ? "Entrando..." : "Entrar"}

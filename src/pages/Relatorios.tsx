@@ -509,23 +509,39 @@ const Relatorios = () => {
             .assinatura-linha {
               border-top: 1px solid #000;
               width: 160px;
-              margin-top: 8px;
+              margin: 8px auto 0 auto;
+            }
+            .assinatura-nome {
+              text-align: center;
+              margin-top: 4px;
             }
             h1, h2, h3 {
               margin: 0;
             }
             .text-center { text-align: center; }
+            .btn-print {
+              display: inline-block;
+              margin-top: 16px;
+              padding: 6px 16px;
+              border: 1px solid #000;
+              background: #f5f5f5;
+              cursor: pointer;
+            }
+            @media print {
+              .btn-print { display: none; }
+            }
           </style>
         </head>
         <body>
-          ${content}
+          <div id="print-content" contenteditable="true">
+            ${content}
+          </div>
+          <button class="btn-print" onclick="this.style.display='none'; window.print();">Imprimir</button>
         </body>
       </html>
     `);
     win.document.close();
     win.focus();
-    win.print();
-    win.close();
   };
 
   return (
@@ -672,16 +688,6 @@ const Relatorios = () => {
                   }}
                 >
                   Buscar
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2"
-                  onClick={handlePrint}
-                  disabled={!canPrint}
-                >
-                  <Printer className="h-4 w-4" />
-                  Imprimir
                 </Button>
                 <Button variant="outline" size="sm" className="gap-2">
                   <Download className="h-4 w-4" />

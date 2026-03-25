@@ -33,6 +33,8 @@ interface DashboardKpis {
   recebidoMes: number;
   totalLoteamentos?: number;
   pagamentosMes?: number;
+  titulosAtrasoQtd: number;
+  titulosAtrasoValor: number;
 }
 
 interface DashboardVendaRecente {
@@ -64,7 +66,7 @@ const Dashboard = () => {
   const { data: atrasos = [] } = useQuery<DashboardTituloAtraso[]>({
     queryKey: ["dashboard", "titulos-em-atraso"],
     queryFn: async () => {
-      const response = await fetch("/api/relatorios/titulos-em-atraso", {
+      const response = await fetch("/api/relatorios/titulos-em-atraso?limit=10", {
         headers: {
           ...getAuthHeaders(),
         },
@@ -125,8 +127,8 @@ const Dashboard = () => {
     },
   });
 
-  const totalTitulosAtraso = atrasos.length;
-  const totalValorAtraso = atrasos.reduce((sum, item) => sum + item.valor, 0);
+  const totalTitulosAtraso = kpisData?.titulosAtrasoQtd ?? 0;
+  const totalValorAtraso = kpisData?.titulosAtrasoValor ?? 0;
 
   const kpis = [
     {
