@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
+import { BottomNav } from "./BottomNav";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Menu, LogOut, Sun, Moon } from "lucide-react";
@@ -33,15 +34,20 @@ export function AppLayout({ children }: AppLayoutProps) {
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
+        {/* AppSidebar: on mobile renders as Sheet (drawer), on md+ as fixed sidebar */}
         <AppSidebar />
-        <div className="flex-1 flex flex-col min-h-screen">
+
+        <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
           <header className="h-14 flex items-center border-b border-border px-4 bg-background/80 backdrop-blur-sm sticky top-0 z-30">
+            {/* Sidebar trigger — on mobile opens the Sheet, on desktop toggles collapse */}
             <SidebarTrigger className="mr-4">
               <Menu className="h-5 w-5" />
             </SidebarTrigger>
+
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-foreground">SISLOTE</span>
             </div>
+
             <div className="ml-auto flex items-center gap-2">
               {user && (
                 <span className="text-xs text-muted-foreground hidden sm:block">
@@ -67,11 +73,16 @@ export function AppLayout({ children }: AppLayoutProps) {
               </Button>
             </div>
           </header>
-          <main className="flex-1 p-4 md:p-6">
+
+          {/* pb-20 on mobile to clear bottom nav, pb-6 on desktop */}
+          <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6">
             {children}
           </main>
         </div>
       </div>
+
+      {/* Bottom navigation bar — only on mobile (md:hidden via CSS) */}
+      <BottomNav />
     </SidebarProvider>
   );
 }

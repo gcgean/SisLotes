@@ -15,8 +15,17 @@ import Configuracoes from "./pages/Configuracoes";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
+import { PWAInstallBanner } from "./components/PWAInstallBanner";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 2,       // 2 minutos
+      refetchOnWindowFocus: false,
+      retry: 1,
+    },
+  },
+});
 
 function RequireAuth({ children }: { children: JSX.Element }) {
   const { token } = useAuth();
@@ -34,6 +43,7 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <PWAInstallBanner />
       <AuthProvider>
         <BrowserRouter>
           <Routes>

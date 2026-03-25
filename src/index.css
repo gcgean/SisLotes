@@ -185,3 +185,30 @@
 .animate-count-up {
   animation: count-up 0.45s ease-out forwards;
 }
+
+/* PWA safe areas (notch/home indicator) */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent text size adjustment on mobile */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Smooth scrolling */
+* {
+  scroll-behavior: smooth;
+}
+
+/* Better touch targets on mobile */
+@media (max-width: 768px) {
+  button, a {
+    min-height: 44px;
+  }
+  .dialog-mobile-full {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+  }
+}
