@@ -30,6 +30,18 @@ export class Loteamento {
   @Column({ type: "varchar", length: 18, nullable: true })
   cnpj?: string | null;
 
+  @Column({ type: "varchar", length: 20, nullable: true })
+  rg?: string | null;
+
+  @Column({ type: "varchar", length: 50, nullable: true })
+  estado_civil?: string | null;
+
+  @Column({ type: "varchar", length: 200, nullable: true })
+  conjuge?: string | null;
+
+  @Column({ type: "varchar", length: 100, nullable: true })
+  profissao?: string | null;
+
   @Column({ type: "varchar", length: 300, nullable: true, name: "prop_endereco" })
   prop_endereco?: string | null;
 

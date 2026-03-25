@@ -13,6 +13,7 @@ import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateC
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
 import { AddEmpresaAtivo1700000000003 } from "../migrations/1700000000003-AddEmpresaAtivo";
+import { AddProprietarioFieldsToLoteamento1700000000004 } from "../migrations/1700000000004-AddProprietarioFieldsToLoteamento";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -27,6 +28,7 @@ export const AppDataSource = new DataSource({
     CreateCoreTables1700000000001,
     CreateEmpresasAndMultiTenant1700000000002,
     AddEmpresaAtivo1700000000003,
+    AddProprietarioFieldsToLoteamento1700000000004,
   ],
   synchronize: false,
   logging: false,

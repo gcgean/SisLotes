@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MapPin, Grid3X3, User, ChevronRight } from "lucide-react";
+import { Plus, MapPin, Grid3X3, User, ChevronRight, Edit, Search } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import {
   Dialog,
@@ -18,13 +18,27 @@ import {
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 interface Loteamento {
   id_loteamento: number;
   nome: string;
+  endereco?: string | null;
   cidade?: string | null;
   estado?: string | null;
+  tipo_pessoa?: "f" | "j" | null;
   prop_nome?: string | null;
+  cnpj?: string | null;
+  rg?: string | null;
+  estado_civil?: string | null;
+  conjuge?: string | null;
+  profissao?: string | null;
+  prop_endereco?: string | null;
+  prop_bairro?: string | null;
+  prop_cidade?: string | null;
+  prop_estado?: string | null;
+  prop_cep?: string | null;
+  prop_fone?: string | null;
 }
 
 interface LoteDoLoteamento {
@@ -49,6 +63,10 @@ const loteamentoFormSchema = z.object({
   tipo_pessoa: z.enum(["f", "j"]).optional(),
   prop_nome: z.string().optional(),
   cnpj: z.string().optional(),
+  rg: z.string().optional(),
+  estado_civil: z.string().optional(),
+  conjuge: z.string().optional(),
+  profissao: z.string().optional(),
   prop_endereco: z.string().optional(),
   prop_bairro: z.string().optional(),
   prop_cidade: z.string().optional(),
@@ -73,6 +91,9 @@ const statusVendaLabel: Record<string, string> = {
 
 const Loteamentos = () => {
   const [dialogAberto, setDialogAberto] = useState(false);
+  const [modoDialog, setModoDialog] = useState<"novo" | "editar">("novo");
+  const [loteamentoEditandoId, setLoteamentoEditandoId] = useState<number | null>(null);
+
   const [page, setPage] = useState(1);
   const pageSize = 12;
   const queryClient = useQueryClient();
@@ -80,12 +101,13 @@ const Loteamentos = () => {
   const [loteamentoSelecionado, setLoteamentoSelecionado] = useState<Loteamento | null>(null);
   const [dialogLotesAberto, setDialogLotesAberto] = useState(false);
   const [filtroLotes, setFiltroLotes] = useState<"todos" | "disponivel" | "vendido">("todos");
+  const [search, setSearch] = useState("");
 
   const form = useForm<LoteamentoFormValues>({
     resolver: zodResolver(loteamentoFormSchema),
     defaultValues: {
       nome: "", endereco: "", cidade: "", estado: "",
-      tipo_pessoa: "j", prop_nome: "", cnpj: "",
+      tipo_pessoa: "f", prop_nome: "", cnpj: "", rg: "", estado_civil: "", conjuge: "", profissao: "",
       prop_endereco: "", prop_bairro: "", prop_cidade: "",
       prop_estado: "", prop_cep: "", prop_fone: "",
     },
@@ -157,14 +179,97 @@ const Loteamentos = () => {
     },
   });
 
-  const loteamentos = data ?? [];
+  const editarLoteamentoMutation = useMutation({
+    mutationFn: async (values: LoteamentoFormValues) => {
+      if (!loteamentoEditandoId) throw new Error("ID do loteamento não encontrado");
+      const response = await fetch(`/api/loteamentos/${loteamentoEditandoId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(values),
+      });
+
+      let data: unknown;
+      try { data = await response.json(); } catch { data = null; }
+
+      if (!response.ok) {
+        const errorMessage =
+          typeof data === "object" && data !== null && "error" in data &&
+          typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "Erro ao editar loteamento";
+        throw new Error(errorMessage);
+      }
+
+      return data as Loteamento;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["loteamentos"] });
+      setDialogAberto(false);
+      toast({ title: "Loteamento atualizado com sucesso" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Erro ao atualizar loteamento",
+        description: error instanceof Error ? error.message : "Erro ao atualizar loteamento",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const loteamentosOriginais = data ?? [];
+
+  const loteamentosFiltrados = loteamentosOriginais.filter((l) => {
+    if (!search.trim()) return true;
+    const value = search.toLowerCase();
+    return (
+      l.nome?.toLowerCase().includes(value) ||
+      l.cidade?.toLowerCase().includes(value) ||
+      l.prop_nome?.toLowerCase().includes(value)
+    );
+  });
+
+  const totalPages = Math.max(1, Math.ceil(loteamentosFiltrados.length / pageSize) || 1);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   function abrirNovoLoteamento() {
+    setModoDialog("novo");
+    setLoteamentoEditandoId(null);
     form.reset({
       nome: "", endereco: "", cidade: "", estado: "",
-      tipo_pessoa: "j", prop_nome: "", cnpj: "",
+      tipo_pessoa: "f", prop_nome: "", cnpj: "", rg: "", estado_civil: "", conjuge: "", profissao: "",
       prop_endereco: "", prop_bairro: "", prop_cidade: "",
       prop_estado: "", prop_cep: "", prop_fone: "",
+    });
+    setDialogAberto(true);
+  }
+
+  function abrirEditarLoteamento(lot: Loteamento, e: React.MouseEvent) {
+    e.stopPropagation(); // Evita abrir o dialog de lotes
+    setModoDialog("editar");
+    setLoteamentoEditandoId(lot.id_loteamento);
+    form.reset({
+      nome: lot.nome ?? "",
+      endereco: lot.endereco ?? "",
+      cidade: lot.cidade ?? "",
+      estado: lot.estado ?? "",
+      tipo_pessoa: lot.tipo_pessoa === "j" ? "j" : "f",
+      prop_nome: lot.prop_nome ?? "",
+      cnpj: lot.cnpj ?? "",
+      rg: lot.rg ?? "",
+      estado_civil: lot.estado_civil ?? "",
+      conjuge: lot.conjuge ?? "",
+      profissao: lot.profissao ?? "",
+      prop_endereco: lot.prop_endereco ?? "",
+      prop_bairro: lot.prop_bairro ?? "",
+      prop_cidade: lot.prop_cidade ?? "",
+      prop_estado: lot.prop_estado ?? "",
+      prop_cep: lot.prop_cep ?? "",
+      prop_fone: lot.prop_fone ?? "",
     });
     setDialogAberto(true);
   }
@@ -176,7 +281,11 @@ const Loteamentos = () => {
   }
 
   function onSubmit(values: LoteamentoFormValues) {
-    criarLoteamentoMutation.mutate(values);
+    if (modoDialog === "novo") {
+      criarLoteamentoMutation.mutate(values);
+    } else {
+      editarLoteamentoMutation.mutate(values);
+    }
   }
 
   const lotesFiltrados = lotesDoLoteamento.filter((l) =>
@@ -193,7 +302,7 @@ const Loteamentos = () => {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Loteamentos</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {isLoading ? "Carregando loteamentos..." : `${loteamentos.length} loteamentos cadastrados`}
+              {isLoading ? "Carregando loteamentos..." : `${loteamentosOriginais.length} loteamentos cadastrados`}
             </p>
           </div>
           <Button size="sm" className="gap-2" onClick={abrirNovoLoteamento}>
@@ -202,17 +311,47 @@ const Loteamentos = () => {
           </Button>
         </div>
 
+        <div className="flex flex-col md:flex-row md:flex-wrap gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar por nome, cidade ou proprietário..."
+              value={search}
+              onChange={(e) => {
+                setSearch(e.target.value);
+                setPage(1);
+              }}
+              className="pl-9"
+            />
+          </div>
+        </div>
+
+        {loteamentosFiltrados.length === 0 && !isLoading ? (
+          <div className="text-sm text-muted-foreground">
+            Nenhum loteamento encontrado.
+          </div>
+        ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {loteamentos
+          {loteamentosFiltrados
             .slice((page - 1) * pageSize, page * pageSize)
             .map((lot, i) => (
               <div
                 key={lot.id_loteamento}
-                className="glass-card rounded-lg p-5 space-y-4 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer animate-fade-in group"
+                className="glass-card rounded-lg p-5 space-y-4 hover:border-primary/40 hover:shadow-md transition-all cursor-pointer animate-fade-in group relative"
                 style={{ animationDelay: `${i * 60}ms` }}
                 onClick={() => abrirLotes(lot)}
               >
-                <div className="flex items-start justify-between">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="absolute top-3 right-3 h-8 w-8 text-muted-foreground hover:text-primary transition-colors"
+                  onClick={(e) => abrirEditarLoteamento(lot, e)}
+                  title="Editar Loteamento"
+                >
+                  <Edit className="h-4 w-4" />
+                </Button>
+
+                <div className="flex items-start justify-between pr-8">
                   <div className="flex-1 min-w-0">
                     <h3 className="font-semibold group-hover:text-primary transition-colors">{lot.nome}</h3>
                     <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
@@ -222,7 +361,6 @@ const Loteamentos = () => {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Badge variant="outline" className="text-xs">Loteamento</Badge>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
                   </div>
                 </div>
 
@@ -244,18 +382,19 @@ const Loteamentos = () => {
               </div>
             ))}
         </div>
+        )}
 
-        {loteamentos.length > pageSize && (
+        {loteamentosFiltrados.length > pageSize && (
           <div className="flex items-center justify-between mt-4 text-xs text-muted-foreground">
-            <span>Página {page} de {Math.max(1, Math.ceil(loteamentos.length / pageSize))}</span>
+            <span>Página {page} de {totalPages}</span>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
                 Anterior
               </Button>
               <Button
                 variant="outline" size="sm"
-                disabled={page >= Math.ceil(loteamentos.length / pageSize)}
-                onClick={() => setPage((p) => Math.min(Math.ceil(loteamentos.length / pageSize), p + 1))}
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               >
                 Próxima
               </Button>
@@ -366,49 +505,180 @@ const Loteamentos = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog - Novo Loteamento */}
+      {/* Dialog - Novo / Editar Loteamento */}
       <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
-        <DialogContent>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Novo Loteamento</DialogTitle>
-            <DialogDescription>Preencha os dados do loteamento.</DialogDescription>
+            <DialogTitle>{modoDialog === "novo" ? "Novo Loteamento" : "Editar Loteamento"}</DialogTitle>
+            <DialogDescription>
+              {modoDialog === "novo" ? "Preencha os dados do loteamento." : "Atualize os dados do loteamento."}
+            </DialogDescription>
           </DialogHeader>
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <FormField control={form.control} name="nome" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Nome</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="cidade" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Cidade</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="estado" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Estado</FormLabel>
-                    <FormControl><Input maxLength={2} {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="prop_nome" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Proprietário</FormLabel>
-                    <FormControl><Input {...field} /></FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+              
+              <div className="space-y-4 border p-4 rounded-md">
+                <h3 className="font-medium text-sm text-muted-foreground">Dados do Loteamento</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField control={form.control} name="nome" render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Nome do Loteamento</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="endereco" render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Endereço do Loteamento</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="cidade" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cidade</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="estado" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Estado</FormLabel>
+                      <FormControl><Input maxLength={2} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
               </div>
-              <DialogFooter>
-                <Button type="submit" disabled={criarLoteamentoMutation.isPending}>
-                  Cadastrar
+
+              <div className="space-y-4 border p-4 rounded-md">
+                <h3 className="font-medium text-sm text-muted-foreground">Dados do Proprietário</h3>
+                
+                <FormField control={form.control} name="tipo_pessoa" render={({ field }) => (
+                  <FormItem className="space-y-3">
+                    <FormControl>
+                      <RadioGroup
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        className="flex flex-row space-x-4"
+                      >
+                        <FormItem className="flex items-center space-x-2 space-y-0">
+                          <FormControl>
+                            <RadioGroupItem value="f" />
+                          </FormControl>
+                          <FormLabel className="font-normal">
+                            Pessoa Física
+                          </FormLabel>
+                        </FormItem>
+                        <FormItem className="flex items-center space-x-2 space-y-0">
+                          <FormControl>
+                            <RadioGroupItem value="j" />
+                          </FormControl>
+                          <FormLabel className="font-normal">
+                            Pessoa Jurídica
+                          </FormLabel>
+                        </FormItem>
+                      </RadioGroup>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <FormField control={form.control} name="prop_nome" render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Nome do Proprietário</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="cnpj" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>CPF/CNPJ</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="rg" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>RG</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="estado_civil" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Estado Civil</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="conjuge" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cônjuge</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="profissao" render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Profissão</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="prop_endereco" render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Endereço</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="prop_cidade" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Cidade</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="prop_estado" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Estado</FormLabel>
+                      <FormControl><Input maxLength={2} {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="prop_bairro" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bairro</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="prop_cep" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>CEP</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="prop_fone" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fone</FormLabel>
+                      <FormControl><Input {...field} /></FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+              </div>
+
+              <DialogFooter className="pt-2">
+                <Button variant="outline" type="button" onClick={() => setDialogAberto(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={criarLoteamentoMutation.isPending || editarLoteamentoMutation.isPending}>
+                  {modoDialog === "novo" ? "Cadastrar" : "Atualizar"}
                 </Button>
               </DialogFooter>
             </form>

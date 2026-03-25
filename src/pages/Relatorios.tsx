@@ -104,9 +104,9 @@ const reportTypes = [
     icon: DollarSign,
   },
   {
-    id: "clientes-conta",
-    title: "Clientes por Conta",
-    description: "Clientes agrupados por conta bancária utilizada",
+    id: "clientes-loteamento",
+    title: "Clientes por Loteamento",
+    description: "Clientes de cada loteamento com número do lote",
     icon: Users,
   },
 ];
@@ -160,6 +160,15 @@ interface EnderecoCarne {
   quadra: string;
   lote: string;
   loteamento: string;
+}
+
+interface ClientePorLoteamento {
+  id_loteamento: number;
+  loteamento: string;
+  id_cliente: number;
+  cliente: string;
+  quadra: string;
+  lote: string;
 }
 
 interface TotalPorConta {
@@ -231,6 +240,7 @@ const Relatorios = () => {
   const [hasSearchedEnderecos, setHasSearchedEnderecos] = useState(false);
   const [hasSearchedTotalConta, setHasSearchedTotalConta] = useState(false);
   const [hasSearchedJuros, setHasSearchedJuros] = useState(false);
+  const [hasSearchedClientesLoteamento, setHasSearchedClientesLoteamento] = useState(false);
 
   const [pageEntradas, setPageEntradas] = useState(1);
   const [pageAtraso, setPageAtraso] = useState(1);
@@ -261,7 +271,11 @@ const Relatorios = () => {
 
       return response.json();
     },
-    enabled: selectedReport === "entradas",
+    enabled:
+      selectedReport === "entradas" ||
+      selectedReport === "enderecos" ||
+      selectedReport === "atraso" ||
+      selectedReport === "clientes-loteamento",
   });
 
   const { data: contasData = [] } = useQuery<ContaRelatorio[]>({
@@ -356,6 +370,29 @@ const Relatorios = () => {
       return response.json();
     },
     enabled: selectedReport === "enderecos" && hasSearchedEnderecos,
+  });
+
+  const { data: clientesLoteamentoData = [], isLoading: loadingClientesLoteamento } = useQuery<ClientePorLoteamento[]>({
+    queryKey: ["relatorios", "clientes-por-loteamento", loteamentoId],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (loteamentoId !== "all") {
+        params.set("id_loteamento", loteamentoId);
+      }
+
+      const response = await fetch(`/api/relatorios/clientes-por-loteamento?${params.toString()}`, {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar relatório de clientes por loteamento");
+      }
+
+      return response.json();
+    },
+    enabled: selectedReport === "clientes-loteamento" && hasSearchedClientesLoteamento,
   });
 
   const { data: totalContaData = [], isLoading: loadingTotalConta } = useQuery<TotalPorConta[]>({
@@ -465,7 +502,10 @@ const Relatorios = () => {
       !loadingJuros &&
       jurosData &&
       jurosData.meses.length > 0) ||
-    selectedReport === "clientes-conta";
+    (selectedReport === "clientes-loteamento" &&
+      hasSearchedClientesLoteamento &&
+      !loadingClientesLoteamento &&
+      clientesLoteamentoData.length > 0);
 
   const handlePrint = () => {
     if (!printRef.current) {
@@ -582,7 +622,8 @@ const Relatorios = () => {
               <div className="flex flex-wrap gap-2">
                 {(selectedReport === "entradas" ||
                   selectedReport === "enderecos" ||
-                  selectedReport === "atraso") && (
+                  selectedReport === "atraso" ||
+                  selectedReport === "clientes-loteamento") && (
                   <Select value={loteamentoIdInput} onValueChange={setLoteamentoIdInput}>
                     <SelectTrigger className="w-[220px]">
                       <SelectValue placeholder="Selecione um loteamento" />
@@ -611,7 +652,7 @@ const Relatorios = () => {
                     </SelectContent>
                   </Select>
                 )}
-                {selectedReport !== "juros" && (
+                {selectedReport !== "juros" && selectedReport !== "clientes-loteamento" && (
                   <div className="flex flex-wrap items-center gap-2">
                     <Input
                       className="w-[120px]"
@@ -685,11 +726,143 @@ const Relatorios = () => {
                       setAnoJuros(anoJurosInput);
                       setHasSearchedJuros(true);
                     }
+                    if (selectedReport === "clientes-loteamento") {
+                      setHasSearchedClientesLoteamento(true);
+                    }
                   }}
                 >
                   Buscar
                 </Button>
-                <Button variant="outline" size="sm" className="gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  disabled={
+                    !(
+                      selectedReport === "entradas" && entradasData.length > 0 ||
+                      selectedReport === "atraso" && atrasadosData.length > 0 ||
+                      selectedReport === "enderecos" && enderecosCarneData.length > 0 ||
+                      selectedReport === "total-conta" && totalContaData.length > 0 ||
+                      selectedReport === "juros" && jurosData && jurosData.meses.length > 0 ||
+                      selectedReport === "clientes-loteamento" && clientesLoteamentoData.length > 0
+                    )
+                  }
+                  onClick={() => {
+                    const rows: object[] = [];
+                    let filename = "relatorio.csv";
+
+                    if (selectedReport === "entradas") {
+                      filename = "entradas-por-loteamento.csv";
+                      rows.push(
+                        ...entradasData.map((r) => ({
+                          loteamento: r.loteamento,
+                          jan: r.jan,
+                          fev: r.fev,
+                          mar: r.mar,
+                          abr: r.abr,
+                          mai: r.mai,
+                          jun: r.jun,
+                          jul: r.jul,
+                          ago: r.ago,
+                          set: r.set,
+                          out: r.out,
+                          nov: r.nov,
+                          dez: r.dez,
+                          total: r.total,
+                        })),
+                      );
+                    } else if (selectedReport === "atraso") {
+                      filename = "titulos-em-atraso.csv";
+                      rows.push(
+                        ...atrasadosData.map((r) => ({
+                          cliente: r.cliente,
+                          lote: r.lote,
+                          parcela: r.parcela,
+                          vencimento: r.vencimento,
+                          diasAtraso: r.diasAtraso,
+                          valor: r.valor,
+                          multa: r.multa,
+                          juros: r.juros,
+                          total: r.total,
+                        })),
+                      );
+                    } else if (selectedReport === "enderecos") {
+                      filename = "enderecos-para-carne.csv";
+                      rows.push(
+                        ...enderecosCarneData.map((r) => ({
+                          loteamento: r.loteamento,
+                          quadra: r.quadra,
+                          lote: r.lote,
+                          cliente: r.nome,
+                          telefone: r.telefone,
+                          endereco: r.endereco,
+                          bairro: r.bairro,
+                          cidade: r.cidade,
+                          estado: r.estado,
+                          cep: r.cep,
+                          complemento: r.complemento,
+                        })),
+                      );
+                    } else if (selectedReport === "total-conta") {
+                      filename = "total-por-conta.csv";
+                      rows.push(
+                        ...totalContaData.map((r) => ({
+                          apelido: r.apelido,
+                          titular: r.titular,
+                          agencia: r.agencia,
+                          conta: r.conta,
+                          qtdPagamentos: r.qtdPagamentos,
+                          total: r.total,
+                        })),
+                      );
+                    } else if (selectedReport === "juros" && jurosData) {
+                      filename = "juros-recebidos.csv";
+                      rows.push(
+                        ...jurosData.meses.map((m) => ({
+                          mes: m.mes,
+                          total: m.total,
+                        })),
+                      );
+                    } else if (selectedReport === "clientes-loteamento") {
+                      filename = "clientes-por-loteamento.csv";
+                      rows.push(
+                        ...clientesLoteamentoData.map((r) => ({
+                          loteamento: r.loteamento,
+                          cliente: r.cliente,
+                          quadra: r.quadra,
+                          lote: r.lote,
+                        })),
+                      );
+                    }
+
+                    if (rows.length === 0) return;
+
+                    const headers = Object.keys(rows[0] as object);
+                    const csvLines = [
+                      headers.join(";"),
+                      ...rows.map((row) =>
+                        headers
+                          .map((key) => {
+                            const value = (row as Record<string, unknown>)[key];
+                            if (value == null) return "";
+                            const text = String(value).replace(/"/g, '""');
+                            return `"${text}"`;
+                          })
+                          .join(";"),
+                      ),
+                    ];
+
+                    const blob = new Blob([csvLines.join("\n")], {
+                      type: "text/csv;charset=utf-8;",
+                    });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
                   <Download className="h-4 w-4" />
                   Exportar
                 </Button>
@@ -1138,11 +1311,74 @@ const Relatorios = () => {
               </div>
             )}
 
-            {selectedReport === "clientes-conta" && (
-              <div className="glass-card rounded-lg p-8 text-center">
-                <FileText className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm font-medium">Relatório: {reportTypes.find(r => r.id === selectedReport)?.title}</p>
-                <p className="text-xs text-muted-foreground mt-1">Dados serão carregados do banco de dados quando o backend estiver conectado</p>
+            {selectedReport === "clientes-loteamento" && (
+              <div className="glass-card rounded-lg overflow-hidden">
+                <div className="p-5 border-b border-border">
+                  <h2 className="font-semibold">
+                    Clientes por Loteamento
+                    {loteamentoId !== "all" && (
+                      <span className="font-normal text-sm text-muted-foreground"> – Loteamento selecionado</span>
+                    )}
+                  </h2>
+                </div>
+                {loadingClientesLoteamento ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : clientesLoteamentoData.length === 0 ? (
+                  <div className="p-5 text-sm text-muted-foreground">
+                    Nenhum cliente encontrado para os filtros selecionados.
+                  </div>
+                ) : (
+                  <div className="space-y-6 p-5">
+                    {Object.entries(
+                      clientesLoteamentoData.reduce<Record<string, ClientePorLoteamento[]>>((acc, row) => {
+                        const key = row.loteamento || "Sem loteamento";
+                        if (!acc[key]) acc[key] = [];
+                        acc[key].push(row);
+                        return acc;
+                      }, {}),
+                    ).map(([loteamento, rows]) => (
+                      <div key={loteamento} className="border border-border rounded-md overflow-hidden">
+                        <div className="px-4 py-2 bg-muted/60 border-b border-border">
+                          <h3 className="font-semibold text-sm">
+                            Loteamento: {loteamento}
+                          </h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-border bg-muted/40">
+                                <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">
+                                  Cliente
+                                </th>
+                                <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">
+                                  Quadra
+                                </th>
+                                <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">
+                                  Lote
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                              {rows.map((row) => (
+                                <tr key={`${row.id_cliente}-${row.quadra}-${row.lote}`} className="hover:bg-muted/20">
+                                  <td className="px-4 py-2.5">
+                                    <span className="font-medium">{row.cliente}</span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-muted-foreground">
+                                    {row.quadra || "—"}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-muted-foreground">
+                                    {row.lote || "—"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             </div>

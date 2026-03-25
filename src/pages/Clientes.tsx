@@ -1,4 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, Component, ReactNode, ErrorInfo } from "react";
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-4 bg-red-100 text-red-900 rounded-md m-4">
+          <h2 className="font-bold text-lg mb-2">Erro Inesperado na Tela de Clientes</h2>
+          <p className="mb-2">Aconteceu um erro ao tentar exibir o cliente. Por favor, verifique os dados abaixo:</p>
+          <pre className="text-xs bg-red-50 p-2 rounded overflow-auto">
+            {this.state.error?.toString()}{"\n"}
+            {this.state.error?.stack}
+          </pre>
+          <button 
+            className="mt-4 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            onClick={() => this.setState({ hasError: false, error: null })}
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 import { useNavigate } from "react-router-dom";
 import { ContratoDialog } from "@/components/contratos/ContratoDialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -14,7 +49,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Plus, Search, Edit, Trash2, Eye, User, MapPin, Phone,
   CreditCard, ShoppingCart, FileText, FileCheck, Receipt,
-  FileSignature, ArrowRightLeft,
+  FileSignature, ArrowRightLeft, Grid3X3,
 } from "lucide-react";
 import {
   Dialog,
@@ -84,6 +119,16 @@ interface ListaClientesResponse {
   page: number;
   limit: number;
   totalPages: number;
+}
+
+interface ClienteVendaLote {
+  id_venda: number;
+  status: string;
+  data_venda: string;
+  parcelas: number;
+  valor_entrada: number | string;
+  lote_desc: string;
+  loteamento: string;
 }
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
@@ -160,6 +205,12 @@ function getAuthHeaders() {
   return { Authorization: `Bearer ${token}` };
 }
 
+function formatDateBr(date: string) {
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return date;
+  return d.toLocaleDateString("pt-BR");
+}
+
 async function fetchCliente(id: number): Promise<Cliente> {
   const response = await fetch(`/api/clientes/${id}`, {
     headers: { ...getAuthHeaders() },
@@ -182,6 +233,7 @@ const Clientes = () => {
   const [dialogTab, setDialogTab] = useState("dados");
   const [confirmarExclusao, setConfirmarExclusao] = useState<Cliente | null>(null);
   const [loadingFull, setLoadingFull] = useState(false);
+  const [dialogLotesAberto, setDialogLotesAberto] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -215,6 +267,24 @@ const Clientes = () => {
 
   const clientes = data?.data ?? [];
   const totalPages = data?.totalPages ?? 1;
+
+  const {
+    data: vendasCliente = [],
+    isLoading: loadingVendasCliente,
+    isError: isErrorVendasCliente,
+  } = useQuery<ClienteVendaLote[]>({
+    queryKey: ["cliente-vendas-lotes", clienteSelecionado?.id_cliente],
+    enabled: !!clienteSelecionado && (dialogLotesAberto || (dialogAberto && isView)),
+    queryFn: async () => {
+      const response = await fetch(`/api/contratos/cliente/${clienteSelecionado!.id_cliente}/vendas`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) {
+        throw new Error("Erro ao carregar lotes do cliente");
+      }
+      return response.json();
+    },
+  });
 
   // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -329,6 +399,11 @@ const Clientes = () => {
     }
   }
 
+  function abrirLotesCliente(cliente: Cliente) {
+    setClienteSelecionado(cliente);
+    setDialogLotesAberto(true);
+  }
+
   async function abrirVisualizacao(cliente: Cliente) {
     setModo("view");
     setClienteSelecionado(cliente);
@@ -361,6 +436,7 @@ const Clientes = () => {
 
   return (
     <AppLayout>
+      <ErrorBoundary>
       <div className="space-y-6 animate-fade-in">
         {/* Cabeçalho */}
         <div className="flex items-center justify-between">
@@ -453,6 +529,13 @@ const Clientes = () => {
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost" size="icon" className="h-8 w-8"
+                          title="Lotes do cliente"
+                          onClick={() => abrirLotesCliente(cliente)}
+                        >
+                          <Grid3X3 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon" className="h-8 w-8"
                           title="Visualizar"
                           onClick={() => abrirVisualizacao(cliente)}
                         >
@@ -509,6 +592,7 @@ const Clientes = () => {
         {/* ── Dialog Cadastro/Edição/Visualização ── */}
         <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <ErrorBoundary>
             <DialogHeader>
               <DialogTitle>
                 {modo === "create" && "Novo Cliente"}
@@ -956,6 +1040,83 @@ const Clientes = () => {
 
                       <Separator />
 
+                      {/* Lotes do Cliente */}
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          Lotes do Cliente
+                        </p>
+                        {loadingVendasCliente ? (
+                          <div className="text-xs text-muted-foreground">
+                            Carregando lotes do cliente...
+                          </div>
+                        ) : isErrorVendasCliente ? (
+                          <div className="text-xs text-destructive">
+                            Erro ao carregar lotes vinculados ao cliente.
+                          </div>
+                        ) : vendasCliente.length === 0 ? (
+                          <div className="text-xs text-muted-foreground">
+                            Nenhum lote/venda vinculada a este cliente.
+                          </div>
+                        ) : (
+                          <div className="border border-border rounded-md overflow-hidden">
+                            <div className="max-h-56 overflow-y-auto">
+                              <table className="w-full text-xs">
+                                <thead>
+                                  <tr className="border-b border-border bg-muted/50">
+                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
+                                      Loteamento
+                                    </th>
+                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
+                                      Lote
+                                    </th>
+                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
+                                      Data
+                                    </th>
+                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
+                                      Parc.
+                                    </th>
+                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
+                                      Status
+                                    </th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-border">
+                                  {vendasCliente.map((venda) => (
+                                    <tr key={venda.id_venda}>
+                                      <td className="px-3 py-2">
+                                        <span className="font-medium">{venda.loteamento}</span>
+                                      </td>
+                                      <td className="px-3 py-2 text-muted-foreground">
+                                        {venda.lote_desc}
+                                      </td>
+                                      <td className="px-3 py-2 text-muted-foreground">
+                                        {formatDateBr(venda.data_venda)}
+                                      </td>
+                                      <td className="px-3 py-2 text-muted-foreground">
+                                        {venda.parcelas}x
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <Badge variant={venda.status === "quitada" ? "secondary" : venda.status === "cancelada" ? "destructive" : "default"}>
+                                          {venda.status === "aberta"
+                                            ? "Aberta"
+                                            : venda.status === "quitada"
+                                            ? "Quitada"
+                                            : venda.status === "cancelada"
+                                            ? "Cancelada"
+                                            : venda.status}
+                                        </Badge>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <Separator />
+
                       {/* Impressão de Documentos */}
                       <div className="space-y-2">
                         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -1129,6 +1290,94 @@ const Clientes = () => {
                 </form>
               </Form>
             )}
+            </ErrorBoundary>
+          </DialogContent>
+        </Dialog>
+
+        {/* ── Dialog Lotes do Cliente ── */}
+        <Dialog open={dialogLotesAberto} onOpenChange={(open) => { if (!open) setDialogLotesAberto(false); }}>
+          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Lotes vinculados ao cliente</DialogTitle>
+              <DialogDescription>
+                {clienteSelecionado
+                  ? `Vendas e lotes vinculados ao cliente ${clienteSelecionado.nome}.`
+                  : "Selecione um cliente para visualizar os lotes vinculados."}
+              </DialogDescription>
+            </DialogHeader>
+
+            {loadingVendasCliente ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                Carregando lotes do cliente...
+              </div>
+            ) : isErrorVendasCliente ? (
+              <div className="py-8 text-center text-sm text-destructive">
+                Erro ao carregar lotes vinculados ao cliente.
+              </div>
+            ) : vendasCliente.length === 0 ? (
+              <div className="py-8 text-center text-sm text-muted-foreground">
+                Nenhum lote/venda vinculada a este cliente.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/50">
+                      <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">
+                        Loteamento
+                      </th>
+                      <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">
+                        Lote
+                      </th>
+                      <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">
+                        Data venda
+                      </th>
+                      <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">
+                        Parcelas
+                      </th>
+                      <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {vendasCliente.map((venda) => (
+                      <tr key={venda.id_venda} className="hover:bg-muted/30 transition-colors">
+                        <td className="px-4 py-2.5">
+                          <div className="font-medium">{venda.loteamento}</div>
+                        </td>
+                        <td className="px-4 py-2.5 text-muted-foreground">
+                          {venda.lote_desc}
+                        </td>
+                        <td className="px-4 py-2.5 text-muted-foreground">
+                          {formatDateBr(venda.data_venda)}
+                        </td>
+                        <td className="px-4 py-2.5 text-muted-foreground">
+                          {venda.parcelas}x
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <Badge variant={venda.status === "quitada" ? "secondary" : venda.status === "cancelada" ? "destructive" : "default"}>
+                            {venda.status === "aberta"
+                              ? "Aberta"
+                              : venda.status === "quitada"
+                              ? "Quitada"
+                              : venda.status === "cancelada"
+                              ? "Cancelada"
+                              : venda.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <DialogFooter className="pt-3">
+              <Button variant="outline" onClick={() => setDialogLotesAberto(false)}>
+                Fechar
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
 
@@ -1173,6 +1422,7 @@ const Clientes = () => {
           />
         )}
       </div>
+      </ErrorBoundary>
     </AppLayout>
   );
 };

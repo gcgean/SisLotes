@@ -52,11 +52,18 @@ const Login = () => {
   });
 
   useEffect(() => {
-    // Carrega o usuário salvo caso exista
+    const remember = localStorage.getItem("sislote:rememberCredentials") === "true";
     const savedLogin = localStorage.getItem("sislote:savedLogin");
-    if (savedLogin) {
-      form.setValue("login", savedLogin);
+    const savedSenha = localStorage.getItem("sislote:savedSenha");
+
+    if (remember) {
       setLembrarUsuario(true);
+      if (savedLogin) {
+        form.setValue("login", savedLogin);
+      }
+      if (savedSenha) {
+        form.setValue("senha", savedSenha);
+      }
     }
   }, [form]);
 
@@ -172,8 +179,12 @@ const Login = () => {
   function onSubmit(values: LoginFormValues) {
     if (lembrarUsuario) {
       localStorage.setItem("sislote:savedLogin", values.login);
+      localStorage.setItem("sislote:savedSenha", values.senha);
+      localStorage.setItem("sislote:rememberCredentials", "true");
     } else {
       localStorage.removeItem("sislote:savedLogin");
+      localStorage.removeItem("sislote:savedSenha");
+      localStorage.setItem("sislote:rememberCredentials", "false");
     }
     loginMutation.mutate(values);
   }
@@ -255,13 +266,21 @@ const Login = () => {
               <Checkbox 
                 id="lembrar" 
                 checked={lembrarUsuario}
-                onCheckedChange={(checked) => setLembrarUsuario(checked as boolean)}
+                onCheckedChange={(checked) => {
+                  const value = Boolean(checked);
+                  setLembrarUsuario(value);
+                  localStorage.setItem("sislote:rememberCredentials", value ? "true" : "false");
+                  if (!value) {
+                    localStorage.removeItem("sislote:savedLogin");
+                    localStorage.removeItem("sislote:savedSenha");
+                  }
+                }}
               />
               <label
                 htmlFor="lembrar"
                 className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
               >
-                Lembrar meu usuário
+                Lembrar meu usuário e senha
               </label>
             </div>
 

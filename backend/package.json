@@ -17,6 +17,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
+    "lucide-react": "^1.6.0",
     "morgan": "^1.10.0",
     "mysql2": "^3.18.2",
     "pg": "^8.19.0",

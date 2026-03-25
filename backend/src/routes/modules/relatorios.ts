@@ -396,6 +396,8 @@ const enderecosCarneQuerySchema = z.object({
     .optional(),
 });
 
+const clientesPorLoteamentoQuerySchema = enderecosCarneQuerySchema;
+
 relatoriosRouter.get(
   "/titulos-em-atraso",
   requireAuth,
@@ -584,6 +586,74 @@ relatoriosRouter.get(
       quadra: row.quadra !== null ? String(row.quadra) : "",
       lote: row.lote !== null ? String(row.lote) : "",
       loteamento: row.loteamento,
+    }));
+
+    return res.json(resultado);
+  },
+);
+
+relatoriosRouter.get(
+  "/clientes-por-loteamento",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = clientesPorLoteamentoQuerySchema.safeParse(req.query);
+
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+
+    const { id_loteamento } = parseResult.data;
+    const idEmpresa = req.user?.id_empresa;
+
+    if (!idEmpresa) {
+      return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+
+    const params: unknown[] = [idEmpresa];
+
+    const conditions: string[] = ["v.id_empresa = $1", "v.status <> 'cancelada'"];
+
+    if (typeof id_loteamento === "number") {
+      params.push(id_loteamento);
+      conditions.push(`lot.id_loteamento = $${params.length}`);
+    }
+
+    const whereClause = `WHERE ${conditions.join(" AND ")}`;
+
+    const query = `
+      SELECT
+        lot.id_loteamento,
+        lot.nome AS loteamento,
+        c.id_cliente,
+        c.nome AS cliente,
+        l.quadra,
+        l.lote
+      FROM vendas v
+      JOIN clientes c ON c.id_cliente = v.id_cliente
+      JOIN lotes l ON l.id_lote = v.id_lote
+      JOIN loteamentos lot ON lot.id_loteamento = l.id_loteamento
+      ${whereClause}
+      ORDER BY lot.nome ASC, c.nome ASC, l.quadra ASC, l.lote ASC
+    `;
+
+    const rows = await AppDataSource.query(query, params);
+
+    type ClienteLoteRow = {
+      id_loteamento: number | string;
+      loteamento: string;
+      id_cliente: number | string;
+      cliente: string;
+      quadra: string | number | null;
+      lote: string | number | null;
+    };
+
+    const resultado = (rows as ClienteLoteRow[]).map((row) => ({
+      id_loteamento: Number(row.id_loteamento),
+      loteamento: row.loteamento,
+      id_cliente: Number(row.id_cliente),
+      cliente: row.cliente,
+      quadra: row.quadra !== null ? String(row.quadra) : "",
+      lote: row.lote !== null ? String(row.lote) : "",
     }));
 
     return res.json(resultado);
