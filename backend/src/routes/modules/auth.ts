@@ -25,7 +25,11 @@ authRouter.post("/login", async (req, res) => {
 
     const usuarioRepo = AppDataSource.getRepository(Usuario);
 
-    const user = await usuarioRepo.findOne({ where: { login } });
+    // Busca case-insensitive pelo login (apenas a senha é case-sensitive)
+    const user = await usuarioRepo
+      .createQueryBuilder("u")
+      .where("LOWER(u.login) = LOWER(:login)", { login: login.trim() })
+      .getOne();
 
     if (!user || !user.senha || user.senha !== senha) {
       return res.status(401).json({ error: "Usuário ou senha inválidos" });
@@ -96,7 +100,10 @@ authRouter.post("/esqueci-senha", async (req, res) => {
     }
 
     const usuarioRepo = AppDataSource.getRepository(Usuario);
-    const user = await usuarioRepo.findOne({ where: { login: login.trim() } });
+    const user = await usuarioRepo
+      .createQueryBuilder("u")
+      .where("LOWER(u.login) = LOWER(:login)", { login: login.trim() })
+      .getOne();
 
     if (!user) {
       return res.status(404).json({ error: "Usuário não encontrado" });
