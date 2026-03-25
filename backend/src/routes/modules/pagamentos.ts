@@ -16,6 +16,11 @@ const baixaSchema = z.object({
 const listPagamentosQuerySchema = z.object({
   from: z.string().optional(),
   to: z.string().optional(),
+  id_cliente: z
+    .string()
+    .regex(/^\d+$/)
+    .transform((v) => parseInt(v, 10))
+    .optional(),
 });
 
 pagamentosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
@@ -27,7 +32,7 @@ pagamentosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
     return res.status(400).json({ error: "Parâmetros de filtro inválidos", issues: parseResult.error.issues });
   }
 
-  const { from, to } = parseResult.data;
+  const { from, to, id_cliente } = parseResult.data;
 
   const qb = repo
     .createQueryBuilder("pagamento")
@@ -48,6 +53,10 @@ pagamentosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
 
   if (to) {
     qb.andWhere("pagamento.vencimento <= :to", { to });
+  }
+
+  if (typeof id_cliente === "number") {
+    qb.andWhere("cliente.id_cliente = :id_cliente", { id_cliente });
   }
 
   const pagamentos = await qb.orderBy("pagamento.vencimento", "ASC").getMany();

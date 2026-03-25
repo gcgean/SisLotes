@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useLocation } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -122,6 +123,9 @@ function getAuthHeaders() {
 
 const Pagamentos = () => {
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  const clienteId = searchParams.get("cliente");
   const [dataIni, setDataIni] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 3);
@@ -133,13 +137,14 @@ const Pagamentos = () => {
   });
 
   const { data: pagamentos = [], isLoading, isError } = useQuery<Pagamento[]>({
-    queryKey: ["pagamentos", dataIni, dataFim],
+    queryKey: ["pagamentos", dataIni, dataFim, clienteId],
     queryFn: async () => {
       const params = new URLSearchParams();
       const fromIso = toIsoFromBr(dataIni);
       const toIso = toIsoFromBr(dataFim);
       if (fromIso) params.set("from", fromIso);
       if (toIso) params.set("to", toIso);
+      if (clienteId) params.set("id_cliente", clienteId);
 
       const response = await fetch(`/api/pagamentos?${params.toString()}`, {
         headers: {
@@ -305,7 +310,9 @@ const Pagamentos = () => {
       <div className="space-y-6 animate-fade-in">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Pagamentos</h1>
+            <h1 className="text-2xl font-bold tracking-tight">
+              Pagamentos{clienteId && pagamentos[0]?.cliente ? ` — ${pagamentos[0].cliente}` : ""}
+            </h1>
             <p className="text-sm text-muted-foreground mt-1">
               {isLoading
                 ? "Carregando pagamentos..."
