@@ -3,7 +3,27 @@
     "allow": [
       "mcp__Claude_Preview__preview_start",
       "Bash(npm install:*)",
-      "Bash(npm ls:*)"
+      "Bash(npm ls:*)",
+      "Bash(npm run:*)",
+      "Bash(timeout /t 8 /nobreak)",
+      "Bash(npx tsx -e \":*)",
+      "Bash(node -e \":*)",
+      "Bash(npx tsc:*)",
+      "Bash(curl -s http://localhost:3334/api/setup/status)",
+      "Bash(powershell -c \"Get-Process -Name postgres* -ErrorAction SilentlyContinue; Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$_LocalPort -gt 5000 -and $_LocalPort -lt 6000} | Select LocalPort,OwningProcess\")",
+      "Bash(powershell -c \"Get-Process -Name postgres* 2>$null | Select-Object Id,Name; Get-NetTCPConnection -State Listen 2>$null | Where-Object LocalPort -gt 5400 | Where-Object LocalPort -lt 5500 | Select LocalPort\")",
+      "Bash(powershell -c \"Get-NetTCPConnection -State Listen | Where-Object { $_LocalPort -gt 5400 -and $_LocalPort -lt 5500 } | Select-Object LocalPort\")",
+      "Bash(powershell -Command \"netstat -ano | findstr :543\")",
+      "Bash(powershell -Command \"netstat -ano\")",
+      "Bash(docker compose:*)",
+      "Bash(powershell -Command \"Stop-Process -Id \\(Get-NetTCPConnection -LocalPort 3334 -State Listen\\).OwningProcess -Force 2>$null; Start-Sleep 1; Write-Host ''killed''\")",
+      "Bash(powershell -Command \"& { $p = \\(Get-NetTCPConnection -LocalPort 3334 -State Listen -ErrorAction SilentlyContinue\\).OwningProcess; if \\($p\\) { Stop-Process -Id $p -Force; Write-Host ''killed'' } else { Write-Host ''not found'' } }\")",
+      "Bash(netstat -ano)",
+      "Bash(xargs -r taskkill //F //PID)",
+      "Bash(xargs -r -I{} taskkill //F //PID {})",
+      "Bash(docker exec:*)",
+      "Bash(curl -s -X POST http://localhost:3334/api/setup/primeiro-acesso -H \"Content-Type: application/json\" -d '{:*)",
+      "Bash(curl -s -X POST http://localhost:3334/api/setup/recuperar-acesso -H \"Content-Type: application/json\" -d '{\"\"cnpj\"\":\"\"55.666.777/0001-88\"\",\"\"email\"\":\"\"beta@construtora.com\"\"}')"
     ]
   }
 }

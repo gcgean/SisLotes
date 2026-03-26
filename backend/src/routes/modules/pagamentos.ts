@@ -10,7 +10,7 @@ export const pagamentosRouter = Router();
 const baixaSchema = z.object({
   pago_data: z.string(),
   valor_pago: z.number().positive(),
-  id_conta: z.number().int().positive(),
+  id_conta: z.number().int().positive().optional().nullable(),
 });
 
 const listPagamentosQuerySchema = z.object({
@@ -151,7 +151,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   pagamento.valor_pago = valor_pago.toFixed(2);
   pagamento.multa = multa.toFixed(2);
   pagamento.juros = juros.toFixed(2);
-  pagamento.id_conta = id_conta;
+  pagamento.id_conta = id_conta ?? null;
   pagamento.id_usuario = req.user?.id_usuario ?? 1;
 
   const saved = await pagamentoRepo.save(pagamento);

@@ -4,9 +4,10 @@ import { AppSidebar } from "./AppSidebar";
 import { BottomNav } from "./BottomNav";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Menu, LogOut, Sun, Moon } from "lucide-react";
+import { Menu, LogOut, Sun, Moon, Building2 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "next-themes";
+import { useQuery } from "@tanstack/react-query";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -21,6 +22,19 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const { data: empresa } = useQuery<{ nome_fantasia: string }>({
+    queryKey: ["minha-empresa"],
+    queryFn: async () => {
+      const token = window.localStorage.getItem("token");
+      const res = await fetch("/api/empresas/minha", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Erro ao carregar empresa");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
   function handleLogout() {
     logout();
@@ -46,6 +60,12 @@ export function AppLayout({ children }: AppLayoutProps) {
 
             <div className="flex items-center gap-2">
               <span className="text-sm font-semibold text-foreground">SISLOTE</span>
+              {empresa && (
+                <span className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground border-l border-border pl-3 ml-1">
+                  <Building2 className="h-3.5 w-3.5 shrink-0" />
+                  <span className="font-medium text-foreground">{empresa.nome_fantasia}</span>
+                </span>
+              )}
             </div>
 
             <div className="ml-auto flex items-center gap-2">

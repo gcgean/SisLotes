@@ -21,6 +21,9 @@ export class Empresa {
   endereco?: string | null;
 
   @Column({ type: "varchar", length: 100, nullable: true })
+  bairro?: string | null;
+
+  @Column({ type: "varchar", length: 100, nullable: true })
   cidade?: string | null;
 
   @Column({ type: "char", length: 2, nullable: true })
@@ -31,6 +34,16 @@ export class Empresa {
 
   @Column({ type: "varchar", length: 20, nullable: true })
   telefone?: string | null;
+
+  @Column({ type: "varchar", length: 200, nullable: true })
+  email?: string | null;
+
+  @Column({ type: "varchar", length: 200, nullable: true })
+  site?: string | null;
+
+  /** Logo em base64 (data URL: "data:image/png;base64,...") */
+  @Column({ type: "text", nullable: true })
+  logo?: string | null;
 
   @Column({ type: "boolean", default: true })
   ativo!: boolean;

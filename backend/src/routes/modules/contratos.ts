@@ -113,10 +113,16 @@ contratosRouter.get("/venda/:id_venda", requireAuth, async (req: AuthRequest, re
       nome_fantasia: empresa.nome_fantasia,
       razao_social: empresa.razao_social ?? null,
       cnpj: empresa.cnpj ?? null,
+      ie: empresa.ie ?? null,
       endereco: empresa.endereco ?? null,
+      bairro: empresa.bairro ?? null,
       cidade: empresa.cidade ?? null,
       estado: empresa.estado ?? null,
+      cep: empresa.cep ?? null,
       telefone: empresa.telefone ?? null,
+      email: empresa.email ?? null,
+      site: empresa.site ?? null,
+      logo: empresa.logo ?? null,
     } : null,
   });
 });

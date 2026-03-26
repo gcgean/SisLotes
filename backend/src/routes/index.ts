@@ -11,9 +11,11 @@ import { logsRouter } from "./modules/logs";
 import { empresasRouter } from "./modules/empresas";
 import { relatoriosRouter } from "./modules/relatorios";
 import { contratosRouter } from "./modules/contratos";
+import { setupRouter } from "./modules/setup";
 
 export const router = Router();
 
+router.use("/setup", setupRouter);
 router.use("/auth", authRouter);
 router.use("/clientes", clientesRouter);
 router.use("/loteamentos", loteamentosRouter);

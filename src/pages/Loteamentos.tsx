@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -16,6 +17,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -90,9 +101,12 @@ const statusVendaLabel: Record<string, string> = {
 };
 
 const Loteamentos = () => {
+  const navigate = useNavigate();
   const [dialogAberto, setDialogAberto] = useState(false);
   const [modoDialog, setModoDialog] = useState<"novo" | "editar">("novo");
   const [loteamentoEditandoId, setLoteamentoEditandoId] = useState<number | null>(null);
+  const [novoLoteamento, setNovoLoteamento] = useState<{ id: number; nome: string } | null>(null);
+  const [dialogConfirmarLotes, setDialogConfirmarLotes] = useState(false);
 
   const [page, setPage] = useState(1);
   const pageSize = 12;
@@ -165,10 +179,12 @@ const Loteamentos = () => {
 
       return data as Loteamento;
     },
-    onSuccess: () => {
+    onSuccess: (loteamentoCriado) => {
       queryClient.invalidateQueries({ queryKey: ["loteamentos"] });
       setDialogAberto(false);
       toast({ title: "Loteamento criado com sucesso" });
+      setNovoLoteamento({ id: loteamentoCriado.id_loteamento, nome: loteamentoCriado.nome });
+      setDialogConfirmarLotes(true);
     },
     onError: (error) => {
       toast({
@@ -685,6 +701,31 @@ const Loteamentos = () => {
           </Form>
         </DialogContent>
       </Dialog>
+      {/* AlertDialog - Cadastrar lotes após criar loteamento */}
+      <AlertDialog open={dialogConfirmarLotes} onOpenChange={(open) => { if (!open) setDialogConfirmarLotes(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cadastrar lotes agora?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O loteamento <span className="font-semibold">"{novoLoteamento?.nome}"</span> foi criado com sucesso.
+              Deseja cadastrar os lotes deste loteamento agora?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDialogConfirmarLotes(false)}>
+              Não, depois
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setDialogConfirmarLotes(false);
+                navigate(`/lotes?loteamento=${novoLoteamento?.id}`);
+              }}
+            >
+              Sim, cadastrar lotes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </AppLayout>
   );
 };

@@ -14,6 +14,7 @@ import Relatorios from "./pages/Relatorios";
 import Configuracoes from "./pages/Configuracoes";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
+import PrimeiroAcesso from "./pages/PrimeiroAcesso";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 
@@ -48,6 +49,7 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/primeiro-acesso" element={<PrimeiroAcesso />} />
             <Route
               path="/"
               element={

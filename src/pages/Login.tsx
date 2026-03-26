@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -18,7 +18,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Eye, EyeOff, KeyRound } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Building2 } from "lucide-react";
 
 const loginSchema = z.object({
   login: z.string().min(1, "Login é obrigatório"),
@@ -70,7 +70,17 @@ const Login = () => {
   useEffect(() => {
     if (token) {
       navigate("/", { replace: true });
+      return;
     }
+    // Se não há nenhuma empresa cadastrada (sistema virgem), redireciona para primeiro acesso
+    fetch("/api/setup/status")
+      .then((r) => r.json())
+      .then((data: { totalEmpresas: number }) => {
+        if (data.totalEmpresas === 0) {
+          navigate("/primeiro-acesso", { replace: true });
+        }
+      })
+      .catch(() => {});
   }, [token, navigate]);
 
   const loginMutation = useMutation({
@@ -289,6 +299,16 @@ const Login = () => {
             </Button>
           </form>
         </Form>
+
+        <div className="border-t border-border pt-4 text-center">
+          <p className="text-xs text-muted-foreground mb-2">Novo cliente?</p>
+          <Link to="/primeiro-acesso">
+            <Button variant="outline" className="w-full gap-2" size="sm">
+              <Building2 className="h-4 w-4" />
+              Primeiro Acesso — Cadastrar minha empresa
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Dialog - Esqueci minha senha */}

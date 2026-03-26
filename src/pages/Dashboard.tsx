@@ -6,6 +6,7 @@ import {
   CreditCard,
   TrendingUp,
   AlertTriangle,
+  Building2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
@@ -46,6 +47,19 @@ interface DashboardVendaRecente {
 }
 
 const Dashboard = () => {
+  const { data: empresa } = useQuery<{ nome_fantasia: string; cidade?: string; estado?: string }>({
+    queryKey: ["minha-empresa"],
+    queryFn: async () => {
+      const token = window.localStorage.getItem("token");
+      const res = await fetch("/api/empresas/minha", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Erro");
+      return res.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const { data: kpisData } = useQuery<DashboardKpis>({
     queryKey: ["dashboard", "kpis"],
     queryFn: async () => {
@@ -181,7 +195,19 @@ const Dashboard = () => {
       <div className="space-y-6 animate-fade-in">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground mt-1">Visão geral do sistema</p>
+          {empresa ? (
+            <p className="text-sm text-muted-foreground mt-1 flex items-center gap-1.5">
+              <Building2 className="h-4 w-4 shrink-0" />
+              <span className="font-medium text-foreground">{empresa.nome_fantasia}</span>
+              {empresa.cidade && (
+                <span className="text-muted-foreground">
+                  — {empresa.cidade}{empresa.estado ? `/${empresa.estado}` : ""}
+                </span>
+              )}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground mt-1">Visão geral do sistema</p>
+          )}
         </div>
 
         {/* KPI Cards */}

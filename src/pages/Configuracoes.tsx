@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, Shield, Building2 } from "lucide-react";
+import { Plus, Edit, Trash2, Shield, Building2, Upload, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -46,6 +46,28 @@ interface Empresa {
   nome_fantasia: string;
   ativo: boolean;
 }
+
+interface MinhaEmpresaData {
+  nome_fantasia: string;
+  razao_social: string;
+  cnpj: string;
+  ie: string;
+  endereco: string;
+  bairro: string;
+  cidade: string;
+  estado: string;
+  cep: string;
+  telefone: string;
+  email: string;
+  site: string;
+  logo: string | null;
+}
+
+const MINHA_EMPRESA_EMPTY: MinhaEmpresaData = {
+  nome_fantasia: "", razao_social: "", cnpj: "", ie: "",
+  endereco: "", bairro: "", cidade: "", estado: "", cep: "",
+  telefone: "", email: "", site: "", logo: null,
+};
 
 type UsuarioPermissaoKey =
   | "clientes_cadastrar"
@@ -130,6 +152,8 @@ const Configuracoes = () => {
   const [modoConta, setModoConta] = useState<"create" | "edit">("create");
   const [confirmarExclusaoUsuario, setConfirmarExclusaoUsuario] = useState<Usuario | null>(null);
   const [confirmarExclusaoConta, setConfirmarExclusaoConta] = useState<Conta | null>(null);
+  const [minhaEmpresa, setMinhaEmpresa] = useState<MinhaEmpresaData>(MINHA_EMPRESA_EMPTY);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const queryClient = useQueryClient();
 
@@ -181,6 +205,31 @@ const Configuracoes = () => {
       }
 
       return response.json();
+    },
+  });
+
+  const { isLoading: loadingMinhaEmpresa } = useQuery({
+    queryKey: ["minha-empresa"],
+    queryFn: async () => {
+      const r = await fetch("/api/empresas/minha", { headers: { ...getAuthHeaders() } });
+      if (!r.ok) return null;
+      const data = await r.json();
+      setMinhaEmpresa({
+        nome_fantasia: data.nome_fantasia ?? "",
+        razao_social: data.razao_social ?? "",
+        cnpj: data.cnpj ?? "",
+        ie: data.ie ?? "",
+        endereco: data.endereco ?? "",
+        bairro: data.bairro ?? "",
+        cidade: data.cidade ?? "",
+        estado: data.estado ?? "",
+        cep: data.cep ?? "",
+        telefone: data.telefone ?? "",
+        email: data.email ?? "",
+        site: data.site ?? "",
+        logo: data.logo ?? null,
+      });
+      return data;
     },
   });
 
@@ -525,6 +574,39 @@ const Configuracoes = () => {
     },
   });
 
+  const salvarMinhaEmpresaMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch("/api/empresas/minha", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(minhaEmpresa),
+      });
+      if (!r.ok) throw new Error("Erro ao salvar empresa");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["minha-empresa"] });
+      toast({ title: "Empresa salva com sucesso" });
+    },
+    onError: () => {
+      toast({ title: "Erro ao salvar empresa", variant: "destructive" });
+    },
+  });
+
+  function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setMinhaEmpresa((prev) => ({ ...prev, logo: ev.target?.result as string }));
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setEmpresaField(key: keyof MinhaEmpresaData, value: string) {
+    setMinhaEmpresa((prev) => ({ ...prev, [key]: value }));
+  }
+
   function abrirNovaConta() {
     setModoConta("create");
     setContaSelecionada(null);
@@ -570,8 +652,12 @@ const Configuracoes = () => {
           <p className="text-sm text-muted-foreground mt-1">Contas bancárias, usuários e permissões</p>
         </div>
 
-        <Tabs defaultValue="contas" className="space-y-4">
-          <TabsList>
+        <Tabs defaultValue="minha-empresa" className="space-y-4">
+          <TabsList className="flex-wrap h-auto">
+            <TabsTrigger value="minha-empresa" className="gap-2">
+              <Building2 className="h-4 w-4" />
+              Minha Empresa
+            </TabsTrigger>
             <TabsTrigger value="contas" className="gap-2">
               <Building2 className="h-4 w-4" />
               Contas Bancárias
@@ -585,6 +671,177 @@ const Configuracoes = () => {
               Empresas
             </TabsTrigger>
           </TabsList>
+
+          {/* MINHA EMPRESA */}
+          <TabsContent value="minha-empresa" className="space-y-4">
+            {loadingMinhaEmpresa ? (
+              <p className="text-sm text-muted-foreground">Carregando dados da empresa...</p>
+            ) : (
+              <div className="glass-card rounded-lg p-5 space-y-5">
+
+                {/* Logo */}
+                <div className="space-y-2">
+                  <Label>Logomarca</Label>
+                  <div className="flex items-start gap-4">
+                    <div className="w-36 h-20 border border-border rounded-md bg-muted flex items-center justify-center overflow-hidden shrink-0">
+                      {minhaEmpresa.logo ? (
+                        <img src={minhaEmpresa.logo} alt="Logo" className="max-w-full max-h-full object-contain" />
+                      ) : (
+                        <span className="text-xs text-muted-foreground text-center px-2">Sem logomarca</span>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleLogoChange}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="gap-2"
+                        onClick={() => logoInputRef.current?.click()}
+                      >
+                        <Upload className="h-4 w-4" />
+                        {minhaEmpresa.logo ? "Trocar logo" : "Enviar logo"}
+                      </Button>
+                      {minhaEmpresa.logo && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="gap-2 text-destructive"
+                          onClick={() => setMinhaEmpresa((prev) => ({ ...prev, logo: null }))}
+                        >
+                          <X className="h-4 w-4" />
+                          Remover logo
+                        </Button>
+                      )}
+                      <p className="text-xs text-muted-foreground">PNG, JPG ou SVG. Recomendado: 400×200px</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Identificação */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Nome fantasia *</Label>
+                    <Input
+                      value={minhaEmpresa.nome_fantasia}
+                      onChange={(e) => setEmpresaField("nome_fantasia", e.target.value)}
+                      placeholder="IMOBILIÁRIA EXEMPLO"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Razão social</Label>
+                    <Input
+                      value={minhaEmpresa.razao_social}
+                      onChange={(e) => setEmpresaField("razao_social", e.target.value)}
+                      placeholder="EXEMPLO IMÓVEIS LTDA"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CNPJ</Label>
+                    <Input
+                      value={minhaEmpresa.cnpj}
+                      onChange={(e) => setEmpresaField("cnpj", e.target.value)}
+                      placeholder="00.000.000/0001-00"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Inscrição estadual</Label>
+                    <Input
+                      value={minhaEmpresa.ie}
+                      onChange={(e) => setEmpresaField("ie", e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {/* Endereço */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2 md:col-span-2">
+                    <Label>Endereço</Label>
+                    <Input
+                      value={minhaEmpresa.endereco}
+                      onChange={(e) => setEmpresaField("endereco", e.target.value)}
+                      placeholder="RUA EXEMPLO Nº 100"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Bairro</Label>
+                    <Input
+                      value={minhaEmpresa.bairro}
+                      onChange={(e) => setEmpresaField("bairro", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>CEP</Label>
+                    <Input
+                      value={minhaEmpresa.cep}
+                      onChange={(e) => setEmpresaField("cep", e.target.value)}
+                      placeholder="00000-000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Cidade</Label>
+                    <Input
+                      value={minhaEmpresa.cidade}
+                      onChange={(e) => setEmpresaField("cidade", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Estado (UF)</Label>
+                    <Input
+                      value={minhaEmpresa.estado}
+                      onChange={(e) => setEmpresaField("estado", e.target.value.toUpperCase().slice(0, 2))}
+                      placeholder="CE"
+                      maxLength={2}
+                    />
+                  </div>
+                </div>
+
+                {/* Contato */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Telefone</Label>
+                    <Input
+                      value={minhaEmpresa.telefone}
+                      onChange={(e) => setEmpresaField("telefone", e.target.value)}
+                      placeholder="(00) 0000-0000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>E-mail</Label>
+                    <Input
+                      type="email"
+                      value={minhaEmpresa.email}
+                      onChange={(e) => setEmpresaField("email", e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Site</Label>
+                    <Input
+                      value={minhaEmpresa.site}
+                      onChange={(e) => setEmpresaField("site", e.target.value)}
+                      placeholder="www.exemplo.com.br"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <Button
+                    onClick={() => salvarMinhaEmpresaMutation.mutate()}
+                    disabled={salvarMinhaEmpresaMutation.isPending || !minhaEmpresa.nome_fantasia}
+                  >
+                    {salvarMinhaEmpresaMutation.isPending ? "Salvando..." : "Salvar empresa"}
+                  </Button>
+                </div>
+              </div>
+            )}
+          </TabsContent>
 
           {/* CONTAS BANCÁRIAS */}
           <TabsContent value="contas" className="space-y-4">

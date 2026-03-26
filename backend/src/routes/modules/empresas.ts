@@ -12,13 +12,18 @@ const empresaBodySchema = z.object({
   cnpj: z.string().max(18).optional(),
   ie: z.string().max(20).optional(),
   endereco: z.string().max(300).optional(),
+  bairro: z.string().max(100).optional(),
   cidade: z.string().max(100).optional(),
   estado: z.string().max(2).optional(),
   cep: z.string().max(9).optional(),
   telefone: z.string().max(20).optional(),
+  email: z.string().max(200).optional(),
+  site: z.string().max(200).optional(),
+  logo: z.string().optional().nullable(),
   ativo: z.boolean().optional(),
 });
 
+// ─── Listar todas (master only) ───────────────────────────────────────────────
 empresasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const currentUser = req.user;
 
@@ -32,6 +37,56 @@ empresasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   return res.json(empresas);
 });
 
+// ─── Obter minha empresa (qualquer usuário autenticado) ───────────────────────
+empresasRouter.get("/minha", requireAuth, async (req: AuthRequest, res) => {
+  const currentUser = req.user;
+  if (!currentUser?.id_empresa) {
+    return res.status(404).json({ error: "Empresa não associada ao usuário" });
+  }
+
+  const repo = AppDataSource.getRepository(Empresa);
+  const empresa = await repo.findOne({ where: { id_empresa: currentUser.id_empresa } });
+
+  if (!empresa) {
+    return res.status(404).json({ error: "Empresa não encontrada" });
+  }
+
+  return res.json(empresa);
+});
+
+// ─── Atualizar minha empresa ───────────────────────────────────────────────────
+empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
+  const currentUser = req.user;
+  if (!currentUser?.id_empresa) {
+    return res.status(404).json({ error: "Empresa não associada ao usuário" });
+  }
+
+  const parseResult = empresaBodySchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
+  }
+
+  const repo = AppDataSource.getRepository(Empresa);
+  const empresa = await repo.findOne({ where: { id_empresa: currentUser.id_empresa } });
+
+  if (!empresa) {
+    return res.status(404).json({ error: "Empresa não encontrada" });
+  }
+
+  const { logo, ...rest } = parseResult.data;
+
+  Object.assign(empresa, rest);
+
+  // Logo: aceita null para remover, undefined para não alterar
+  if (logo !== undefined) {
+    empresa.logo = logo ?? null;
+  }
+
+  const saved = await repo.save(empresa);
+  return res.json(saved);
+});
+
+// ─── Criar empresa (master only) ─────────────────────────────────────────────
 empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
   const currentUser = req.user;
 
@@ -56,6 +111,7 @@ empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
   return res.status(201).json(saved);
 });
 
+// ─── Ativar/desativar empresa (master only) ───────────────────────────────────
 empresasRouter.put("/:id/ativo", requireAuth, async (req: AuthRequest, res) => {
   const currentUser = req.user;
 
@@ -66,9 +122,7 @@ empresasRouter.put("/:id/ativo", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;
 
   const parseResult = z
-    .object({
-      ativo: z.boolean(),
-    })
+    .object({ ativo: z.boolean() })
     .safeParse(req.body);
 
   if (!parseResult.success) {
@@ -76,7 +130,6 @@ empresasRouter.put("/:id/ativo", requireAuth, async (req: AuthRequest, res) => {
   }
 
   const repo = AppDataSource.getRepository(Empresa);
-
   const empresa = await repo.findOne({ where: { id_empresa: Number(id) } });
 
   if (!empresa) {
@@ -84,7 +137,6 @@ empresasRouter.put("/:id/ativo", requireAuth, async (req: AuthRequest, res) => {
   }
 
   empresa.ativo = parseResult.data.ativo;
-
   const saved = await repo.save(empresa);
 
   return res.json(saved);

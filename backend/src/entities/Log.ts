@@ -1,4 +1,4 @@
-import { Column, CreateDateColumn, Entity, Index, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import { Column, CreateDateColumn, Entity, Index, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
 import { Usuario } from "./Usuario";
 import { Cliente } from "./Cliente";
 import { Lote } from "./Lote";
@@ -14,18 +14,21 @@ export class Log {
   id_usuario!: number;
 
   @ManyToOne(() => Usuario, (usuario) => usuario.logs)
+  @JoinColumn({ name: "id_usuario" })
   usuario!: Usuario;
 
   @Column({ type: "integer", name: "id_cliente", nullable: true })
   id_cliente!: number | null;
 
   @ManyToOne(() => Cliente)
+  @JoinColumn({ name: "id_cliente" })
   cliente!: Cliente | null;
 
   @Column({ type: "integer", name: "id_lote", nullable: true })
   id_lote!: number | null;
 
   @ManyToOne(() => Lote)
+  @JoinColumn({ name: "id_lote" })
   lote!: Lote | null;
 
   @Column({ type: "varchar", length: 100, nullable: true })

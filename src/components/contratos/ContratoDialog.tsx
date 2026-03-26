@@ -61,8 +61,10 @@ interface ContratoData {
   } | null;
   empresa: {
     nome_fantasia: string; razao_social: string | null; cnpj: string | null;
-    endereco: string | null; cidade: string | null; estado: string | null;
-    telefone: string | null;
+    ie: string | null; endereco: string | null; bairro: string | null;
+    cidade: string | null; estado: string | null; cep: string | null;
+    telefone: string | null; email: string | null; site: string | null;
+    logo: string | null;
   } | null;
 }
 
@@ -100,6 +102,45 @@ function porExtenso(n: number): string {
   if (n < 100) return dezenas[Math.floor(n / 10)] + (n % 10 ? " e " + unidades[n % 10] : "");
   if (n < 1000) return unidades[Math.floor(n / 100)] + " centos" + (n % 100 ? " e " + porExtenso(n % 100) : "");
   return String(n);
+}
+
+// ─── Helper: cabeçalho com timbrado da empresa ────────────────────────────────
+
+type EmpresaHeader = {
+  nome_fantasia: string; razao_social?: string | null; cnpj?: string | null;
+  endereco?: string | null; bairro?: string | null; cidade?: string | null;
+  estado?: string | null; telefone?: string | null; email?: string | null;
+  logo?: string | null;
+} | null | undefined;
+
+function buildTimbrado(empresa: EmpresaHeader, semTimbrado: boolean): string {
+  if (semTimbrado) return "";
+
+  const logoHtml = empresa?.logo
+    ? `<img src="${empresa.logo}" alt="Logo" style="max-height:70px;max-width:160px;object-fit:contain;" />`
+    : `<div style="width:160px;height:70px;background:#eee;border:1px solid #ccc;display:flex;align-items:center;justify-content:center;font-size:10px;color:#666;">LOGOMARCA</div>`;
+
+  const endereco = [
+    empresa?.endereco,
+    empresa?.bairro ? `BAIRRO ${empresa.bairro.toUpperCase()}` : null,
+  ].filter(Boolean).join(" - ");
+
+  const cidadeTel = [
+    empresa?.cidade && empresa?.estado ? `${empresa.cidade.toUpperCase()}-${empresa.estado.toUpperCase()}` : (empresa?.cidade ?? ""),
+    empresa?.telefone ? `TEL.: ${empresa.telefone}` : null,
+  ].filter(Boolean).join(" - ");
+
+  return `
+  <div style="display:flex;align-items:center;gap:20px;margin-bottom:30px;padding-bottom:12px;border-bottom:2px solid #000;">
+    ${logoHtml}
+    <div style="flex:1;text-align:center;font-size:9.5pt;line-height:1.6;">
+      <div style="font-size:13pt;font-weight:bold;">${empresa?.nome_fantasia ?? "IMOBILIÁRIA"}</div>
+      ${endereco ? `<div>${endereco}</div>` : ""}
+      ${cidadeTel ? `<div>${cidadeTel}</div>` : ""}
+      ${empresa?.cnpj ? `<div>CNPJ: ${empresa.cnpj}</div>` : ""}
+      ${empresa?.email ? `<div>${empresa.email}</div>` : ""}
+    </div>
+  </div>`;
 }
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
@@ -247,30 +288,6 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
       padding: 20mm 25mm;
       line-height: 1.5;
     }
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-      margin-bottom: 50px;
-    }
-    .logo-placeholder {
-      width: 150px;
-      height: 60px;
-      background: #eee;
-      border: 1px solid #ccc;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      color: #666;
-    }
-    .header-text {
-      font-size: 10pt;
-    }
-    .header-title {
-      font-size: 12pt;
-      font-weight: bold;
-    }
     .titulo {
       text-align: center;
       font-weight: bold;
@@ -314,15 +331,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
 </head>
 <body>
   <div class="conteudo" contenteditable="true">
-    <div class="header">
-      <div class="logo-placeholder">LOGOMARCA</div>
-      <div class="header-text">
-        <div class="header-title">${empresa?.nome_fantasia || "IMOBILIÁRIA"}</div>
-        ${empresa?.endereco ? `<div>${empresa.endereco}</div>` : ""}
-        <div>${empresa?.cidade || ""}${empresa?.estado ? `-${empresa.estado}` : ""} ${empresa?.telefone ? `- TEL.: ${empresa.telefone}` : ""}</div>
-        ${empresa?.cnpj ? `<div>CNPJ: ${empresa.cnpj}</div>` : ""}
-      </div>
-    </div>
+    ${buildTimbrado(empresa, false)}
 
     <div class="titulo">${titulo}</div>
 
@@ -425,33 +434,6 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
       padding: ${semTimbrado ? '60mm 20mm 20mm 20mm' : '15mm 20mm'};
       line-height: 1.4;
     }
-    .header {
-      display: ${semTimbrado ? 'none' : 'flex'};
-      align-items: center;
-      gap: 20px;
-      margin-bottom: 30px;
-    }
-    .logo-placeholder {
-      width: 160px;
-      height: 70px;
-      background: #eee;
-      border: 1px solid #ccc;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      color: #666;
-    }
-    .header-text {
-      font-size: 9pt;
-      text-align: center;
-      flex: 1;
-    }
-    .header-title {
-      font-size: 14pt;
-      font-weight: bold;
-      margin-bottom: 4px;
-    }
     .titulo-caixa {
       border: ${semTimbrado ? 'none' : '1px solid #000'};
       width: ${semTimbrado ? 'auto' : '200px'};
@@ -512,16 +494,8 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
 </head>
 <body>
   <div class="conteudo" contenteditable="true">
-    <div class="header">
-      <div class="logo-placeholder">LOGOMARCA</div>
-      <div class="header-text">
-        <div class="header-title">${empresa?.nome_fantasia || "IMOBILIÁRIA"}</div>
-        ${empresa?.endereco ? `<div>${empresa.endereco}</div>` : ""}
-        <div>${empresa?.cidade || ""}${empresa?.estado ? ` - ${empresa.estado}` : ""} ${empresa?.telefone ? `- TEL.: ${empresa.telefone}` : ""}</div>
-        ${empresa?.cnpj ? `<div>CNPJ: ${empresa.cnpj}</div>` : ""}
-      </div>
-    </div>
- 
+    ${buildTimbrado(empresa, semTimbrado)}
+
     <div class="titulo-caixa">MINUTA</div>
  
     <div class="caixa-texto">
@@ -661,6 +635,8 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
 </head>
 <body>
   <div class="conteudo" contenteditable="true">
+    ${buildTimbrado(empresa, false)}
+
     <div class="titulo">TERMO DE TRANSFERÊNCIA DE LOTE</div>
 
     <p>
@@ -838,6 +814,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
   </style>
 </head>
 <body>
+  ${buildTimbrado(empresa, false)}
   <div class="titulo">${titulo}</div>
   <div class="subtitulo">${loteamento?.nome ?? ""}</div>
 

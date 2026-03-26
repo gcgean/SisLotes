@@ -221,10 +221,49 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     return res.status(201).json(vendaComPagamentos);
   } catch (error) {
     await queryRunner.rollbackTransaction();
+    console.error("[POST /api/vendas] Erro:", error);
     return res.status(500).json({ error: "Erro ao criar venda" });
   } finally {
     await queryRunner.release();
   }
+});
+
+vendasRouter.patch("/:id/cancelar", requireAuth, requirePermission("vendas_alterar"), async (req: AuthRequest, res) => {
+  const { id } = req.params;
+
+  const vendaRepo = AppDataSource.getRepository(Venda);
+  const pagamentoRepo = AppDataSource.getRepository(Pagamento);
+
+  const whereVenda: Record<string, unknown> = { id_venda: Number(id) };
+  if (req.user?.id_empresa) whereVenda.id_empresa = req.user.id_empresa;
+
+  const venda = await vendaRepo.findOne({ where: whereVenda });
+
+  if (!venda) {
+    return res.status(404).json({ error: "Venda não encontrada" });
+  }
+
+  if (venda.status === "cancelada") {
+    return res.status(400).json({ error: "Venda já está cancelada" });
+  }
+
+  // Check for paid parcelas
+  const pagamentosPagos = await pagamentoRepo.count({
+    where: { id_venda: Number(id), situacao: "pago" },
+  });
+
+  if (pagamentosPagos > 0) {
+    return res.status(409).json({
+      error: "tem_pagamentos",
+      message: "Existem parcelas pagas nesta venda. Cancele os pagamentos antes de cancelar a venda.",
+      id_cliente: venda.id_cliente,
+    });
+  }
+
+  venda.status = "cancelada";
+  await vendaRepo.save(venda);
+
+  return res.json({ success: true });
 });
 
 vendasRouter.put("/:id", requireAuth, requirePermission("vendas_alterar"), async (req: AuthRequest, res) => {

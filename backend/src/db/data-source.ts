@@ -14,6 +14,10 @@ import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-Creat
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
 import { AddEmpresaAtivo1700000000003 } from "../migrations/1700000000003-AddEmpresaAtivo";
 import { AddProprietarioFieldsToLoteamento1700000000004 } from "../migrations/1700000000004-AddProprietarioFieldsToLoteamento";
+import { AddLogoToEmpresa1700000000005 } from "../migrations/1700000000005-AddLogoToEmpresa";
+import { MultiTenantEnsureEmpresaGeral1700000000006 } from "../migrations/1700000000006-MultiTenantEnsureEmpresaGeral";
+import { FixEmpresasSequence1700000000007 } from "../migrations/1700000000007-FixEmpresasSequence";
+import { AddEmailTelefoneToUsuario1700000000008 } from "../migrations/1700000000008-AddEmailTelefoneToUsuario";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -29,6 +33,10 @@ export const AppDataSource = new DataSource({
     CreateEmpresasAndMultiTenant1700000000002,
     AddEmpresaAtivo1700000000003,
     AddProprietarioFieldsToLoteamento1700000000004,
+    AddLogoToEmpresa1700000000005,
+    MultiTenantEnsureEmpresaGeral1700000000006,
+    FixEmpresasSequence1700000000007,
+    AddEmailTelefoneToUsuario1700000000008,
   ],
   synchronize: false,
   logging: false,

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +27,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Search, Plus, Eye, Edit, Trash2, User, Phone, MapPin } from "lucide-react";
+import { Search, Plus, Eye, Edit, Trash2, User, Phone, MapPin, ShoppingCart } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
 type LoteStatus = "disponivel" | "vendido";
@@ -104,6 +105,22 @@ const loteFormSchema = z.object({
 
 type LoteFormValues = z.infer<typeof loteFormSchema>;
 
+const vendaFormSchema = z.object({
+  id_cliente: z.string().min(1, "Cliente é obrigatório"),
+  data_venda: z.string().min(1, "Data é obrigatória"),
+  valor_lote: z.string().min(1, "Valor do lote é obrigatório"),
+  valor_entrada: z.string().min(1, "Entrada é obrigatória"),
+  parcelas: z.string().min(1, "Número de parcelas é obrigatório"),
+  porcentagem: z.string().min(1, "Juros é obrigatório"),
+});
+
+type VendaFormValues = z.infer<typeof vendaFormSchema>;
+
+interface ClienteBasico {
+  id_cliente: number;
+  nome: string;
+}
+
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
   if (!token) return {};
@@ -111,8 +128,9 @@ function getAuthHeaders() {
 }
 
 const Lotes = () => {
+  const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
-  const [filterLoteamento, setFilterLoteamento] = useState("all");
+  const [filterLoteamento, setFilterLoteamento] = useState(() => searchParams.get("loteamento") ?? "all");
   const [filterStatus, setFilterStatus] = useState<"all" | "disponivel" | "vendido">("all");
   const [page, setPage] = useState(1);
   const pageSize = 50;
@@ -122,6 +140,9 @@ const Lotes = () => {
   const [confirmarExclusao, setConfirmarExclusao] = useState<Lote | null>(null);
   const [loteCliente, setLoteCliente] = useState<Lote | null>(null);
   const [dialogClienteAberto, setDialogClienteAberto] = useState(false);
+  const [loteParaVender, setLoteParaVender] = useState<Lote | null>(null);
+  const [dialogVenderAberto, setDialogVenderAberto] = useState(false);
+  const autoOpenDone = useRef(false);
   const queryClient = useQueryClient();
 
   const form = useForm<LoteFormValues>({
@@ -135,6 +156,18 @@ const Lotes = () => {
       fundo: "",
       esquerdo: "",
       direito: "",
+    },
+  });
+
+  const vendaForm = useForm<VendaFormValues>({
+    resolver: zodResolver(vendaFormSchema),
+    defaultValues: {
+      id_cliente: "",
+      data_venda: new Date().toISOString().split("T")[0],
+      valor_lote: "",
+      valor_entrada: "0",
+      parcelas: "1",
+      porcentagem: "0",
     },
   });
 
@@ -163,6 +196,17 @@ const Lotes = () => {
 
       return data as Loteamento[];
     },
+  });
+
+  const { data: clientesData = [] } = useQuery<ClienteBasico[]>({
+    queryKey: ["clientes-basico"],
+    queryFn: async () => {
+      const response = await fetch("/api/clientes?limit=100", { headers: { ...getAuthHeaders() } });
+      if (!response.ok) throw new Error("Erro ao carregar clientes");
+      const json = await response.json() as { data: { id_cliente: number; nome: string }[] };
+      return (json.data ?? []).map((c) => ({ id_cliente: c.id_cliente, nome: c.nome }));
+    },
+    staleTime: 2 * 60 * 1000,
   });
 
   const {
@@ -340,6 +384,67 @@ const Lotes = () => {
     },
   });
 
+  const criarVendaMutation = useMutation({
+    mutationFn: async (values: VendaFormValues) => {
+      if (!loteParaVender) throw new Error("Nenhum lote selecionado");
+      const response = await fetch("/api/vendas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          id_cliente: Number(values.id_cliente),
+          id_lote: loteParaVender.id_lote,
+          data_venda: values.data_venda,
+          valor_entrada: Number(values.valor_entrada),
+          parcelas: Number(values.parcelas),
+          porcentagem: Number(values.porcentagem),
+          valor_lote: Number(values.valor_lote),
+        }),
+      });
+      let data: unknown;
+      try { data = await response.json(); } catch { data = null; }
+      if (!response.ok) {
+        const msg =
+          typeof data === "object" && data !== null && "error" in data &&
+          typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "Erro ao registrar venda";
+        throw new Error(msg);
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["lotes"] });
+      queryClient.invalidateQueries({ queryKey: ["vendas"] });
+      setDialogVenderAberto(false);
+      setLoteParaVender(null);
+      vendaForm.reset();
+      toast({ title: "Venda registrada com sucesso" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Erro ao registrar venda",
+        description: error instanceof Error ? error.message : "Erro ao registrar venda",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Auto-open "Novo Lote" dialog when navigated from loteamento creation
+  useEffect(() => {
+    if (autoOpenDone.current) return;
+    const lotParam = searchParams.get("loteamento");
+    if (lotParam && loteamentosData && loteamentosData.length > 0) {
+      const exists = loteamentosData.some((l) => String(l.id_loteamento) === lotParam);
+      if (exists) {
+        form.reset({ id_loteamento: lotParam, lote: "", quadra: "", area: "", frente: "", fundo: "", esquerdo: "", direito: "" });
+        setModoDialog("create");
+        setLoteSelecionado(null);
+        setDialogAberto(true);
+        autoOpenDone.current = true;
+      }
+    }
+  }, [loteamentosData, searchParams, form]);
+
   const filtered = lotes.filter((l) => {
     const nomeLoteamento = loteamentosMap.get(l.id_loteamento)?.nome ?? "";
     const matchSearch =
@@ -409,6 +514,19 @@ const Lotes = () => {
     setModoDialog("edit");
     setLoteSelecionado(lote);
     setDialogAberto(true);
+  }
+
+  function abrirVenderLote(lote: Lote) {
+    setLoteParaVender(lote);
+    vendaForm.reset({
+      id_cliente: "",
+      data_venda: new Date().toISOString().split("T")[0],
+      valor_lote: "",
+      valor_entrada: "0",
+      parcelas: "1",
+      porcentagem: "0",
+    });
+    setDialogVenderAberto(true);
   }
 
   function onSubmit(values: LoteFormValues) {
@@ -540,6 +658,17 @@ const Lotes = () => {
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
+                          {lote.status === "disponivel" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-green-600 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
+                            title="Vender"
+                            onClick={() => abrirVenderLote(lote)}
+                          >
+                            <ShoppingCart className="h-4 w-4" />
+                          </Button>
+                        )}
                           <Button
                             variant="ghost"
                             size="icon"
@@ -791,6 +920,99 @@ const Lotes = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Dialog - Vender Lote */}
+      <Dialog open={dialogVenderAberto} onOpenChange={(open) => { if (!open) { setDialogVenderAberto(false); setLoteParaVender(null); } }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="h-4 w-4 text-green-600" />
+              Vender Lote
+            </DialogTitle>
+            {loteParaVender && (
+              <DialogDescription>
+                {loteamentosMap.get(loteParaVender.id_loteamento)?.nome} — Quadra {loteParaVender.quadra}, Lote {loteParaVender.lote}
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          <Form {...vendaForm}>
+            <form onSubmit={vendaForm.handleSubmit((v) => criarVendaMutation.mutate(v))} className="space-y-4">
+              <FormField control={vendaForm.control} name="id_cliente" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Cliente</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione um cliente" />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {clientesData.map((c) => (
+                        <SelectItem key={c.id_cliente} value={String(c.id_cliente)}>
+                          {c.nome}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={vendaForm.control} name="data_venda" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Data da Venda</FormLabel>
+                    <FormControl><Input type="date" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={vendaForm.control} name="valor_lote" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Valor do Lote (R$)</FormLabel>
+                    <FormControl><Input type="number" min="0" step="0.01" placeholder="0,00" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={vendaForm.control} name="valor_entrada" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Entrada (R$)</FormLabel>
+                    <FormControl><Input type="number" min="0" step="0.01" placeholder="0,00" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={vendaForm.control} name="parcelas" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Parcelas</FormLabel>
+                    <FormControl><Input type="number" min="1" step="1" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={vendaForm.control} name="porcentagem" render={({ field }) => (
+                  <FormItem className="col-span-2">
+                    <FormLabel>Juros ao mês (%)</FormLabel>
+                    <FormControl><Input type="number" min="0" step="0.01" placeholder="0" {...field} /></FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+              </div>
+
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setDialogVenderAberto(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" disabled={criarVendaMutation.isPending} className="bg-green-600 hover:bg-green-700">
+                  {criarVendaMutation.isPending ? "Registrando..." : "Registrar Venda"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
 
       {/* Dialog - Cliente do Lote */}
       <Dialog open={dialogClienteAberto} onOpenChange={(open) => { if (!open) { setDialogClienteAberto(false); setLoteCliente(null); } }}>
