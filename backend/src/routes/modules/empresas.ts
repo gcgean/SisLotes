@@ -19,6 +19,7 @@ const empresaBodySchema = z.object({
   telefone: z.string().max(20).optional(),
   email: z.string().max(200).optional(),
   site: z.string().max(200).optional(),
+  salario_minimo: z.number().nonnegative().optional().nullable(),
   logo: z.string().optional().nullable(),
   ativo: z.boolean().optional(),
 });
@@ -73,13 +74,18 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
     return res.status(404).json({ error: "Empresa não encontrada" });
   }
 
-  const { logo, ...rest } = parseResult.data;
+  const { logo, salario_minimo, ...rest } = parseResult.data;
 
   Object.assign(empresa, rest);
 
   // Logo: aceita null para remover, undefined para não alterar
   if (logo !== undefined) {
     empresa.logo = logo ?? null;
+  }
+
+  // salario_minimo: converte number para string (decimal no banco)
+  if (salario_minimo !== undefined) {
+    empresa.salario_minimo = salario_minimo != null ? String(salario_minimo) : null;
   }
 
   const saved = await repo.save(empresa);
@@ -102,8 +108,11 @@ empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
 
   const repo = AppDataSource.getRepository(Empresa);
 
+  const { salario_minimo: smNum, ...restData } = parseResult.data;
+
   const empresa = repo.create({
-    ...parseResult.data,
+    ...restData,
+    salario_minimo: smNum != null ? String(smNum) : null,
     ativo: true,
   });
   const saved = await repo.save(empresa);

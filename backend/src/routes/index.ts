@@ -12,6 +12,7 @@ import { empresasRouter } from "./modules/empresas";
 import { relatoriosRouter } from "./modules/relatorios";
 import { contratosRouter } from "./modules/contratos";
 import { setupRouter } from "./modules/setup";
+import { auditoriaRouter } from "./modules/auditoria";
 
 export const router = Router();
 
@@ -28,3 +29,4 @@ router.use("/logs", logsRouter);
 router.use("/empresas", empresasRouter);
 router.use("/relatorios", relatoriosRouter);
 router.use("/contratos", contratosRouter);
+router.use("/auditoria", auditoriaRouter);

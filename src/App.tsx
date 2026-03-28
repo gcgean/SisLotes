@@ -12,6 +12,7 @@ import Vendas from "./pages/Vendas";
 import Pagamentos from "./pages/Pagamentos";
 import Relatorios from "./pages/Relatorios";
 import Configuracoes from "./pages/Configuracoes";
+import Auditoria from "./pages/Auditoria";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import PrimeiroAcesso from "./pages/PrimeiroAcesso";
@@ -111,6 +112,14 @@ const App = () => (
               element={
                 <RequireAuth>
                   <Configuracoes />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/auditoria"
+              element={
+                <RequireAuth>
+                  <Auditoria />
                 </RequireAuth>
               }
             />

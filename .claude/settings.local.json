@@ -23,7 +23,14 @@
       "Bash(xargs -r -I{} taskkill //F //PID {})",
       "Bash(docker exec:*)",
       "Bash(curl -s -X POST http://localhost:3334/api/setup/primeiro-acesso -H \"Content-Type: application/json\" -d '{:*)",
-      "Bash(curl -s -X POST http://localhost:3334/api/setup/recuperar-acesso -H \"Content-Type: application/json\" -d '{\"\"cnpj\"\":\"\"55.666.777/0001-88\"\",\"\"email\"\":\"\"beta@construtora.com\"\"}')"
+      "Bash(curl -s -X POST http://localhost:3334/api/setup/recuperar-acesso -H \"Content-Type: application/json\" -d '{\"\"cnpj\"\":\"\"55.666.777/0001-88\"\",\"\"email\"\":\"\"beta@construtora.com\"\"}')",
+      "Bash(npx ts-node -e \":*)",
+      "Bash(npx ts-node:*)",
+      "Bash(where psql:*)",
+      "Bash(dir 'C:\\\\Program Files\\\\PostgreSQL')",
+      "Bash(curl -s -X POST http://localhost:3334/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"login\"\":\"\"leide\"\",\"\"senha\"\":\"\"246135\"\"}')",
+      "Bash(curl -s -X POST http://localhost:3334/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"\"\"login\"\"\"\":\"\"\"\"leide\"\"\"\",\"\"\"\"senha\"\"\"\":\"\"\"\"246135\"\"\"\"}')",
+      "Bash(curl -s http://localhost:3334/api/empresas/minha -H \"Authorization: Bearer test\")"
     ]
   }
 }

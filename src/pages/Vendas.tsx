@@ -1,5 +1,5 @@
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -48,6 +48,7 @@ import {
   AlertCircle,
   ShoppingCart,
   Printer,
+  History,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 
@@ -90,6 +91,8 @@ interface VendaDetalhe {
   porcentagem: string;
   status: VendaStatus;
   pagamentos: Pagamento[];
+  cliente?: { nome: string };
+  lote?: { quadra: number; lote: number; area?: string; loteamento?: { nome: string; cidade?: string; estado?: string } };
 }
 
 interface LoteDisponivel {
@@ -145,10 +148,21 @@ const statusConfig: Record<VendaStatus, { label: string; variant: "default" | "s
   cancelada: { label: "Cancelada", variant: "destructive" },
 };
 
+// ─── Historico row type ─────────────────────────────────────────────────────
+interface HistoricoParcelaRow {
+  numero_parcela: number;
+  vencimento: string;
+  valor: string;
+  situacao: "aberto" | "pago";
+  pago_data: string;
+  valor_pago: string;
+}
+
 // ─── Component ─────────────────────────────────────────────────────────────
 const Vendas = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // ── list state
   const [search, setSearch] = useState("");
@@ -164,7 +178,6 @@ const Vendas = () => {
 
   // step 3 form fields
   const [dataVenda, setDataVenda] = useState(new Date().toISOString().split("T")[0]);
-  const [valorLote, setValorLote] = useState("");
   const [valorEntrada, setValorEntrada] = useState("0");
   const [numParcelas, setNumParcelas] = useState("12");
   const [porcentagem, setPorcentagem] = useState("0");
@@ -194,6 +207,22 @@ const Vendas = () => {
   // ── cancelar
   const [confirmarCancelamento, setConfirmarCancelamento] = useState<VendaListItem | null>(null);
   const [bloqueadoPorPagamentos, setBloqueadoPorPagamentos] = useState<{ venda: VendaListItem; id_cliente: number } | null>(null);
+
+  // ── lote ja vendido
+  const [loteJaVendido, setLoteJaVendido] = useState<{ id_venda: number; id_cliente: number } | null>(null);
+
+  // ── historico dialog
+  const [historicoAberto, setHistoricoAberto] = useState(false);
+  const [historicoStep, setHistoricoStep] = useState<1 | 2 | 3 | 4>(1);
+  const [histLoteamento, setHistLoteamento] = useState<Loteamento | null>(null);
+  const [histLote, setHistLote] = useState<LoteDisponivel | null>(null);
+  const [histCliente, setHistCliente] = useState<Cliente | null>(null);
+  const [histClienteSearch, setHistClienteSearch] = useState("");
+  const [histDataVenda, setHistDataVenda] = useState(new Date().toISOString().split("T")[0]);
+  const [histEntrada, setHistEntrada] = useState("0");
+  const [histParcelas, setHistParcelas] = useState("12");
+  const [histValorParcela, setHistValorParcela] = useState("");
+  const [histRows, setHistRows] = useState<HistoricoParcelaRow[]>([]);
 
   // ─── Queries ──────────────────────────────────────────────────────────────
   const { data: vendas = [], isLoading } = useQuery<VendaListItem[]>({
@@ -255,6 +284,35 @@ const Vendas = () => {
     enabled: dialogBaixaAberto,
   });
 
+  const { data: empresaConfig } = useQuery<{ salario_minimo?: string | null }>({
+    queryKey: ["minha-empresa"],
+    queryFn: async () => {
+      const r = await fetch("/api/empresas/minha", { headers: { ...getAuthHeaders() } });
+      if (!r.ok) return null;
+      return r.json();
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+  const salarioMinimo = empresaConfig?.salario_minimo ? Number(empresaConfig.salario_minimo) : 0;
+
+  // ─── Effect para pré-selecionar lote ───────────────────────────────────────
+  useEffect(() => {
+    const id_lote = searchParams.get("id_lote");
+    if (id_lote && todosLotes.length > 0 && !novaVendaAberto) {
+      const lote = todosLotes.find((l) => l.id_lote === Number(id_lote));
+      if (lote && lote.status === "disponivel") {
+        setSelectedLote(lote);
+        setSelectedLoteamento(
+          loteamentos.find((l) => l.id_loteamento === lote.id_loteamento) || null
+        );
+        setNovaVendaAberto(true);
+        setStep(2);
+        // Remove o parâmetro da query
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    }
+  }, [searchParams, todosLotes, loteamentos, novaVendaAberto]);
+
   // ─── Mutations ─────────────────────────────────────────────────────────────
   const criarVendaMutation = useMutation({
     mutationFn: async () => {
@@ -266,7 +324,6 @@ const Vendas = () => {
         valor_entrada: Number(valorEntrada),
         parcelas: Number(numParcelas),
         porcentagem: Number(porcentagem),
-        valor_lote: Number(valorLote),
       };
       const r = await fetch("/api/vendas", {
         method: "POST",
@@ -276,10 +333,8 @@ const Vendas = () => {
       let data: unknown;
       try { data = await r.json(); } catch { data = null; }
       if (!r.ok) {
-        const msg = typeof data === "object" && data !== null && "error" in data
-          ? (data as { error: string }).error
-          : "Erro ao criar venda";
-        throw new Error(msg);
+        const errData = data as { error?: string; status?: number; venda_existente?: { id_venda: number; id_cliente: number } } | null;
+        throw { status: r.status, ...errData };
       }
       return data as VendaDetalhe;
     },
@@ -287,14 +342,22 @@ const Vendas = () => {
       queryClient.invalidateQueries({ queryKey: ["vendas"] });
       queryClient.invalidateQueries({ queryKey: ["lotes"] });
       setNovaVendaAberto(false);
-      setVendaCriada({ id_venda: venda.id_venda, pagamentos: venda.pagamentos ?? [] });
+      setVendaCriada(venda);
       setDialogSucessoAberto(true);
       resetNovaVenda();
     },
-    onError: (err) => {
+    onError: (err: unknown) => {
+      const errData = err as Record<string, unknown>;
+
+      // Lote já vendido - pergunta se deseja cancelar
+      if (errData?.status === 409 && errData?.error === "lote_ja_vendido") {
+        setLoteJaVendido(errData.venda_existente as { id_venda: number; id_cliente: number });
+        return;
+      }
+
       toast({
         title: "Erro ao registrar venda",
-        description: err instanceof Error ? err.message : "Erro desconhecido",
+        description: errData?.error instanceof Error ? errData.error.message : "Erro desconhecido",
         variant: "destructive",
       });
     },
@@ -367,6 +430,59 @@ const Vendas = () => {
     },
   });
 
+  const lancarHistoricoMutation = useMutation({
+    mutationFn: async () => {
+      if (!histLote || !histCliente) throw new Error("Selecione lote e cliente");
+      const body = {
+        id_cliente: histCliente.id_cliente,
+        id_lote: histLote.id_lote,
+        data_venda: histDataVenda,
+        valor_entrada: Number(histEntrada),
+        parcelas: Number(histParcelas),
+        valor_parcela: Number(histValorParcela),
+        pagamentos: histRows.map((r) => ({
+          numero_parcela: r.numero_parcela,
+          vencimento: r.vencimento,
+          valor: Number(r.valor),
+          situacao: r.situacao,
+          pago_data: r.situacao === "pago" && r.pago_data ? r.pago_data : null,
+          valor_pago: r.situacao === "pago" && r.valor_pago ? Number(r.valor_pago) : null,
+        })),
+      };
+      const r = await fetch("/api/vendas/historico", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      let data: unknown;
+      try { data = await r.json(); } catch { data = null; }
+      if (!r.ok) {
+        const errData = data as { error?: string; venda_existente?: { id_venda: number; id_cliente: number } } | null;
+        throw { status: r.status, ...errData };
+      }
+      return data as VendaDetalhe;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vendas"] });
+      queryClient.invalidateQueries({ queryKey: ["lotes"] });
+      setHistoricoAberto(false);
+      resetHistorico();
+      toast({ title: "Histórico lançado com sucesso!", description: `${histRows.length} parcelas registradas.` });
+    },
+    onError: (err: unknown) => {
+      const errData = err as Record<string, unknown>;
+      if (errData?.status === 409 && errData?.error === "lote_ja_vendido") {
+        setLoteJaVendido(errData.venda_existente as { id_venda: number; id_cliente: number });
+        return;
+      }
+      toast({
+        title: "Erro ao lançar histórico",
+        description: typeof errData?.error === "string" ? errData.error : "Erro desconhecido",
+        variant: "destructive",
+      });
+    },
+  });
+
   const darBaixaMutation = useMutation({
     mutationFn: async () => {
       if (!parcelaParaBaixa) throw new Error();
@@ -412,10 +528,64 @@ const Vendas = () => {
     setSelectedCliente(null);
     setClienteSearch("");
     setDataVenda(new Date().toISOString().split("T")[0]);
-    setValorLote("");
     setValorEntrada("0");
     setNumParcelas("12");
     setPorcentagem("0");
+  }
+
+  function resetHistorico() {
+    setHistoricoStep(1);
+    setHistLoteamento(null);
+    setHistLote(null);
+    setHistCliente(null);
+    setHistClienteSearch("");
+    setHistDataVenda(new Date().toISOString().split("T")[0]);
+    setHistEntrada("0");
+    setHistParcelas("12");
+    setHistValorParcela("");
+    setHistRows([]);
+  }
+
+  function gerarLinhasHistorico() {
+    const n = Number(histParcelas);
+    const vp = Number(histValorParcela) || 0;
+    const baseDate = new Date(histDataVenda + "T12:00:00");
+    const rows: HistoricoParcelaRow[] = [];
+    for (let i = 1; i <= n; i++) {
+      const d = new Date(baseDate);
+      d.setMonth(d.getMonth() + i);
+      rows.push({
+        numero_parcela: i,
+        vencimento: d.toISOString().slice(0, 10),
+        valor: vp.toFixed(2),
+        situacao: "aberto",
+        pago_data: "",
+        valor_pago: "",
+      });
+    }
+    setHistRows(rows);
+    setHistoricoStep(4);
+  }
+
+  function updateHistRow(idx: number, field: keyof HistoricoParcelaRow, value: string) {
+    setHistRows((prev) => prev.map((r, i) => {
+      if (i !== idx) return r;
+      const updated = { ...r, [field]: value };
+      if (field === "situacao" && value === "pago" && !updated.valor_pago) {
+        updated.valor_pago = r.valor;
+        if (!updated.pago_data) updated.pago_data = new Date().toISOString().slice(0, 10);
+      }
+      return updated;
+    }));
+  }
+
+  function marcarTodas(situacao: "aberto" | "pago") {
+    setHistRows((prev) => prev.map((r) => ({
+      ...r,
+      situacao,
+      valor_pago: situacao === "pago" ? r.valor : "",
+      pago_data: situacao === "pago" ? (r.pago_data || new Date().toISOString().slice(0, 10)) : "",
+    })));
   }
 
   async function fetchDetalhe(id_venda: number) {
@@ -437,6 +607,14 @@ const Vendas = () => {
       return;
     }
 
+    const nomeEmpresa = "IMOBILIÁRIA LEIDE";
+    const telefone = "(88) 98765-4321";
+    const cidade = "Limoeiro do Norte - CE";
+
+    const clienteNome = vendaCriada.cliente?.nome || "indefinido";
+    const loteInfo = vendaCriada.lote ? `Quadra ${vendaCriada.lote.quadra}, Lote ${vendaCriada.lote.lote}` : "indefinido";
+    const loteamentoNome = vendaCriada.lote?.loteamento?.nome || "indefinido";
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -445,22 +623,36 @@ const Vendas = () => {
         <title>Carnê - Venda #${vendaCriada.id_venda}</title>
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; padding: 20px; line-height: 1.6; color: #333; }
-          .carnes-container { display: flex; flex-direction: column; gap: 40px; }
-          .carne { border: 2px solid #333; padding: 20px; page-break-after: always; }
-          .carne-header { border-bottom: 2px solid #333; padding-bottom: 10px; margin-bottom: 15px; text-align: center; }
-          .carne-title { font-size: 14px; font-weight: bold; margin-bottom: 5px; }
-          .carne-info { font-size: 11px; }
-          .carne-content { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 15px; }
-          .info-item { font-size: 11px; }
-          .info-label { font-weight: bold; }
-          .carne-details { border-top: 1px solid #ccc; border-bottom: 1px solid #ccc; padding: 10px 0; margin: 15px 0; font-size: 11px; }
-          .detail-row { display: flex; justify-content: space-between; margin-bottom: 5px; }
-          .carne-footer { font-size: 10px; margin-top: 15px; text-align: center; color: #666; }
-          .carne-barcode { text-align: center; margin: 10px 0; font-family: 'Courier New', monospace; font-weight: bold; font-size: 16px; letter-spacing: 2px; }
+          body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 5px; }
+          .carnes-container { display: flex; flex-direction: column; gap: 3px; }
+          .carne { border: 1px solid #333; padding: 8px; background: white; font-size: 9px; page-break-inside: avoid; }
+
+          /* Header */
+          .header { border-bottom: 1px solid #333; margin-bottom: 5px; padding-bottom: 3px; text-align: center; }
+          .header-empresa { font-size: 10px; font-weight: bold; }
+          .header-info { font-size: 7px; color: #333; }
+
+          /* Campos */
+          .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+          .row-full { grid-column: 1 / -1; }
+          .field { display: flex; flex-direction: column; }
+          .field-label { font-weight: bold; font-size: 7px; color: #555; }
+          .field-value { font-size: 8px; margin-top: 1px; }
+
+          /* Divider */
+          .divider { border-bottom: 1px solid #ccc; margin: 4px 0; }
+
+          /* Código de barras */
+          .barcode { text-align: center; margin: 4px 0; font-family: 'Courier New', monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px; }
+
+          /* Assinatura */
+          .signature { margin-top: 6px; text-align: center; }
+          .sig-line { border-top: 1px solid #000; margin-top: 2px; width: 100%; height: 15px; }
+          .sig-label { font-size: 7px; margin-top: 1px; }
+
           @media print {
-            .carne { page-break-after: always; }
-            body { padding: 0; }
+            body { padding: 0; background: white; }
+            .carne { page-break-inside: avoid; margin: 0; }
           }
         </style>
       </head>
@@ -470,32 +662,63 @@ const Vendas = () => {
             .sort((a, b) => a.numero_parcela - b.numero_parcela)
             .map((p) => `
               <div class="carne">
-                <div class="carne-header">
-                  <div class="carne-title">CARNÊ DE COBRANÇA</div>
-                  <div class="carne-info">Venda #${vendaCriada.id_venda}</div>
+                <div class="header">
+                  <div class="header-empresa">${nomeEmpresa}</div>
+                  <div class="header-info">${cidade} • Fone: ${telefone}</div>
+                  <div class="header-info" style="margin-top: 2px;">CARNÊ DE COBRANÇA</div>
                 </div>
-                <div class="carne-content">
-                  <div class="info-item">
-                    <div class="info-label">Parcela:</div>
-                    <div>${String(p.numero_parcela).padStart(2, "0")}</div>
+
+                <div class="row">
+                  <div class="field">
+                    <span class="field-label">Parcela</span>
+                    <span class="field-value">${String(p.numero_parcela).padStart(2, "0")}</span>
                   </div>
-                  <div class="info-item">
-                    <div class="info-label">Vencimento:</div>
-                    <div>${fmtDate(p.vencimento)}</div>
-                  </div>
-                </div>
-                <div class="carne-details">
-                  <div class="detail-row">
-                    <span><strong>Valor:</strong></span>
-                    <span><strong>${fmtCurrency(p.valor)}</strong></span>
-                  </div>
-                  <div class="detail-row">
-                    <span>Situação:</span>
-                    <span>ABERTO</span>
+                  <div class="field">
+                    <span class="field-label">Vencimento</span>
+                    <span class="field-value">${fmtDate(p.vencimento)}</span>
                   </div>
                 </div>
-                <div class="carne-barcode">${String(p.numero_parcela).padStart(2, "0")}${vendaCriada.id_venda}</div>
-                <div class="carne-footer">Imprima este carnê e apresente no pagamento</div>
+
+                <div class="row row-full">
+                  <div class="field">
+                    <span class="field-label">Valor</span>
+                    <span class="field-value" style="font-weight: bold; font-size: 9px;">${fmtCurrency(p.valor)}</span>
+                  </div>
+                </div>
+
+                <div class="row row-full">
+                  <div class="field">
+                    <span class="field-label">Cliente</span>
+                    <span class="field-value">${clienteNome}</span>
+                  </div>
+                </div>
+
+                <div class="row row-full">
+                  <div class="field">
+                    <span class="field-label">Lote</span>
+                    <span class="field-value">${loteInfo} · ${loteamentoNome}</span>
+                  </div>
+                </div>
+
+                <div class="divider"></div>
+
+                <div class="row">
+                  <div class="field">
+                    <span class="field-label">Data Pgto</span>
+                    <span class="field-value">___/___/_____</span>
+                  </div>
+                  <div class="field">
+                    <span class="field-label">Valor Pago</span>
+                    <span class="field-value">____________</span>
+                  </div>
+                </div>
+
+                <div class="signature">
+                  <span class="field-label">Assinatura</span>
+                  <div class="sig-line"></div>
+                </div>
+
+                <div class="barcode">█▀█ ${String(p.numero_parcela).padStart(2, "0")}${vendaCriada.id_venda} █▀█</div>
               </div>
             `).join("")}
         </div>
@@ -543,9 +766,11 @@ const Vendas = () => {
     [clientes, clienteSearch]
   );
 
-  const saldo = Math.max(0, Number(valorLote) - Number(valorEntrada));
-  const valorParcela = Number(numParcelas) > 0 ? saldo / Number(numParcelas) : 0;
-  const totalContrato = Number(valorEntrada) + saldo;
+  const valorParcela = salarioMinimo > 0 && Number(porcentagem) > 0
+    ? Math.round(salarioMinimo * (Number(porcentagem) / 100) * 100) / 100
+    : 0;
+  const totalParcelado = Number(numParcelas) * valorParcela;
+  const totalContrato = Number(valorEntrada) + totalParcelado;
 
   const vendaFiltrada = vendas.filter((v) => {
     const matchSearch =
@@ -568,10 +793,16 @@ const Vendas = () => {
               {isLoading ? "Carregando..." : `${vendas.length} venda${vendas.length !== 1 ? "s" : ""} registrada${vendas.length !== 1 ? "s" : ""}`}
             </p>
           </div>
-          <Button size="sm" className="gap-2" onClick={() => { resetNovaVenda(); setNovaVendaAberto(true); }}>
-            <Plus className="h-4 w-4" />
-            Nova Venda
-          </Button>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" className="gap-2" onClick={() => { resetHistorico(); setHistoricoAberto(true); }}>
+              <History className="h-4 w-4" />
+              Lançar Histórico
+            </Button>
+            <Button size="sm" className="gap-2" onClick={() => { resetNovaVenda(); setNovaVendaAberto(true); }}>
+              <Plus className="h-4 w-4" />
+              Nova Venda
+            </Button>
+          </div>
         </div>
 
         {/* Filtros */}
@@ -837,20 +1068,17 @@ const Vendas = () => {
                   </div>
                 </div>
 
+                {salarioMinimo <= 0 && (
+                  <div className="flex items-center gap-2 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-yellow-800 dark:text-yellow-200">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>Configure o valor do salário mínimo em <strong>Configurações → Minha Empresa</strong> antes de registrar vendas.</span>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="data_venda">Data da Venda</Label>
                     <Input id="data_venda" type="date" value={dataVenda} onChange={(e) => setDataVenda(e.target.value)} className="mt-1.5" />
-                  </div>
-                  <div>
-                    <Label htmlFor="valor_lote">Valor do Lote (R$)</Label>
-                    <Input
-                      id="valor_lote"
-                      type="number" min="0" step="0.01" placeholder="0,00"
-                      value={valorLote}
-                      onChange={(e) => setValorLote(e.target.value)}
-                      className="mt-1.5"
-                    />
                   </div>
                   <div>
                     <Label htmlFor="valor_entrada">Entrada (R$)</Label>
@@ -872,45 +1100,46 @@ const Vendas = () => {
                       className="mt-1.5"
                     />
                   </div>
-                  <div className="col-span-2">
-                    <Label htmlFor="porcentagem">Juros ao Mês (%)</Label>
+                  <div>
+                    <Label htmlFor="porcentagem">% do Salário Mínimo</Label>
                     <Input
                       id="porcentagem"
                       type="number" min="0" step="0.01" placeholder="0"
                       value={porcentagem}
                       onChange={(e) => setPorcentagem(e.target.value)}
-                      className="mt-1.5 max-w-[200px]"
+                      className="mt-1.5"
                     />
                   </div>
                 </div>
 
                 {/* Cálculo preview */}
-                {valorLote && Number(valorLote) > 0 && (
+                {Number(porcentagem) > 0 && salarioMinimo > 0 && (
                   <div className="bg-muted/40 border border-border rounded-lg p-4 space-y-2 text-sm">
                     <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground mb-3">Resumo da Venda</p>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Valor do lote</span>
-                      <span className="font-medium">{fmtCurrency(valorLote)}</span>
+                      <span className="text-muted-foreground">Salário Mínimo (base)</span>
+                      <span className="font-medium">{fmtCurrency(salarioMinimo)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Percentual</span>
+                      <span className="font-medium">{porcentagem}%</span>
+                    </div>
+                    <div className="flex justify-between border-t border-border pt-2">
+                      <span className="text-muted-foreground">Valor da parcela</span>
+                      <span className="font-semibold text-primary">{fmtCurrency(valorParcela)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{numParcelas}x de {fmtCurrency(valorParcela)}</span>
+                      <span className="font-medium">{fmtCurrency(totalParcelado)}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Entrada</span>
                       <span className="font-medium">{fmtCurrency(valorEntrada || 0)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Saldo a financiar</span>
-                      <span className="font-medium">{fmtCurrency(saldo)}</span>
-                    </div>
                     <div className="flex justify-between border-t border-border pt-2">
-                      <span className="text-muted-foreground">{numParcelas}x de</span>
-                      <span className="font-semibold text-primary">{fmtCurrency(valorParcela)}</span>
-                    </div>
-                    <div className="flex justify-between">
                       <span className="font-semibold">Total do contrato</span>
                       <span className="font-bold text-primary">{fmtCurrency(totalContrato)}</span>
                     </div>
-                    <p className="text-xs text-muted-foreground pt-1">
-                      Vencimentos a partir de {fmtDate(new Date(new Date(dataVenda).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))}
-                    </p>
                   </div>
                 )}
               </div>
@@ -947,7 +1176,7 @@ const Vendas = () => {
                 onClick={() => criarVendaMutation.mutate()}
                 disabled={
                   criarVendaMutation.isPending ||
-                  !valorLote || Number(valorLote) <= 0 ||
+                  Number(porcentagem) <= 0 ||
                   !dataVenda || Number(numParcelas) < 1
                 }
                 className="gap-2"
@@ -1299,6 +1528,390 @@ const Vendas = () => {
               }}
             >
               Ir para Pagamentos
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          DIALOG — LANÇAR HISTÓRICO DE PAGAMENTOS
+      ══════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={historicoAberto} onOpenChange={(open) => { if (!open) { setHistoricoAberto(false); resetHistorico(); } }}>
+        <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5 text-primary" />
+              Lançar Histórico de Pagamentos
+            </DialogTitle>
+            <DialogDescription>
+              Registre o histórico de um lote vendido antes de usar este sistema.
+            </DialogDescription>
+            {/* Steps */}
+            <div className="flex items-center gap-2 pt-1">
+              {([
+                { n: 1, label: "Lote", icon: MapPin },
+                { n: 2, label: "Cliente", icon: User },
+                { n: 3, label: "Venda", icon: DollarSign },
+                { n: 4, label: "Parcelas", icon: ClipboardList },
+              ] as const).map(({ n, label, icon: Icon }, i) => (
+                <div key={n} className="flex items-center gap-1.5">
+                  {i > 0 && <div className={`h-px w-6 ${historicoStep > n - 1 ? "bg-primary" : "bg-border"}`} />}
+                  <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${historicoStep === n ? "bg-primary text-primary-foreground" : historicoStep > n ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"}`}>
+                    <Icon className="h-3 w-3" />
+                    <span>{label}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-2">
+            {/* Step 1 - Lote */}
+            {historicoStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <Label>Loteamento</Label>
+                  <Select
+                    value={histLoteamento ? String(histLoteamento.id_loteamento) : ""}
+                    onValueChange={(v) => {
+                      const lot = loteamentos.find((l) => String(l.id_loteamento) === v) ?? null;
+                      setHistLoteamento(lot);
+                      setHistLote(null);
+                    }}
+                  >
+                    <SelectTrigger className="mt-1.5">
+                      <SelectValue placeholder="Selecione um loteamento" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {loteamentos.map((l) => (
+                        <SelectItem key={l.id_loteamento} value={String(l.id_loteamento)}>
+                          {l.nome}{l.cidade ? ` — ${l.cidade}${l.estado ? `/${l.estado}` : ""}` : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {histLoteamento && (
+                  <div>
+                    <Label>Selecione o Lote</Label>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      {todosLotes.filter((l) => l.id_loteamento === histLoteamento.id_loteamento && l.status === "disponivel").length} lote(s) disponível(is)
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-60 overflow-y-auto pr-1">
+                      {todosLotes
+                        .filter((l) => l.id_loteamento === histLoteamento.id_loteamento && l.status === "disponivel")
+                        .map((lote) => (
+                          <button
+                            key={lote.id_lote}
+                            type="button"
+                            onClick={() => setHistLote(lote)}
+                            className={`text-left p-3 rounded-lg border text-sm transition-all ${
+                              histLote?.id_lote === lote.id_lote
+                                ? "border-primary bg-primary/10 text-primary"
+                                : "border-border hover:border-primary/50 hover:bg-muted/50"
+                            }`}
+                          >
+                            <p className="font-semibold">Lote {lote.lote}</p>
+                            <p className="text-xs text-muted-foreground">Quadra {lote.quadra}</p>
+                            {lote.area && <p className="text-xs text-muted-foreground">{lote.area} m²</p>}
+                          </button>
+                        ))}
+                    </div>
+                  </div>
+                )}
+                {histLote && (
+                  <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 text-sm flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                    <span><span className="font-medium">Lote {histLote.lote}</span> — Quadra {histLote.quadra}{histLote.area ? ` — ${histLote.area} m²` : ""}</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 2 - Cliente */}
+            {historicoStep === 2 && (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Buscar por nome ou CPF/CNPJ..."
+                      value={histClienteSearch}
+                      onChange={(e) => setHistClienteSearch(e.target.value)}
+                      className="pl-9"
+                      autoFocus
+                    />
+                  </div>
+                  <Button type="button" variant="outline" size="icon" className="shrink-0" title="Cadastrar novo cliente" onClick={() => setNovoClienteAberto(true)}>
+                    <UserPlus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                  {clientes.filter((c) => !histClienteSearch.trim() || c.nome.toLowerCase().includes(histClienteSearch.toLowerCase()) || (c.cpf && c.cpf.includes(histClienteSearch))).map((c) => (
+                    <button
+                      key={c.id_cliente}
+                      type="button"
+                      onClick={() => setHistCliente(c)}
+                      className={`w-full text-left px-4 py-3 rounded-lg border text-sm transition-all ${histCliente?.id_cliente === c.id_cliente ? "border-primary bg-primary/10" : "border-border hover:border-primary/50 hover:bg-muted/50"}`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          <User className="h-4 w-4 text-primary" />
+                        </div>
+                        <div>
+                          <p className="font-medium">{c.nome}</p>
+                          <p className="text-xs text-muted-foreground">{c.cpf ?? c.cnpj ?? "Sem documento"}{c.cidade ? ` · ${c.cidade}` : ""}</p>
+                        </div>
+                        {histCliente?.id_cliente === c.id_cliente && <CheckCircle2 className="h-4 w-4 text-primary ml-auto shrink-0" />}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 3 - Dados da Venda */}
+            {historicoStep === 3 && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-muted/50 rounded-lg p-3 text-xs">
+                    <p className="text-muted-foreground mb-1 font-medium uppercase tracking-wide">Lote</p>
+                    <p className="font-semibold">{histLoteamento?.nome}</p>
+                    <p>Lote {histLote?.lote} · Quadra {histLote?.quadra}</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-3 text-xs">
+                    <p className="text-muted-foreground mb-1 font-medium uppercase tracking-wide">Cliente</p>
+                    <p className="font-semibold">{histCliente?.nome}</p>
+                    <p>{histCliente?.cpf ?? histCliente?.cnpj ?? "—"}</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Data da Venda</Label>
+                    <Input type="date" value={histDataVenda} onChange={(e) => setHistDataVenda(e.target.value)} className="mt-1.5" />
+                  </div>
+                  <div>
+                    <Label>Entrada Paga (R$)</Label>
+                    <Input type="number" min="0" step="0.01" placeholder="0,00" value={histEntrada} onChange={(e) => setHistEntrada(e.target.value)} className="mt-1.5" />
+                  </div>
+                  <div>
+                    <Label>Número de Parcelas</Label>
+                    <Input type="number" min="1" step="1" value={histParcelas} onChange={(e) => setHistParcelas(e.target.value)} className="mt-1.5" />
+                  </div>
+                  <div>
+                    <Label>Valor de Cada Parcela (R$)</Label>
+                    <Input type="number" min="0" step="0.01" placeholder="0,00" value={histValorParcela} onChange={(e) => setHistValorParcela(e.target.value)} className="mt-1.5" />
+                  </div>
+                </div>
+                {histValorParcela && Number(histValorParcela) > 0 && (
+                  <div className="bg-muted/40 border border-border rounded-lg p-4 space-y-2 text-sm">
+                    <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground mb-2">Resumo</p>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Entrada</span>
+                      <span>{fmtCurrency(histEntrada || 0)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{histParcelas}x de</span>
+                      <span className="font-semibold text-primary">{fmtCurrency(histValorParcela)}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-border pt-2">
+                      <span className="font-semibold">Total</span>
+                      <span className="font-bold text-primary">{fmtCurrency(Number(histEntrada) + Number(histParcelas) * Number(histValorParcela))}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground pt-1">
+                      No próximo passo você poderá editar cada parcela individualmente e marcar as já pagas.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Step 4 - Parcelas editáveis */}
+            {historicoStep === 4 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-muted-foreground">{histRows.length} parcela(s) — edite vencimento, valor e situação de cada uma</p>
+                  <div className="flex gap-2">
+                    <Button type="button" variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={() => marcarTodas("pago")}>
+                      <CheckCircle2 className="h-3 w-3" />
+                      Marcar todas pagas
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" className="text-xs h-7 gap-1" onClick={() => marcarTodas("aberto")}>
+                      Limpar
+                    </Button>
+                  </div>
+                </div>
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <div className="overflow-y-auto max-h-[380px]">
+                    <table className="w-full text-xs">
+                      <thead className="sticky top-0 bg-muted/80 backdrop-blur z-10">
+                        <tr className="border-b border-border">
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground w-10">#</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Vencimento</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Valor (R$)</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Situação</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Data Pgto</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Valor Pago (R$)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {histRows.map((row, idx) => (
+                          <tr key={row.numero_parcela} className={`${row.situacao === "pago" ? "bg-green-50/50 dark:bg-green-900/10" : ""}`}>
+                            <td className="px-3 py-1.5 font-medium text-muted-foreground">{String(row.numero_parcela).padStart(2, "0")}</td>
+                            <td className="px-2 py-1">
+                              <Input
+                                type="date"
+                                value={row.vencimento}
+                                onChange={(e) => updateHistRow(idx, "vencimento", e.target.value)}
+                                className="h-7 text-xs px-2 w-32"
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <Input
+                                type="number" min="0" step="0.01"
+                                value={row.valor}
+                                onChange={(e) => updateHistRow(idx, "valor", e.target.value)}
+                                className="h-7 text-xs px-2 w-24"
+                              />
+                            </td>
+                            <td className="px-2 py-1">
+                              <Select
+                                value={row.situacao}
+                                onValueChange={(v) => updateHistRow(idx, "situacao", v)}
+                              >
+                                <SelectTrigger className="h-7 text-xs w-24">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="aberto">Aberto</SelectItem>
+                                  <SelectItem value="pago">Pago</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </td>
+                            <td className="px-2 py-1">
+                              {row.situacao === "pago" ? (
+                                <Input
+                                  type="date"
+                                  value={row.pago_data}
+                                  onChange={(e) => updateHistRow(idx, "pago_data", e.target.value)}
+                                  className="h-7 text-xs px-2 w-32"
+                                />
+                              ) : <span className="text-muted-foreground px-2">—</span>}
+                            </td>
+                            <td className="px-2 py-1">
+                              {row.situacao === "pago" ? (
+                                <Input
+                                  type="number" min="0" step="0.01"
+                                  value={row.valor_pago}
+                                  onChange={(e) => updateHistRow(idx, "valor_pago", e.target.value)}
+                                  className="h-7 text-xs px-2 w-24"
+                                />
+                              ) : <span className="text-muted-foreground px-2">—</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                {/* Resumo das parcelas */}
+                <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/30 rounded-lg px-4 py-2">
+                  <span>
+                    <span className="font-semibold text-green-600">{histRows.filter((r) => r.situacao === "pago").length}</span> pagas ·{" "}
+                    <span className="font-semibold text-orange-500">{histRows.filter((r) => r.situacao === "aberto").length}</span> em aberto
+                  </span>
+                  <span>
+                    Total parcelado: <span className="font-semibold">{fmtCurrency(histRows.reduce((s, r) => s + Number(r.valor), 0))}</span>
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="border-t border-border pt-3 flex-row justify-between gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (historicoStep > 1) setHistoricoStep((s) => (s - 1) as 1 | 2 | 3 | 4);
+                else { setHistoricoAberto(false); resetHistorico(); }
+              }}
+              className="gap-1"
+            >
+              {historicoStep > 1 && <ChevronLeft className="h-4 w-4" />}
+              {historicoStep === 1 ? "Cancelar" : "Voltar"}
+            </Button>
+
+            {historicoStep < 3 ? (
+              <Button
+                onClick={() => setHistoricoStep((s) => (s + 1) as 2 | 3 | 4)}
+                disabled={
+                  (historicoStep === 1 && !histLote) ||
+                  (historicoStep === 2 && !histCliente)
+                }
+                className="gap-1"
+              >
+                Próximo <ChevronRight className="h-4 w-4" />
+              </Button>
+            ) : historicoStep === 3 ? (
+              <Button
+                onClick={gerarLinhasHistorico}
+                disabled={!histDataVenda || Number(histParcelas) < 1 || Number(histValorParcela) <= 0}
+                className="gap-1"
+              >
+                Gerar Parcelas <ChevronRight className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                onClick={() => lancarHistoricoMutation.mutate()}
+                disabled={lancarHistoricoMutation.isPending || histRows.length === 0}
+                className="gap-2 bg-green-600 hover:bg-green-700"
+              >
+                {lancarHistoricoMutation.isPending ? "Registrando..." : (
+                  <>
+                    <History className="h-4 w-4" />
+                    Registrar Histórico
+                  </>
+                )}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* AlertDialog - Lote já vendido */}
+      <AlertDialog open={!!loteJaVendido} onOpenChange={(open) => { if (!open) setLoteJaVendido(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-warning" />
+              Lote já possui uma venda ativa
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Este lote já está vinculado a outra venda. Deseja cancelar a venda anterior e criar uma nova?
+              <br /><br />
+              Venda anterior: <span className="font-semibold">#{loteJaVendido?.id_venda}</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => resetNovaVenda()}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!loteJaVendido) return;
+                // Cancelar a venda anterior
+                const r = await fetch(`/api/vendas/${loteJaVendido.id_venda}/cancelar`, {
+                  method: "PATCH",
+                  headers: { ...getAuthHeaders() }
+                });
+                if (!r.ok) {
+                  toast({ title: "Erro ao cancelar venda anterior", variant: "destructive" });
+                  return;
+                }
+                // Tentar criar nova venda
+                setLoteJaVendido(null);
+                await criarVendaMutation.mutateAsync();
+              }}
+            >
+              Cancelar venda anterior e criar nova
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

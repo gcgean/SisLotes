@@ -41,6 +41,9 @@ export class Empresa {
   @Column({ type: "varchar", length: 200, nullable: true })
   site?: string | null;
 
+  @Column({ type: "decimal", precision: 10, scale: 2, name: "salario_minimo", nullable: true, default: 0 })
+  salario_minimo?: string | null;
+
   /** Logo em base64 (data URL: "data:image/png;base64,...") */
   @Column({ type: "text", nullable: true })
   logo?: string | null;

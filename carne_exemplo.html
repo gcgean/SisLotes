@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Carnê - Exemplo</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; background: #f5f5f5; padding: 10px; }
+    .carnes-container { display: flex; flex-direction: column; gap: 15px; }
+    .carne-row { display: flex; gap: 15px; page-break-after: always; }
+    .carne { flex: 1; border: 2px solid #000; padding: 15px; background: white; font-size: 11px; }
+
+    /* Header */
+    .header { border-bottom: 2px solid #000; margin-bottom: 10px; padding-bottom: 8px; text-align: center; }
+    .header-title { font-size: 12px; font-weight: bold; }
+    .header-subtitle { font-size: 9px; color: #666; }
+    .header-contact { font-size: 8px; color: #666; margin-top: 2px; }
+
+    /* Campos estruturados */
+    .field-group { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .field { display: flex; flex-direction: column; }
+    .field-label { font-weight: bold; font-size: 9px; color: #555; }
+    .field-value { font-size: 11px; margin-top: 2px; }
+
+    .field-full { grid-column: 1 / -1; }
+
+    /* Campos com borda */
+    .field-bordered { border-bottom: 1px solid #ddd; padding-bottom: 6px; margin-bottom: 6px; }
+
+    /* Linha divisória */
+    .divider { border-bottom: 1px solid #ddd; margin: 8px 0; }
+
+    /* Código de barras */
+    .barcode { text-align: center; margin: 10px 0; font-family: 'Code128', 'Courier New', monospace; font-weight: bold; font-size: 18px; letter-spacing: 3px; }
+
+    /* Assinatura */
+    .signature { margin-top: 15px; text-align: center; }
+    .sig-line { border-top: 1px solid #000; margin-top: 5px; width: 100%; height: 30px; }
+    .sig-label { font-size: 8px; margin-top: 2px; }
+
+    @media print {
+      body { padding: 0; background: white; }
+      .carne-row { page-break-after: always; }
+    }
+  </style>
+</head>
+<body>
+  <div class="carnes-container">
+    <div class="carne-row">
+      <!-- ESQUERDA -->
+      <div class="carne">
+        <div class="header">
+          <div class="header-title">SISLOTE - CARNÊ DE COBRANÇA</div>
+          <div class="header-contact">Sistema de Controle de Loteamentos</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field">
+            <span class="field-label">Parcela / Plano</span>
+            <span class="field-value">01</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Vencimento</span>
+            <span class="field-value">24/04/2026</span>
+          </div>
+        </div>
+
+        <div class="field-group field-full">
+          <div class="field">
+            <span class="field-label">Valor da Parcela</span>
+            <span class="field-value" style="font-weight: bold;">R$ 4.900,00</span>
+          </div>
+        </div>
+
+        <div class="field-group field-full">
+          <div class="field">
+            <span class="field-label">Cliente</span>
+            <span class="field-value">João Silva Teste</span>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="field-group">
+          <div class="field">
+            <span class="field-label">Data Pgto</span>
+            <span class="field-value">___/___/______</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Valor Pago</span>
+            <span class="field-value">___________</span>
+          </div>
+        </div>
+
+        <div class="signature">
+          <span class="field-label">Assinatura</span>
+          <div class="sig-line"></div>
+        </div>
+
+        <div class="barcode">█▀▀▀█ 011568 █▀▀▀█</div>
+      </div>
+
+      <!-- DIREITA (IDÊNTICA) -->
+      <div class="carne">
+        <div class="header">
+          <div class="header-title">SISLOTE - CARNÊ DE COBRANÇA</div>
+          <div class="header-contact">Sistema de Controle de Loteamentos</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field">
+            <span class="field-label">Parcela / Plano</span>
+            <span class="field-value">01</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Vencimento</span>
+            <span class="field-value">24/04/2026</span>
+          </div>
+        </div>
+
+        <div class="field-group field-full">
+          <div class="field">
+            <span class="field-label">Valor da Parcela</span>
+            <span class="field-value" style="font-weight: bold;">R$ 4.900,00</span>
+          </div>
+        </div>
+
+        <div class="field-group field-full">
+          <div class="field">
+            <span class="field-label">Cliente</span>
+            <span class="field-value">João Silva Teste</span>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="field-group">
+          <div class="field">
+            <span class="field-label">Data Pgto</span>
+            <span class="field-value">___/___/______</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Valor Pago</span>
+            <span class="field-value">___________</span>
+          </div>
+        </div>
+
+        <div class="signature">
+          <span class="field-label">Assinatura</span>
+          <div class="sig-line"></div>
+        </div>
+
+        <div class="barcode">█▀▀▀█ 011568 █▀▀▀█</div>
+      </div>
+    </div>
+
+    <div class="carne-row">
+      <!-- PARCELA 2 ESQUERDA -->
+      <div class="carne">
+        <div class="header">
+          <div class="header-title">SISLOTE - CARNÊ DE COBRANÇA</div>
+          <div class="header-contact">Sistema de Controle de Loteamentos</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field">
+            <span class="field-label">Parcela / Plano</span>
+            <span class="field-value">02</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Vencimento</span>
+            <span class="field-value">24/05/2026</span>
+          </div>
+        </div>
+
+        <div class="field-group field-full">
+          <div class="field">
+            <span class="field-label">Valor da Parcela</span>
+            <span class="field-value" style="font-weight: bold;">R$ 4.900,00</span>
+          </div>
+        </div>
+
+        <div class="field-group field-full">
+          <div class="field">
+            <span class="field-label">Cliente</span>
+            <span class="field-value">João Silva Teste</span>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="field-group">
+          <div class="field">
+            <span class="field-label">Data Pgto</span>
+            <span class="field-value">___/___/______</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Valor Pago</span>
+            <span class="field-value">___________</span>
+          </div>
+        </div>
+
+        <div class="signature">
+          <span class="field-label">Assinatura</span>
+          <div class="sig-line"></div>
+        </div>
+
+        <div class="barcode">█▀▀▀█ 021568 █▀▀▀█</div>
+      </div>
+
+      <!-- PARCELA 2 DIREITA -->
+      <div class="carne">
+        <div class="header">
+          <div class="header-title">SISLOTE - CARNÊ DE COBRANÇA</div>
+          <div class="header-contact">Sistema de Controle de Loteamentos</div>
+        </div>
+
+        <div class="field-group">
+          <div class="field">
+            <span class="field-label">Parcela / Plano</span>
+            <span class="field-value">02</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Vencimento</span>
+            <span class="field-value">24/05/2026</span>
+          </div>
+        </div>
+
+        <div class="field-group field-full">
+          <div class="field">
+            <span class="field-label">Valor da Parcela</span>
+            <span class="field-value" style="font-weight: bold;">R$ 4.900,00</span>
+          </div>
+        </div>
+
+        <div class="field-group field-full">
+          <div class="field">
+            <span class="field-label">Cliente</span>
+            <span class="field-value">João Silva Teste</span>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="field-group">
+          <div class="field">
+            <span class="field-label">Data Pgto</span>
+            <span class="field-value">___/___/______</span>
+          </div>
+          <div class="field">
+            <span class="field-label">Valor Pago</span>
+            <span class="field-value">___________</span>
+          </div>
+        </div>
+
+        <div class="signature">
+          <span class="field-label">Assinatura</span>
+          <div class="sig-line"></div>
+        </div>
+
+        <div class="barcode">█▀▀▀█ 021568 █▀▀▀█</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

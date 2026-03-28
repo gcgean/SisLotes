@@ -60,13 +60,14 @@ interface MinhaEmpresaData {
   telefone: string;
   email: string;
   site: string;
+  salario_minimo: string;
   logo: string | null;
 }
 
 const MINHA_EMPRESA_EMPTY: MinhaEmpresaData = {
   nome_fantasia: "", razao_social: "", cnpj: "", ie: "",
   endereco: "", bairro: "", cidade: "", estado: "", cep: "",
-  telefone: "", email: "", site: "", logo: null,
+  telefone: "", email: "", site: "", salario_minimo: "", logo: null,
 };
 
 type UsuarioPermissaoKey =
@@ -227,6 +228,7 @@ const Configuracoes = () => {
         telefone: data.telefone ?? "",
         email: data.email ?? "",
         site: data.site ?? "",
+        salario_minimo: data.salario_minimo ? String(data.salario_minimo) : "",
         logo: data.logo ?? null,
       });
       return data;
@@ -576,10 +578,14 @@ const Configuracoes = () => {
 
   const salvarMinhaEmpresaMutation = useMutation({
     mutationFn: async () => {
+      const body = {
+        ...minhaEmpresa,
+        salario_minimo: minhaEmpresa.salario_minimo ? Number(minhaEmpresa.salario_minimo) : null,
+      };
       const r = await fetch("/api/empresas/minha", {
         method: "PUT",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify(minhaEmpresa),
+        body: JSON.stringify(body),
       });
       if (!r.ok) throw new Error("Erro ao salvar empresa");
       return r.json();
@@ -828,6 +834,25 @@ const Configuracoes = () => {
                       onChange={(e) => setEmpresaField("site", e.target.value)}
                       placeholder="www.exemplo.com.br"
                     />
+                  </div>
+                </div>
+
+                {/* Configurações do sistema */}
+                <div className="border-t border-border pt-4">
+                  <p className="text-sm font-semibold mb-3">Configurações do Sistema</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Valor do Salário Mínimo (R$)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={minhaEmpresa.salario_minimo}
+                        onChange={(e) => setEmpresaField("salario_minimo", e.target.value)}
+                        placeholder="0,00"
+                      />
+                      <p className="text-xs text-muted-foreground">Base para cálculo das parcelas de venda</p>
+                    </div>
                   </div>
                 </div>
 

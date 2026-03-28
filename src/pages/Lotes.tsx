@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -128,6 +128,7 @@ function getAuthHeaders() {
 }
 
 const Lotes = () => {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
   const [filterLoteamento, setFilterLoteamento] = useState(() => searchParams.get("loteamento") ?? "all");
@@ -517,16 +518,7 @@ const Lotes = () => {
   }
 
   function abrirVenderLote(lote: Lote) {
-    setLoteParaVender(lote);
-    vendaForm.reset({
-      id_cliente: "",
-      data_venda: new Date().toISOString().split("T")[0],
-      valor_lote: "",
-      valor_entrada: "0",
-      parcelas: "1",
-      porcentagem: "0",
-    });
-    setDialogVenderAberto(true);
+    navigate(`/vendas?id_lote=${lote.id_lote}`);
   }
 
   function onSubmit(values: LoteFormValues) {

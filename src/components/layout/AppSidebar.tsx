@@ -8,6 +8,7 @@ import {
   FileText,
   Settings,
   Building2,
+  Activity,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -35,6 +36,7 @@ const mainItems = [
 
 const secondaryItems = [
   { title: "Relatórios", url: "/relatorios", icon: FileText },
+  { title: "Auditoria", url: "/auditoria", icon: Activity },
   { title: "Configurações", url: "/configuracoes", icon: Settings },
 ];
 

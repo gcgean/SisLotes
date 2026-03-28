@@ -51,6 +51,12 @@ export class Venda {
   @Column({ type: "decimal", precision: 5, scale: 2, name: "porcentagem", default: 0 })
   porcentagem!: string;
 
+  @Column({ type: "decimal", precision: 10, scale: 2, name: "salario_minimo_base", nullable: true })
+  salario_minimo_base?: string | null;
+
+  @Column({ type: "decimal", precision: 10, scale: 2, name: "valor_parcela", nullable: true })
+  valor_parcela?: string | null;
+
   @Column({ type: "varchar", length: 20, default: "aberta" })
   status!: VendaStatus;
 
