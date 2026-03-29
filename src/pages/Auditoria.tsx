@@ -69,8 +69,8 @@ const Auditoria = () => {
         </div>
 
         {/* Filtros */}
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1 max-w-sm">
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar por descrição..."
@@ -105,8 +105,8 @@ const Auditoria = () => {
         </div>
 
         {/* Tabela */}
-        <div className="border border-border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="border border-border rounded-lg overflow-x-auto">
+          <table className="w-full text-sm min-w-[640px]">
             <thead className="bg-muted/50 border-b border-border">
               <tr>
                 <th className="px-4 py-3 text-left font-medium text-xs text-muted-foreground">Usuário</th>

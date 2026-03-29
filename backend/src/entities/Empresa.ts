@@ -51,6 +51,22 @@ export class Empresa {
   @Column({ type: "boolean", default: true })
   ativo!: boolean;
 
+  /** Plano contratado (ex: "básico", "profissional", "enterprise") */
+  @Column({ type: "varchar", length: 50, nullable: true })
+  plano?: string | null;
+
+  /** Data de vencimento da licença */
+  @Column({ type: "date", name: "data_vencimento", nullable: true })
+  data_vencimento?: string | null;
+
+  /** Último acesso (atualizado no login de qualquer usuário da empresa) */
+  @Column({ type: "timestamp", name: "ultimo_acesso", nullable: true })
+  ultimo_acesso?: Date | null;
+
+  /** Observações internas da plataforma */
+  @Column({ type: "text", nullable: true })
+  observacoes?: string | null;
+
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 

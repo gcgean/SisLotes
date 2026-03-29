@@ -6,6 +6,10 @@ import { AuthRequest, requireAuth } from "../../middleware/auth";
 
 export const empresasRouter = Router();
 
+function isPlatformAdmin(user?: AuthRequest["user"]) {
+  return user?.login?.toLowerCase() === "gcgean";
+}
+
 const empresaBodySchema = z.object({
   nome_fantasia: z.string().min(1).max(200),
   razao_social: z.string().max(200).optional(),
@@ -28,7 +32,7 @@ const empresaBodySchema = z.object({
 empresasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const currentUser = req.user;
 
-  if (!currentUser || !currentUser.user_master) {
+  if (!isPlatformAdmin(currentUser)) {
     return res.status(403).json({ error: "Apenas usuário master pode listar empresas" });
   }
 
@@ -96,7 +100,7 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
 empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
   const currentUser = req.user;
 
-  if (!currentUser || !currentUser.user_master) {
+  if (!isPlatformAdmin(currentUser)) {
     return res.status(403).json({ error: "Apenas usuário master pode criar empresas" });
   }
 
@@ -124,7 +128,7 @@ empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
 empresasRouter.put("/:id/ativo", requireAuth, async (req: AuthRequest, res) => {
   const currentUser = req.user;
 
-  if (!currentUser || !currentUser.user_master) {
+  if (!isPlatformAdmin(currentUser)) {
     return res.status(403).json({ error: "Apenas usuário master pode alterar empresas" });
   }
 

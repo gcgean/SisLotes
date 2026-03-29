@@ -97,7 +97,7 @@ loteamentosRouter.get("/:id/lotes", requireAuth, async (req: AuthRequest, res) =
   // Busca vendas ativas dos lotes deste loteamento
   const idLotes = lotes.map((l) => l.id_lote);
 
-  let vendasMap = new Map<number, { id_cliente: number; status: string }>();
+  const vendasMap = new Map<number, { id_cliente: number; status: string }>();
 
   if (idLotes.length > 0) {
     const whereVenda: Record<string, unknown> = {};
@@ -117,13 +117,18 @@ loteamentosRouter.get("/:id/lotes", requireAuth, async (req: AuthRequest, res) =
 
   // Busca clientes referenciados
   const idClientes = [...new Set([...vendasMap.values()].map((v) => v.id_cliente))];
-  let clientesMap = new Map<number, string>();
+  const clientesMap = new Map<number, string>();
 
   if (idClientes.length > 0) {
-    const clientes = await clienteRepo
+    const qbClientes = clienteRepo
       .createQueryBuilder("c")
-      .where("c.id_cliente IN (:...ids)", { ids: idClientes })
-      .getMany();
+      .where("c.id_cliente IN (:...ids)", { ids: idClientes });
+
+    if (idEmpresa) {
+      qbClientes.andWhere("c.id_empresa = :id_empresa", { id_empresa: idEmpresa });
+    }
+
+    const clientes = await qbClientes.getMany();
 
     for (const c of clientes) {
       clientesMap.set(c.id_cliente, c.nome);

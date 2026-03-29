@@ -1356,8 +1356,8 @@ const Vendas = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto">
-            <table className="w-full text-sm">
+          <div className="flex-1 overflow-x-auto overflow-y-auto">
+            <table className="w-full text-sm min-w-[340px]">
               <thead className="sticky top-0 bg-background">
                 <tr className="border-b border-border">
                   <th className="text-left py-2 px-3 font-medium text-muted-foreground text-xs">#</th>
@@ -1487,11 +1487,11 @@ const Vendas = () => {
           )}
 
           {/* Parcelas table */}
-          <div className="flex-1 overflow-y-auto border border-border rounded-lg">
+          <div className="flex-1 overflow-x-auto overflow-y-auto border border-border rounded-lg">
             {!vendaDetalhe ? (
               <div className="py-12 text-center text-sm text-muted-foreground">Carregando parcelas...</div>
             ) : (
-              <table className="w-full text-sm">
+              <table className="w-full text-sm min-w-[520px]">
                 <thead className="sticky top-0 bg-background z-10">
                   <tr className="border-b border-border bg-muted/50">
                     <th className="text-left px-4 py-2.5 font-medium text-xs text-muted-foreground">Parcela</th>
@@ -1942,8 +1942,8 @@ const Vendas = () => {
                   </div>
                 </div>
                 <div className="border border-border rounded-lg overflow-hidden">
-                  <div className="overflow-y-auto max-h-[380px]">
-                    <table className="w-full text-xs">
+                  <div className="overflow-x-auto overflow-y-auto max-h-[380px]">
+                    <table className="w-full text-xs min-w-[480px]">
                       <thead className="sticky top-0 bg-muted/80 backdrop-blur z-10">
                         <tr className="border-b border-border">
                           <th className="text-left px-3 py-2 font-medium text-muted-foreground w-10">#</th>

@@ -31,14 +31,23 @@ contratosRouter.get("/venda/:id_venda", requireAuth, async (req: AuthRequest, re
   if (!venda) return res.status(404).json({ error: "Venda não encontrada" });
 
   // Cliente
-  const cliente = await clienteRepo.findOne({ where: { id_cliente: venda.id_cliente } });
+  const whereCliente: Record<string, unknown> = { id_cliente: venda.id_cliente };
+  if (idEmpresa) whereCliente.id_empresa = idEmpresa;
+  const cliente = await clienteRepo.findOne({ where: whereCliente });
 
   // Lote
-  const lote = await loteRepo.findOne({ where: { id_lote: venda.id_lote } });
+  const whereLote: Record<string, unknown> = { id_lote: venda.id_lote };
+  if (idEmpresa) whereLote.id_empresa = idEmpresa;
+  const lote = await loteRepo.findOne({ where: whereLote });
 
   // Loteamento
   const loteamento = lote
-    ? await loteamRepo.findOne({ where: { id_loteamento: lote.id_loteamento } })
+    ? await loteamRepo.findOne({
+        where: {
+          id_loteamento: lote.id_loteamento,
+          ...(idEmpresa ? { id_empresa: idEmpresa } : {}),
+        },
+      })
     : null;
 
   // Empresa
@@ -48,7 +57,10 @@ contratosRouter.get("/venda/:id_venda", requireAuth, async (req: AuthRequest, re
 
   // Pagamentos (resumo)
   const pagamentos = await pagRepo.find({
-    where: { id_venda: Number(id_venda) },
+    where: {
+      id_venda: Number(id_venda),
+      ...(idEmpresa ? { id_empresa: idEmpresa } : {}),
+    },
     order: { numero_parcela: "ASC" },
   });
 

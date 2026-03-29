@@ -53,6 +53,15 @@ authRouter.post("/login", async (req, res) => {
       return res.status(403).json({ error: "Empresa inativa. Acesso bloqueado." });
     }
 
+    // Atualiza ultimo_acesso da empresa (somente usuários não-master)
+    if (!user.user_master) {
+      try {
+        await empresaRepo.update({ id_empresa: user.id_empresa }, { ultimo_acesso: new Date() });
+      } catch (e) {
+        // não bloqueia o login se falhar
+      }
+    }
+
     const secret = process.env.JWT_SECRET || "development-secret";
 
     const token = jwt.sign(

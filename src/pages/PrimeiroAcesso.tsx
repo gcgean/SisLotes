@@ -15,6 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { toast } from "@/hooks/use-toast";
+import { formatCpfCnpj } from "@/lib/cpfCnpj";
 import { Building2, UserRound, CheckCircle2, ArrowLeft, ArrowRight, Eye, EyeOff } from "lucide-react";
 
 // ─── Schemas ───────────────────────────────────────────────────────────────────
@@ -42,8 +43,11 @@ const empresaSchema = z.object({
   razao_social: z.string().optional(),
   cnpj: z
     .string()
-    .min(14, "CNPJ inválido — use o formato 00.000.000/0001-00")
-    .max(18, "CNPJ inválido"),
+    .min(1, "CPF ou CNPJ é obrigatório")
+    .refine(
+      (v) => { const d = v.replace(/\D/g, ""); return d.length === 11 || d.length === 14; },
+      "Informe um CPF (000.000.000-00) ou CNPJ (00.000.000/0001-00) válido"
+    ),
   telefone: z.string().optional(),
   endereco: z.string().optional(),
   bairro: z.string().optional(),
@@ -407,9 +411,15 @@ const PrimeiroAcesso = () => {
                       name="cnpj"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>CNPJ <span className="text-destructive">*</span></FormLabel>
+                          <FormLabel>CPF / CNPJ <span className="text-destructive">*</span></FormLabel>
                           <FormControl>
-                            <Input placeholder="00.000.000/0001-00" {...field} />
+                            <Input
+                              placeholder="000.000.000-00 ou 00.000.000/0001-00"
+                              {...field}
+                              onChange={(e) =>
+                                field.onChange(formatCpfCnpj(e.target.value))
+                              }
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

@@ -21,6 +21,7 @@ import { FixEmpresasSequence1700000000007 } from "../migrations/1700000000007-Fi
 import { AddEmailTelefoneToUsuario1700000000008 } from "../migrations/1700000000008-AddEmailTelefoneToUsuario";
 import { AddSalarioMinimoAndVendaSnapshots1700000000009 } from "../migrations/1700000000009-AddSalarioMinimoAndVendaSnapshots";
 import { CreateAuditoria1700000000010 } from "../migrations/1700000000010-CreateAuditoria";
+import { AddAdminFieldsToEmpresa1700000000011 } from "../migrations/1700000000011-AddAdminFieldsToEmpresa";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -42,6 +43,7 @@ export const AppDataSource = new DataSource({
     AddEmailTelefoneToUsuario1700000000008,
     AddSalarioMinimoAndVendaSnapshots1700000000009,
     CreateAuditoria1700000000010,
+    AddAdminFieldsToEmpresa1700000000011,
   ],
   synchronize: false,
   logging: false,

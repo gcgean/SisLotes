@@ -625,7 +625,7 @@ const Relatorios = () => {
                   selectedReport === "atraso" ||
                   selectedReport === "clientes-loteamento") && (
                   <Select value={loteamentoIdInput} onValueChange={setLoteamentoIdInput}>
-                    <SelectTrigger className="w-[220px]">
+                    <SelectTrigger className="w-full sm:w-[220px]">
                       <SelectValue placeholder="Selecione um loteamento" />
                     </SelectTrigger>
                     <SelectContent>
@@ -640,7 +640,7 @@ const Relatorios = () => {
                 )}
                 {selectedReport === "juros" && (
                   <Select value={contaIdJurosInput} onValueChange={setContaIdJurosInput}>
-                    <SelectTrigger className="w-[260px]">
+                    <SelectTrigger className="w-full sm:w-[260px]">
                       <SelectValue placeholder="Selecione uma conta" />
                     </SelectTrigger>
                     <SelectContent>
@@ -655,14 +655,14 @@ const Relatorios = () => {
                 {selectedReport !== "juros" && selectedReport !== "clientes-loteamento" && (
                   <div className="flex flex-wrap items-center gap-2">
                     <Input
-                      className="w-[120px]"
+                      className="w-full sm:w-[120px]"
                       value={dataIniInput}
                       onChange={(e) => setDataIniInput(e.target.value)}
                       placeholder="Data inicial"
                     />
                     <span className="text-xs text-muted-foreground">até</span>
                     <Input
-                      className="w-[120px]"
+                      className="w-full sm:w-[120px]"
                       value={dataFimInput}
                       onChange={(e) => setDataFimInput(e.target.value)}
                       placeholder="Data final"
@@ -671,7 +671,7 @@ const Relatorios = () => {
                 )}
                 {selectedReport === "juros" && (
                   <Input
-                    className="w-[90px]"
+                    className="w-full sm:w-[90px]"
                     value={anoJurosInput}
                     onChange={(e) => setAnoJurosInput(e.target.value)}
                     placeholder="Ano"
@@ -680,7 +680,7 @@ const Relatorios = () => {
                 {selectedReport === "atraso" && (
                   <>
                     <Input
-                      className="w-[90px]"
+                      className="w-full sm:w-[90px]"
                       type="number"
                       min={0}
                       value={diasAtrasoInput}
@@ -688,7 +688,7 @@ const Relatorios = () => {
                       placeholder="Dias atraso"
                     />
                     <Input
-                      className="w-[200px]"
+                      className="w-full sm:w-[200px]"
                       value={clienteInput}
                       onChange={(e) => setClienteInput(e.target.value)}
                       placeholder="Cliente"

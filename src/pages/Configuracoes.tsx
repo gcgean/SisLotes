@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { formatCpfCnpj } from "@/lib/cpfCnpj";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -754,11 +755,11 @@ const Configuracoes = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>CNPJ</Label>
+                    <Label>CPF / CNPJ</Label>
                     <Input
                       value={minhaEmpresa.cnpj}
                       disabled={true}
-                      placeholder="00.000.000/0001-00"
+                      placeholder="000.000.000-00 ou 00.000.000/0001-00"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1353,9 +1354,15 @@ const Configuracoes = () => {
                       name="cnpj"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>CNPJ</FormLabel>
+                          <FormLabel>CPF / CNPJ</FormLabel>
                           <FormControl>
-                            <Input {...field} />
+                            <Input
+                              {...field}
+                              placeholder="000.000.000-00 ou 00.000.000/0001-00"
+                              onChange={(e) =>
+                                field.onChange(formatCpfCnpj(e.target.value))
+                              }
+                            />
                           </FormControl>
                           <FormMessage />
                         </FormItem>

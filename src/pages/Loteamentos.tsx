@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Plus, MapPin, Grid3X3, User, ChevronRight, Edit, Search } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { formatCpfCnpj } from "@/lib/cpfCnpj";
 import {
   Dialog,
   DialogContent,
@@ -391,7 +392,7 @@ const Loteamentos = () => {
                     <Grid3X3 className="h-3 w-3" />
                     <span className="group-hover:text-primary transition-colors">Ver lotes</span>
                   </div>
-                  <span className="text-xs text-muted-foreground truncate max-w-[160px]">
+                  <span className="text-xs text-muted-foreground truncate max-w-[100px] sm:max-w-[160px]">
                     Prop: {lot.prop_nome ?? "-"}
                   </span>
                 </div>
@@ -611,8 +612,14 @@ const Loteamentos = () => {
                   )} />
                   <FormField control={form.control} name="cnpj" render={({ field }) => (
                     <FormItem>
-                      <FormLabel>CPF/CNPJ</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
+                      <FormLabel>CPF / CNPJ</FormLabel>
+                      <FormControl>
+                        <Input
+                          {...field}
+                          placeholder="000.000.000-00 ou 00.000.000/0001-00"
+                          onChange={(e) => field.onChange(formatCpfCnpj(e.target.value))}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )} />

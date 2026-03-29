@@ -9,9 +9,11 @@ import {
   Settings,
   Building2,
   Activity,
+  ShieldAlert,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 import {
   Sidebar,
   SidebarContent,
@@ -43,6 +45,8 @@ const secondaryItems = [
 export function AppSidebar() {
   const location = useLocation();
   const { setOpenMobile } = useSidebar();
+  const { user } = useAuth();
+  const isPlatformAdmin = user?.login?.toLowerCase() === "gcgean";
 
   return (
     <Sidebar className="border-r border-sidebar-border">
@@ -109,6 +113,30 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {isPlatformAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel className="text-xs uppercase tracking-wider text-sidebar-foreground/50 font-semibold">
+              Plataforma
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="/admin"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-md text-base text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors"
+                      activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
+                      onClick={() => setOpenMobile(false)}
+                    >
+                      <ShieldAlert className="h-5 w-5 shrink-0" />
+                      <span>Administração</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
     </Sidebar>
   );

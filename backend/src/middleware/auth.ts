@@ -56,6 +56,15 @@ type PermissionKey =
   | "vendas_alterar"
   | "vendas_excluir";
 
+export function requireMaster(req: AuthRequest, res: Response, next: NextFunction) {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Não autenticado" });
+  if (user.login.toLowerCase() !== "gcgean") {
+    return res.status(403).json({ error: "Acesso restrito ao administrador da plataforma" });
+  }
+  return next();
+}
+
 export function requirePermission(permission: PermissionKey) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
     const user = req.user;

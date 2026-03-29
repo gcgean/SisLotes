@@ -13,6 +13,7 @@ import { relatoriosRouter } from "./modules/relatorios";
 import { contratosRouter } from "./modules/contratos";
 import { setupRouter } from "./modules/setup";
 import { auditoriaRouter } from "./modules/auditoria";
+import { adminRouter } from "./modules/admin";
 
 export const router = Router();
 
@@ -30,3 +31,4 @@ router.use("/empresas", empresasRouter);
 router.use("/relatorios", relatoriosRouter);
 router.use("/contratos", contratosRouter);
 router.use("/auditoria", auditoriaRouter);
+router.use("/admin", adminRouter);

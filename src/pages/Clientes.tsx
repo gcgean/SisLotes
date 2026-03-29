@@ -72,6 +72,7 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
+import { formatCpfCnpj } from "@/lib/cpfCnpj";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -454,7 +455,7 @@ const Clientes = () => {
 
         {/* Filtros */}
         <div className="flex flex-col md:flex-row md:flex-wrap gap-3">
-          <div className="relative flex-1 max-w-sm">
+          <div className="relative flex-1 md:max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               placeholder="Buscar por nome..."
@@ -700,9 +701,14 @@ const Clientes = () => {
                               name="cnpj"
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>CNPJ</FormLabel>
+                                  <FormLabel>CPF / CNPJ</FormLabel>
                                   <FormControl>
-                                    <Input {...field} disabled={isView} placeholder="00.000.000/0000-00" />
+                                    <Input
+                                      {...field}
+                                      disabled={isView}
+                                      placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                                      onChange={(e) => field.onChange(formatCpfCnpj(e.target.value))}
+                                    />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
@@ -762,7 +768,12 @@ const Clientes = () => {
                                 <FormItem>
                                   <FormLabel>CPF</FormLabel>
                                   <FormControl>
-                                    <Input {...field} disabled={isView} placeholder="000.000.000-00" />
+                                    <Input
+                                      {...field}
+                                      disabled={isView}
+                                      placeholder="000.000.000-00"
+                                      onChange={(e) => field.onChange(formatCpfCnpj(e.target.value))}
+                                    />
                                   </FormControl>
                                   <FormMessage />
                                 </FormItem>
@@ -1059,8 +1070,8 @@ const Clientes = () => {
                           </div>
                         ) : (
                           <div className="border border-border rounded-md overflow-hidden">
-                            <div className="max-h-56 overflow-y-auto">
-                              <table className="w-full text-xs">
+                            <div className="max-h-56 overflow-x-auto overflow-y-auto">
+                              <table className="w-full text-xs min-w-[400px]">
                                 <thead>
                                   <tr className="border-b border-border bg-muted/50">
                                     <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">

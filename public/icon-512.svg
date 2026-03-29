@@ -1,11 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="112" fill="#10b981"/>
-  <rect x="192" y="128" width="128" height="256" rx="16" fill="none" stroke="#ffffff" stroke-width="22"/>
-  <rect x="224" y="160" width="32" height="32" fill="#ffffff"/>
-  <rect x="256" y="160" width="32" height="32" fill="#ffffff"/>
-  <rect x="224" y="208" width="32" height="32" fill="#ffffff"/>
-  <rect x="256" y="208" width="32" height="32" fill="#ffffff"/>
-  <rect x="224" y="256" width="32" height="32" fill="#ffffff"/>
-  <rect x="256" y="256" width="32" height="32" fill="#ffffff"/>
-  <rect x="240" y="304" width="32" height="64" fill="#ffffff"/>
+  <!-- Fundo teal com cantos arredondados -->
+  <rect width="512" height="512" rx="90" fill="#3EC4A8"/>
+
+  <!-- Grade de lotes (linhas verticais) -->
+  <line x1="171" y1="0" x2="171" y2="512" stroke="white" stroke-width="13" stroke-opacity="0.38"/>
+  <line x1="341" y1="0" x2="341" y2="512" stroke="white" stroke-width="13" stroke-opacity="0.38"/>
+  <!-- Grade de lotes (linhas horizontais) -->
+  <line x1="0" y1="171" x2="512" y2="171" stroke="white" stroke-width="13" stroke-opacity="0.38"/>
+  <line x1="0" y1="341" x2="512" y2="341" stroke="white" stroke-width="13" stroke-opacity="0.38"/>
+
+  <!-- Avenida / via principal — borda clara -->
+  <path d="M -10,318 C 75,318 118,318 150,280 C 180,245 215,192 256,174 C 298,156 388,156 522,156"
+        fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="72" stroke-linecap="round"/>
+  <!-- Avenida / via principal — corpo escuro -->
+  <path d="M -10,318 C 75,318 118,318 150,280 C 180,245 215,192 256,174 C 298,156 388,156 522,156"
+        fill="none" stroke="#1C3D31" stroke-width="54" stroke-linecap="round"/>
+
+  <!-- Lote central selecionado — borda clara -->
+  <rect x="147" y="147" width="218" height="218" rx="40" fill="rgba(255,255,255,0.28)"/>
+  <!-- Lote central selecionado — fundo escuro -->
+  <rect x="154" y="154" width="204" height="204" rx="36" fill="#1C3D31"/>
+
+  <!-- Checkmark branco -->
+  <polyline points="188,258 230,302 325,207"
+            fill="none" stroke="white" stroke-width="32"
+            stroke-linecap="round" stroke-linejoin="round"/>
 </svg>

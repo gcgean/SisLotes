@@ -120,7 +120,9 @@ lotesRouter.get("/:id/cliente", requireAuth, async (req: AuthRequest, res) => {
     return res.status(404).json({ error: "Lote não encontrado" });
   }
 
-  const loteamento = await loteamentoRepo.findOne({ where: { id_loteamento: lote.id_loteamento } });
+  const whereLoteamento: Record<string, unknown> = { id_loteamento: lote.id_loteamento };
+  if (idEmpresa) whereLoteamento.id_empresa = idEmpresa;
+  const loteamento = await loteamentoRepo.findOne({ where: whereLoteamento });
 
   const whereVenda: Record<string, unknown> = { id_lote: Number(id) };
   if (idEmpresa) whereVenda.id_empresa = idEmpresa;
@@ -148,7 +150,9 @@ lotesRouter.get("/:id/cliente", requireAuth, async (req: AuthRequest, res) => {
     });
   }
 
-  const cliente = await clienteRepo.findOne({ where: { id_cliente: venda.id_cliente } });
+  const whereCliente: Record<string, unknown> = { id_cliente: venda.id_cliente };
+  if (idEmpresa) whereCliente.id_empresa = idEmpresa;
+  const cliente = await clienteRepo.findOne({ where: whereCliente });
 
   return res.json({
     lote: {

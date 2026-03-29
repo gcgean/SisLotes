@@ -16,6 +16,7 @@ import Auditoria from "./pages/Auditoria";
 import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import PrimeiroAcesso from "./pages/PrimeiroAcesso";
+import Admin from "./pages/Admin";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 
@@ -34,6 +35,16 @@ function RequireAuth({ children }: { children: JSX.Element }) {
 
   if (!token) {
     return <Navigate to="/login" replace />;
+  }
+
+  return children;
+}
+
+function RequirePlatformAdmin({ children }: { children: JSX.Element }) {
+  const { user } = useAuth();
+
+  if (user?.login?.toLowerCase() !== "gcgean") {
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -120,6 +131,16 @@ const App = () => (
               element={
                 <RequireAuth>
                   <Auditoria />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <RequireAuth>
+                  <RequirePlatformAdmin>
+                    <Admin />
+                  </RequirePlatformAdmin>
                 </RequireAuth>
               }
             />

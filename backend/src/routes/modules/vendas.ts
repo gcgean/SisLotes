@@ -163,17 +163,26 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
   const vendaRepo = AppDataSource.getRepository(Venda);
   const logRepo = AppDataSource.getRepository(Log);
 
-  const cliente = await clienteRepo.findOne({ where: { id_cliente } });
+  const clienteWhere: Record<string, unknown> = { id_cliente };
+  if (user?.id_empresa) clienteWhere.id_empresa = user.id_empresa;
+  const cliente = await clienteRepo.findOne({ where: clienteWhere });
   if (!cliente) {
     return res.status(400).json({ error: "Cliente inválido" });
   }
 
-  const lote = await loteRepo.findOne({ where: { id_lote } });
+  const loteWhere: Record<string, unknown> = { id_lote };
+  if (user?.id_empresa) loteWhere.id_empresa = user.id_empresa;
+  const lote = await loteRepo.findOne({ where: loteWhere });
   if (!lote) {
     return res.status(400).json({ error: "Lote inválido" });
   }
 
-  const existingVenda = await vendaRepo.findOne({ where: { id_lote, status: Not("cancelada") } });
+  const existingVendaWhere: Record<string, unknown> = {
+    id_lote,
+    status: Not("cancelada"),
+  };
+  if (user?.id_empresa) existingVendaWhere.id_empresa = user.id_empresa;
+  const existingVenda = await vendaRepo.findOne({ where: existingVendaWhere });
   if (existingVenda) {
     return res.status(409).json({
       error: "lote_ja_vendido",
@@ -268,7 +277,7 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     await queryRunner.commitTransaction();
 
     const vendaCompleta = await vendaRepo.findOne({
-      where: { id_venda: savedVenda.id_venda },
+      where: { id_venda: savedVenda.id_venda, id_empresa: user?.id_empresa ?? 1 },
       relations: ["pagamentos", "cliente", "lote", "lote.loteamento"],
     });
 
@@ -306,13 +315,22 @@ vendasRouter.post("/historico", requireAuth, requirePermission("vendas_cadastrar
   const loteRepo = AppDataSource.getRepository(Lote);
   const vendaRepo = AppDataSource.getRepository(Venda);
 
-  const cliente = await clienteRepo.findOne({ where: { id_cliente } });
+  const clienteWhere: Record<string, unknown> = { id_cliente };
+  if (user?.id_empresa) clienteWhere.id_empresa = user.id_empresa;
+  const cliente = await clienteRepo.findOne({ where: clienteWhere });
   if (!cliente) return res.status(400).json({ error: "Cliente inválido" });
 
-  const lote = await loteRepo.findOne({ where: { id_lote } });
+  const loteWhere: Record<string, unknown> = { id_lote };
+  if (user?.id_empresa) loteWhere.id_empresa = user.id_empresa;
+  const lote = await loteRepo.findOne({ where: loteWhere });
   if (!lote) return res.status(400).json({ error: "Lote inválido" });
 
-  const existingVenda = await vendaRepo.findOne({ where: { id_lote, status: Not("cancelada") } });
+  const existingVendaWhere: Record<string, unknown> = {
+    id_lote,
+    status: Not("cancelada"),
+  };
+  if (user?.id_empresa) existingVendaWhere.id_empresa = user.id_empresa;
+  const existingVenda = await vendaRepo.findOne({ where: existingVendaWhere });
   if (existingVenda) {
     return res.status(409).json({
       error: "lote_ja_vendido",
@@ -369,7 +387,7 @@ vendasRouter.post("/historico", requireAuth, requirePermission("vendas_cadastrar
     await queryRunner.commitTransaction();
 
     const vendaCompleta = await vendaRepo.findOne({
-      where: { id_venda: savedVenda.id_venda },
+      where: { id_venda: savedVenda.id_venda, id_empresa: user?.id_empresa ?? 1 },
       relations: ["pagamentos", "cliente", "lote", "lote.loteamento"],
     });
 
@@ -412,7 +430,11 @@ vendasRouter.patch("/:id/cancelar", requireAuth, requirePermission("vendas_alter
 
   // Check for paid parcelas
   const pagamentosPagos = await pagamentoRepo.count({
-    where: { id_venda: Number(id), situacao: "pago" },
+    where: {
+      id_venda: Number(id),
+      situacao: "pago",
+      ...(req.user?.id_empresa ? { id_empresa: req.user.id_empresa } : {}),
+    },
   });
 
   if (pagamentosPagos > 0) {

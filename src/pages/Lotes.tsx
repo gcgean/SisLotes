@@ -567,7 +567,7 @@ const Lotes = () => {
             />
           </div>
           <Select value={filterLoteamento} onValueChange={(v) => { setFilterLoteamento(v); setPage(1); }}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-full sm:w-[220px]">
               <SelectValue placeholder="Loteamento" />
             </SelectTrigger>
             <SelectContent>
