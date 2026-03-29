@@ -2,7 +2,9 @@ import { Router } from "express";
 import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Usuario } from "../../entities/Usuario";
+import { Empresa } from "../../entities/Empresa";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { HubBillingService } from "../../services/HubBillingService";
 
 export const usuariosRouter = Router();
 
@@ -63,10 +65,41 @@ usuariosRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
   }
 
   const data = parseResult.data;
+  const targetEmpresaId = data.id_empresa ?? currentUser.id_empresa;
+
+  const empresaRepo = AppDataSource.getRepository(Empresa);
+  const empresa = await empresaRepo.findOne({ where: { id_empresa: targetEmpresaId } });
+  if (!empresa) {
+    return res.status(400).json({ error: "Empresa inválida" });
+  }
+
+  try {
+    await HubBillingService.syncEmpresaLicense(empresa);
+  } catch (error) {
+    console.error("Falha ao sincronizar licença da empresa para validação de max_users:", error);
+  }
+
+  const maxUsersFeature = empresa.hub_features?.max_users;
+  const maxUsers = typeof maxUsersFeature === "number"
+    ? maxUsersFeature
+    : typeof maxUsersFeature === "string" && !Number.isNaN(Number(maxUsersFeature))
+    ? Number(maxUsersFeature)
+    : null;
+
+  if (maxUsers != null && maxUsers > 0) {
+    const currentUsersCount = await repo.count({ where: { id_empresa: targetEmpresaId } });
+    if (currentUsersCount >= maxUsers) {
+      return res.status(403).json({
+        error: "Limite de usuários do plano atingido",
+        feature: "max_users",
+        max_users: maxUsers,
+      });
+    }
+  }
 
   const usuario = repo.create({
     ...data,
-    id_empresa: data.id_empresa ?? currentUser.id_empresa,
+    id_empresa: targetEmpresaId,
   });
   const saved = await repo.save(usuario);
 

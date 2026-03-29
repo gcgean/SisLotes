@@ -59,6 +59,30 @@ export class Empresa {
   @Column({ type: "date", name: "data_vencimento", nullable: true })
   data_vencimento?: string | null;
 
+  @Column({ type: "varchar", length: 80, name: "hub_customer_id", nullable: true })
+  hub_customer_id?: string | null;
+
+  @Column({ type: "varchar", length: 80, name: "hub_product_code", nullable: true })
+  hub_product_code?: string | null;
+
+  @Column({ type: "varchar", length: 40, name: "hub_license_status", nullable: true })
+  hub_license_status?: string | null;
+
+  @Column({ type: "varchar", length: 80, name: "hub_license_reason", nullable: true })
+  hub_license_reason?: string | null;
+
+  @Column({ type: "timestamp", name: "hub_expires_at", nullable: true })
+  hub_expires_at?: Date | null;
+
+  @Column({ type: "jsonb", name: "hub_features", nullable: true })
+  hub_features?: Record<string, unknown> | null;
+
+  @Column({ type: "timestamp", name: "hub_last_sync", nullable: true })
+  hub_last_sync?: Date | null;
+
+  @Column({ type: "timestamp", name: "hub_cache_until", nullable: true })
+  hub_cache_until?: Date | null;
+
   /** Último acesso (atualizado no login de qualquer usuário da empresa) */
   @Column({ type: "timestamp", name: "ultimo_acesso", nullable: true })
   ultimo_acesso?: Date | null;

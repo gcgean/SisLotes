@@ -3,9 +3,10 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
-import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 
 export const pagamentosRouter = Router();
+pagamentosRouter.use(requireAuth, requireFeature("module_pagamentos"));
 
 const baixaSchema = z.object({
   pago_data: z.string(),

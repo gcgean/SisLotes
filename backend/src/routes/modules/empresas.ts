@@ -26,6 +26,12 @@ const empresaBodySchema = z.object({
   salario_minimo: z.number().nonnegative().optional().nullable(),
   logo: z.string().optional().nullable(),
   ativo: z.boolean().optional(),
+  hub_customer_id: z.string().max(80).optional().nullable(),
+  hub_product_code: z.string().max(80).optional().nullable(),
+  hub_license_status: z.string().max(40).optional().nullable(),
+  hub_license_reason: z.string().max(80).optional().nullable(),
+  hub_expires_at: z.string().optional().nullable(),
+  hub_features: z.record(z.unknown()).optional().nullable(),
 });
 
 // ─── Listar todas (master only) ───────────────────────────────────────────────
@@ -78,7 +84,17 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
     return res.status(404).json({ error: "Empresa não encontrada" });
   }
 
-  const { logo, salario_minimo, ...rest } = parseResult.data;
+  const {
+    logo,
+    salario_minimo,
+    hub_customer_id: _hub_customer_id,
+    hub_product_code: _hub_product_code,
+    hub_license_status: _hub_license_status,
+    hub_license_reason: _hub_license_reason,
+    hub_expires_at: _hub_expires_at,
+    hub_features: _hub_features,
+    ...rest
+  } = parseResult.data;
 
   Object.assign(empresa, rest);
 
@@ -112,10 +128,15 @@ empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
 
   const repo = AppDataSource.getRepository(Empresa);
 
-  const { salario_minimo: smNum, ...restData } = parseResult.data;
+  const {
+    salario_minimo: smNum,
+    hub_expires_at,
+    ...restData
+  } = parseResult.data;
 
   const empresa = repo.create({
     ...restData,
+    hub_expires_at: hub_expires_at ? new Date(hub_expires_at) : null,
     salario_minimo: smNum != null ? String(smNum) : null,
     ativo: true,
   });

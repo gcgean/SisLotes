@@ -5,6 +5,8 @@ import { json, urlencoded } from "express";
 import path from "path";
 import { router } from "./routes";
 
+type RequestWithRawBody = Request & { rawBody?: string };
+
 export function createApp() {
   const app = express();
 
@@ -16,7 +18,11 @@ export function createApp() {
   );
 
   app.use(morgan("dev"));
-  app.use(json());
+  app.use(json({
+    verify: (req, _res, buf) => {
+      (req as RequestWithRawBody).rawBody = buf.toString("utf-8");
+    },
+  }));
   app.use(urlencoded({ extended: true }));
 
   app.use("/api", router);

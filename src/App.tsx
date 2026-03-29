@@ -17,7 +17,9 @@ import NotFound from "./pages/NotFound";
 import Login from "./pages/Login";
 import PrimeiroAcesso from "./pages/PrimeiroAcesso";
 import Admin from "./pages/Admin";
+import Planos from "./pages/Planos";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
+import { useLicenseFeatures } from "./hooks/useLicenseFeatures";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 
 const queryClient = new QueryClient({
@@ -47,6 +49,14 @@ function RequirePlatformAdmin({ children }: { children: JSX.Element }) {
     return <Navigate to="/" replace />;
   }
 
+  return children;
+}
+
+function RequireFeature({ feature, children }: { feature: string; children: JSX.Element }) {
+  const { hubConfigured, featureEnabled } = useLicenseFeatures();
+  if (hubConfigured && !featureEnabled(feature)) {
+    return <Navigate to="/" replace />;
+  }
   return children;
 }
 
@@ -98,7 +108,9 @@ const App = () => (
               path="/vendas"
               element={
                 <RequireAuth>
-                  <Vendas />
+                  <RequireFeature feature="module_vendas">
+                    <Vendas />
+                  </RequireFeature>
                 </RequireAuth>
               }
             />
@@ -106,7 +118,9 @@ const App = () => (
               path="/pagamentos"
               element={
                 <RequireAuth>
-                  <Pagamentos />
+                  <RequireFeature feature="module_pagamentos">
+                    <Pagamentos />
+                  </RequireFeature>
                 </RequireAuth>
               }
             />
@@ -114,7 +128,19 @@ const App = () => (
               path="/relatorios"
               element={
                 <RequireAuth>
-                  <Relatorios />
+                  <RequireFeature feature="module_relatorios">
+                    <Relatorios />
+                  </RequireFeature>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/planos"
+              element={
+                <RequireAuth>
+                  <RequireFeature feature="module_planos">
+                    <Planos />
+                  </RequireFeature>
                 </RequireAuth>
               }
             />
@@ -130,7 +156,9 @@ const App = () => (
               path="/auditoria"
               element={
                 <RequireAuth>
-                  <Auditoria />
+                  <RequireFeature feature="module_auditoria">
+                    <Auditoria />
+                  </RequireFeature>
                 </RequireAuth>
               }
             />

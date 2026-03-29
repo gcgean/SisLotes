@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Download, BarChart3, DollarSign, Users, Calendar, Printer } from "lucide-react";
+import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -204,6 +205,7 @@ interface JurosRecebidos {
 }
 
 const Relatorios = () => {
+  const { canExportCsv, canExportPdf } = useLicenseFeatures();
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
   const [ano] = useState("2026");
 
@@ -508,6 +510,7 @@ const Relatorios = () => {
       clientesLoteamentoData.length > 0);
 
   const handlePrint = () => {
+    if (!canExportPdf) return;
     if (!printRef.current) {
       return;
     }
@@ -738,7 +741,7 @@ const Relatorios = () => {
                   size="sm"
                   className="gap-2"
                   disabled={
-                    !(
+                    !canExportCsv || !(
                       selectedReport === "entradas" && entradasData.length > 0 ||
                       selectedReport === "atraso" && atrasadosData.length > 0 ||
                       selectedReport === "enderecos" && enderecosCarneData.length > 0 ||
@@ -865,6 +868,16 @@ const Relatorios = () => {
                 >
                   <Download className="h-4 w-4" />
                   Exportar
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={handlePrint}
+                  disabled={!canPrint || !canExportPdf}
+                >
+                  <Printer className="h-4 w-4" />
+                  Imprimir
                 </Button>
               </div>
             </div>

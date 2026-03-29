@@ -6,6 +6,7 @@ import {
   ShoppingCart,
   CreditCard,
   FileText,
+  Wallet,
   Settings,
   Building2,
   Activity,
@@ -14,6 +15,7 @@ import {
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
 import {
   Sidebar,
   SidebarContent,
@@ -37,6 +39,7 @@ const mainItems = [
 ];
 
 const secondaryItems = [
+  { title: "Planos", url: "/planos", icon: Wallet },
   { title: "Relatórios", url: "/relatorios", icon: FileText },
   { title: "Auditoria", url: "/auditoria", icon: Activity },
   { title: "Configurações", url: "/configuracoes", icon: Settings },
@@ -46,7 +49,19 @@ export function AppSidebar() {
   const location = useLocation();
   const { setOpenMobile } = useSidebar();
   const { user } = useAuth();
+  const { canUseVendas, canUsePagamentos, canUseRelatorios, canUseAuditoria, canUsePlanos } = useLicenseFeatures();
   const isPlatformAdmin = user?.login?.toLowerCase() === "gcgean";
+  const filteredMainItems = mainItems.filter((item) => {
+    if (item.url === "/vendas") return canUseVendas;
+    if (item.url === "/pagamentos") return canUsePagamentos;
+    return true;
+  });
+  const filteredSecondaryItems = secondaryItems.filter((item) => {
+    if (item.url === "/planos") return canUsePlanos;
+    if (item.url === "/relatorios") return canUseRelatorios;
+    if (item.url === "/auditoria") return canUseAuditoria;
+    return true;
+  });
 
   return (
     <Sidebar className="border-r border-sidebar-border">
@@ -69,7 +84,7 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => (
+              {filteredMainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink
@@ -95,7 +110,7 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {secondaryItems.map((item) => (
+              {filteredSecondaryItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink

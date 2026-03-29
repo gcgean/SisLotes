@@ -1,9 +1,10 @@
 import { Request, Response, Router } from "express";
 import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
-import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 
 export const relatoriosRouter = Router();
+relatoriosRouter.use(requireAuth, requireFeature("module_relatorios"));
 
 const entradasQuerySchema = z.object({
   from: z

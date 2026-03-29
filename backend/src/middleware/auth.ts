@@ -2,6 +2,9 @@ import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { AppDataSource } from "../db/data-source";
 import { Usuario } from "../entities/Usuario";
+import { Empresa } from "../entities/Empresa";
+import { HubBillingService } from "../services/HubBillingService";
+import { isFeatureEnabledForPlan } from "../config/license-features";
 
 export interface AuthRequest extends Request {
   user?: Usuario;
@@ -35,6 +38,22 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
 
     if (!user) {
       return res.status(401).json({ error: "Usuário não encontrado" });
+    }
+
+    if (user.login.toLowerCase() !== "gcgean") {
+      const empresaRepo = AppDataSource.getRepository(Empresa);
+      const empresa = await empresaRepo.findOne({ where: { id_empresa: user.id_empresa } });
+
+      if (!empresa || !empresa.ativo) {
+        return res.status(403).json({ error: "Empresa inativa. Acesso bloqueado." });
+      }
+
+      if (HubBillingService.isLicenseDenied(empresa)) {
+        return res.status(403).json({
+          error: HubBillingService.getLicenseMessage(empresa),
+          reason: empresa.hub_license_reason || empresa.hub_license_status,
+        });
+      }
     }
 
     req.user = user;
@@ -82,5 +101,38 @@ export function requirePermission(permission: PermissionKey) {
     }
 
     return res.status(403).json({ error: "Permissão negada" });
+  };
+}
+
+export function requireFeature(feature: string) {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: "Não autenticado" });
+    }
+    if (user.login.toLowerCase() === "gcgean") {
+      return next();
+    }
+    const empresa = await AppDataSource.getRepository(Empresa).findOne({
+      where: { id_empresa: user.id_empresa },
+    });
+    if (!empresa) {
+      return res.status(403).json({ error: "Empresa não encontrada" });
+    }
+    const configured = Boolean(process.env.HUB_BILLING_BASE_URL && process.env.HUB_BILLING_API_KEY);
+    if (!configured) {
+      return next();
+    }
+    if (!isFeatureEnabledForPlan({
+      plan: empresa.plano,
+      rawFeatures: empresa.hub_features ?? {},
+      feature,
+    })) {
+      return res.status(403).json({
+        error: "Recurso indisponível no plano atual",
+        feature,
+      });
+    }
+    return next();
   };
 }

@@ -5,6 +5,7 @@ import { AppDataSource } from "../../db/data-source";
 import { Usuario } from "../../entities/Usuario";
 import { Empresa } from "../../entities/Empresa";
 import { requireAuth, AuthRequest } from "../../middleware/auth";
+import { HubBillingService } from "../../services/HubBillingService";
 
 export const authRouter = Router();
 
@@ -38,9 +39,10 @@ authRouter.post("/login", async (req, res) => {
     const empresaRepo = AppDataSource.getRepository(Empresa);
 
     let empresaAtiva = true;
+    let empresa: Empresa | null = null;
 
     try {
-      const empresa = await empresaRepo.findOne({ where: { id_empresa: user.id_empresa } });
+      empresa = await empresaRepo.findOne({ where: { id_empresa: user.id_empresa } });
 
       if (empresa && empresa.ativo === false) {
         empresaAtiva = false;
@@ -51,6 +53,21 @@ authRouter.post("/login", async (req, res) => {
 
     if (!empresaAtiva) {
       return res.status(403).json({ error: "Empresa inativa. Acesso bloqueado." });
+    }
+
+    if (empresa) {
+      try {
+        await HubBillingService.syncEmpresaLicense(empresa);
+      } catch (hubError) {
+        console.error("Falha ao sincronizar licença Hub Billing no login:", hubError);
+      }
+
+      if (HubBillingService.isLicenseDenied(empresa)) {
+        return res.status(403).json({
+          error: HubBillingService.getLicenseMessage(empresa),
+          reason: empresa.hub_license_reason || empresa.hub_license_status,
+        });
+      }
     }
 
     // Atualiza ultimo_acesso da empresa (somente usuários não-master)
@@ -83,6 +100,15 @@ authRouter.post("/login", async (req, res) => {
         user_master: user.user_master,
         id_empresa: user.id_empresa,
       },
+      licenca: empresa
+        ? {
+            status: empresa.hub_license_status,
+            reason: empresa.hub_license_reason,
+            expiresAt: empresa.hub_expires_at,
+            features: empresa.hub_features ?? {},
+            plano: empresa.plano,
+          }
+        : null,
     });
   } catch (error) {
     const message =
@@ -156,17 +182,30 @@ authRouter.post("/refresh", requireAuth, (req: AuthRequest, res) => {
   return res.json({ token });
 });
 
-authRouter.get("/me", requireAuth, (req: AuthRequest, res) => {
+authRouter.get("/me", requireAuth, async (req: AuthRequest, res) => {
   const user = req.user;
 
   if (!user) {
     return res.status(401).json({ error: "Não autenticado" });
   }
 
+  const empresa = await AppDataSource.getRepository(Empresa).findOne({
+    where: { id_empresa: user.id_empresa },
+  });
+
   return res.json({
     id_usuario: user.id_usuario,
     login: user.login,
     user_master: user.user_master,
     id_empresa: user.id_empresa,
+    licenca: empresa
+      ? {
+          status: empresa.hub_license_status,
+          reason: empresa.hub_license_reason,
+          expiresAt: empresa.hub_expires_at,
+          features: empresa.hub_features ?? {},
+          plano: empresa.plano,
+        }
+      : null,
   });
 });

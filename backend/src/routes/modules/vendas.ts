@@ -8,10 +8,11 @@ import { Lote } from "../../entities/Lote";
 import { Empresa } from "../../entities/Empresa";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
-import { AuthRequest, requireAuth, requirePermission } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
 import { AuditoriaService } from "../../services/AuditoriaService";
 
 export const vendasRouter = Router();
+vendasRouter.use(requireAuth, requireFeature("module_vendas"));
 
 // ─── Schema: histórico manual ──────────────────────────────────────────────────
 const historicoParcelaSchema = z.object({

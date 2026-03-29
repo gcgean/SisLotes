@@ -9,6 +9,7 @@ import {
   Building2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { Badge } from "@/components/ui/badge";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -46,6 +47,11 @@ interface DashboardVendaRecente {
   valor_total: number;
 }
 
+interface LicenseStatus {
+  plano?: string | null;
+  hub_license_status?: string | null;
+}
+
 const Dashboard = () => {
   const { data: empresa } = useQuery<{ nome_fantasia: string; cidade?: string; estado?: string }>({
     queryKey: ["minha-empresa"],
@@ -73,6 +79,21 @@ const Dashboard = () => {
         throw new Error("Erro ao carregar KPIs do dashboard");
       }
 
+      return response.json();
+    },
+  });
+
+  const { data: licenca } = useQuery<LicenseStatus>({
+    queryKey: ["hub-billing", "license-status"],
+    queryFn: async () => {
+      const response = await fetch("/api/hub-billing/license-status", {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+      if (!response.ok) {
+        throw new Error("Erro ao carregar licença");
+      }
       return response.json();
     },
   });
@@ -203,6 +224,19 @@ const Dashboard = () => {
                 <span className="text-muted-foreground">
                   — {empresa.cidade}{empresa.estado ? `/${empresa.estado}` : ""}
                 </span>
+              )}
+              {licenca?.plano && (
+                <Badge variant="outline" className="ml-2 capitalize">
+                  Plano {licenca.plano}
+                </Badge>
+              )}
+              {licenca?.hub_license_status && (
+                <Badge
+                  variant={licenca.hub_license_status === "active" ? "default" : "destructive"}
+                  className="capitalize"
+                >
+                  {licenca.hub_license_status}
+                </Badge>
               )}
             </p>
           ) : (

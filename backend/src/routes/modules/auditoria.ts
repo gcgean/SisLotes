@@ -1,9 +1,10 @@
 import { Router } from "express";
 import { AppDataSource } from "../../db/data-source";
 import { Auditoria } from "../../entities/Auditoria";
-import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 
 export const auditoriaRouter = Router();
+auditoriaRouter.use(requireAuth, requireFeature("module_auditoria"));
 
 auditoriaRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const { tabela, acao, id_usuario, data_inicio, data_fim, limit = 100, offset = 0 } = req.query;

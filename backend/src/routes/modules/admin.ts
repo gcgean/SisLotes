@@ -72,6 +72,12 @@ const empresaSchema = z.object({
   plano: z.string().optional().nullable(),
   data_vencimento: z.string().optional().nullable(),
   observacoes: z.string().optional().nullable(),
+  hub_customer_id: z.string().max(80).optional().nullable(),
+  hub_product_code: z.string().max(80).optional().nullable(),
+  hub_license_status: z.string().max(40).optional().nullable(),
+  hub_license_reason: z.string().max(80).optional().nullable(),
+  hub_expires_at: z.string().optional().nullable(),
+  hub_features: z.record(z.unknown()).optional().nullable(),
 });
 
 adminRouter.post("/empresas", async (req, res) => {
@@ -80,7 +86,11 @@ adminRouter.post("/empresas", async (req, res) => {
     if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
 
     const empresaRepo = AppDataSource.getRepository(Empresa);
-    const empresa = empresaRepo.create({ ...parse.data, ativo: parse.data.ativo ?? true });
+    const empresa = empresaRepo.create({
+      ...parse.data,
+      hub_expires_at: parse.data.hub_expires_at ? new Date(parse.data.hub_expires_at) : null,
+      ativo: parse.data.ativo ?? true,
+    });
     await empresaRepo.save(empresa);
 
     return res.status(201).json(empresa);
@@ -101,7 +111,10 @@ adminRouter.put("/empresas/:id", async (req, res) => {
     const empresa = await empresaRepo.findOne({ where: { id_empresa: id } });
     if (!empresa) return res.status(404).json({ error: "Empresa não encontrada" });
 
-    Object.assign(empresa, parse.data);
+    Object.assign(empresa, {
+      ...parse.data,
+      hub_expires_at: parse.data.hub_expires_at ? new Date(parse.data.hub_expires_at) : null,
+    });
     await empresaRepo.save(empresa);
 
     return res.json(empresa);

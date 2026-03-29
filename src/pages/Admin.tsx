@@ -69,6 +69,11 @@ interface Empresa {
   data_vencimento?: string | null;
   ultimo_acesso?: string | null;
   observacoes?: string | null;
+  hub_customer_id?: string | null;
+  hub_product_code?: string | null;
+  hub_license_status?: string | null;
+  hub_license_reason?: string | null;
+  hub_expires_at?: string | null;
   total_usuarios?: number;
   created_at: string;
 }
@@ -117,6 +122,11 @@ const emptyForm = {
   plano: "",
   data_vencimento: "",
   observacoes: "",
+  hub_customer_id: "",
+  hub_product_code: "",
+  hub_license_status: "",
+  hub_license_reason: "",
+  hub_expires_at: "",
 };
 
 export default function Admin() {
@@ -229,6 +239,11 @@ export default function Admin() {
       plano: e.plano ?? "",
       data_vencimento: e.data_vencimento ?? "",
       observacoes: e.observacoes ?? "",
+      hub_customer_id: e.hub_customer_id ?? "",
+      hub_product_code: e.hub_product_code ?? "",
+      hub_license_status: e.hub_license_status ?? "",
+      hub_license_reason: e.hub_license_reason ?? "",
+      hub_expires_at: e.hub_expires_at ? e.hub_expires_at.slice(0, 10) : "",
     });
     setDialogOpen(true);
   }
@@ -513,6 +528,46 @@ export default function Admin() {
                   type="date"
                   value={form.data_vencimento}
                   onChange={(e) => setForm((f) => ({ ...f, data_vencimento: e.target.value }))}
+                />
+              </div>
+              <div>
+                <Label>Hub Customer ID</Label>
+                <Input
+                  value={form.hub_customer_id}
+                  onChange={(e) => setForm((f) => ({ ...f, hub_customer_id: e.target.value }))}
+                  placeholder="UUID do cliente no Hub Billing"
+                />
+              </div>
+              <div>
+                <Label>Hub Product Code</Label>
+                <Input
+                  value={form.hub_product_code}
+                  onChange={(e) => setForm((f) => ({ ...f, hub_product_code: e.target.value }))}
+                  placeholder="SOFTX_PRO"
+                />
+              </div>
+              <div>
+                <Label>Status da Licença (Hub)</Label>
+                <Input
+                  value={form.hub_license_status}
+                  onChange={(e) => setForm((f) => ({ ...f, hub_license_status: e.target.value }))}
+                  placeholder="active, license_suspended..."
+                />
+              </div>
+              <div>
+                <Label>Motivo da Licença</Label>
+                <Input
+                  value={form.hub_license_reason}
+                  onChange={(e) => setForm((f) => ({ ...f, hub_license_reason: e.target.value }))}
+                  placeholder="license_expired, no_license..."
+                />
+              </div>
+              <div>
+                <Label>Hub Expires At</Label>
+                <Input
+                  type="date"
+                  value={form.hub_expires_at}
+                  onChange={(e) => setForm((f) => ({ ...f, hub_expires_at: e.target.value }))}
                 />
               </div>
               <div>
