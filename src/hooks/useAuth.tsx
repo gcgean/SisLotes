@@ -26,6 +26,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
 
+  // ── Carrega sessão do localStorage ao iniciar ────────────────────────────
   useEffect(() => {
     const storedToken = window.localStorage.getItem(TOKEN_KEY);
     const storedUser = window.localStorage.getItem(USER_KEY);
@@ -40,6 +41,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(null);
       }
     }
+  }, []);
+
+  // ── Sincroniza token quando o interceptor o renovar silenciosamente ──────
+  useEffect(() => {
+    function handleTokenRefreshed(e: Event) {
+      const newToken = (e as CustomEvent<{ token: string }>).detail?.token;
+      if (newToken) {
+        setToken(newToken);
+      }
+    }
+
+    window.addEventListener("auth:token-refreshed", handleTokenRefreshed);
+    return () => window.removeEventListener("auth:token-refreshed", handleTokenRefreshed);
   }, []);
 
   function handleLogin(params: { token: string; usuario: AuthUser }) {
@@ -87,4 +101,3 @@ export function useAuth() {
 
   return ctx;
 }
-

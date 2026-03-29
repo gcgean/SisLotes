@@ -51,6 +51,9 @@ import {
   History,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { gerarReciboParcela, ReciboEmpresa } from "@/utils/reciboParcela";
+import { ContratoDialog } from "@/components/contratos/ContratoDialog";
+import { FileText, Pencil } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type VendaStatus = "aberta" | "quitada" | "cancelada";
@@ -72,6 +75,7 @@ interface VendaListItem {
 interface Pagamento {
   id_pagamento: number;
   numero_parcela: number;
+  tipo?: string;
   situacao: PagamentoSituacao;
   vencimento: string;
   valor: string;
@@ -184,7 +188,22 @@ const Vendas = () => {
 
   // ── success after create
   const [vendaCriada, setVendaCriada] = useState<{ id_venda: number; pagamentos: Pagamento[] } | null>(null);
+  const [vendaCriadaCliente, setVendaCriadaCliente] = useState<{ id: number; nome: string } | null>(null);
   const [dialogSucessoAberto, setDialogSucessoAberto] = useState(false);
+
+  // ── contrato dialog
+  const [contratoDialogAberto, setContratoDialogAberto] = useState(false);
+
+  // ── editar vencimento de parcela
+  const [vencimentoEditando, setVencimentoEditando] = useState<number | null>(null); // id_pagamento
+  const [vencimentoEditando_valor, setVencimentoEditando_valor] = useState("");
+
+  // ── editar venda
+  const [editarVendaAberto, setEditarVendaAberto] = useState(false);
+  const [editDataVenda, setEditDataVenda] = useState("");
+  const [editEntrada, setEditEntrada] = useState("0");
+  const [editParcelas, setEditParcelas] = useState("12");
+  const [editPorcentagem, setEditPorcentagem] = useState("0");
 
   // ── detail / baixa
   const [vendaDetalhe, setVendaDetalhe] = useState<VendaDetalhe | null>(null);
@@ -261,17 +280,25 @@ const Vendas = () => {
     enabled: novaVendaAberto,
   });
 
-  const { data: clientes = [] } = useQuery<Cliente[]>({
+  const { data: clientes = [], refetch: refetchClientes } = useQuery<Cliente[]>({
     queryKey: ["clientes-venda"],
     queryFn: async () => {
-      const r = await fetch("/api/clientes?limit=100", { headers: { ...getAuthHeaders() } });
+      const r = await fetch("/api/clientes?limit=500", { headers: { ...getAuthHeaders() } });
       if (!r.ok) throw new Error();
       const json = await r.json() as { data: Cliente[] };
       return json.data ?? [];
     },
     staleTime: 0,
-    enabled: novaVendaAberto,
+    retry: 2,
+    enabled: novaVendaAberto || historicoAberto,
   });
+
+  // Força refetch ao abrir qualquer dialog que usa clientes
+  useEffect(() => {
+    if (novaVendaAberto || historicoAberto) {
+      refetchClientes();
+    }
+  }, [novaVendaAberto, historicoAberto]);
 
   const { data: contas = [] } = useQuery<Conta[]>({
     queryKey: ["contas"],
@@ -284,7 +311,7 @@ const Vendas = () => {
     enabled: dialogBaixaAberto,
   });
 
-  const { data: empresaConfig } = useQuery<{ salario_minimo?: string | null }>({
+  const { data: empresaConfig } = useQuery<(ReciboEmpresa & { salario_minimo?: string | null }) | null>({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
       const r = await fetch("/api/empresas/minha", { headers: { ...getAuthHeaders() } });
@@ -343,7 +370,45 @@ const Vendas = () => {
       queryClient.invalidateQueries({ queryKey: ["lotes"] });
       setNovaVendaAberto(false);
       setVendaCriada(venda);
+      if (selectedCliente) setVendaCriadaCliente({ id: selectedCliente.id_cliente, nome: selectedCliente.nome });
       setDialogSucessoAberto(true);
+
+      // Gerar recibo da entrada automaticamente (parcela 0)
+      const entradaValor = Number(venda.valor_entrada);
+      if (entradaValor > 0 && selectedCliente) {
+        const entradaParcela = venda.pagamentos?.find((p) => p.numero_parcela === 0);
+        const loteLabel = venda.lote
+          ? `Quadra ${venda.lote.quadra} Lote ${venda.lote.lote}`
+          : `Lote #${venda.id_lote}`;
+        const loteamentoLabel = venda.lote?.loteamento?.nome ?? "";
+        const dataVendaIso = venda.data_venda ?? dataVenda;
+        const [y, m, d] = dataVendaIso.split("-");
+        const dataBR = y && m && d ? `${d}/${m}/${y}` : dataVendaIso;
+
+        gerarReciboParcela(
+          {
+            id: entradaParcela?.id_pagamento ?? 0,
+            cliente: selectedCliente.nome,
+            lote: loteLabel,
+            loteamento: loteamentoLabel,
+            numero_parcela: 0,
+            parcelas: venda.parcelas,
+            tipo: "entrada",
+            situacao: "pago",
+            vencimento: dataBR,
+            valor: entradaValor,
+            pago_data: dataBR,
+            valor_pago: entradaValor,
+          },
+          dataBR,
+          entradaValor,
+          0,
+          0,
+          "",
+          empresaConfig ?? null
+        );
+      }
+
       resetNovaVenda();
     },
     onError: (err: unknown) => {
@@ -357,7 +422,11 @@ const Vendas = () => {
 
       toast({
         title: "Erro ao registrar venda",
-        description: errData?.error instanceof Error ? errData.error.message : "Erro desconhecido",
+        description: typeof errData?.error === "string"
+          ? errData.error
+          : errData?.error instanceof Error
+            ? errData.error.message
+            : "Erro desconhecido",
         variant: "destructive",
       });
     },
@@ -517,6 +586,64 @@ const Vendas = () => {
     },
     onError: (err) => {
       toast({ title: "Erro ao dar baixa", description: err instanceof Error ? err.message : "", variant: "destructive" });
+    },
+  });
+
+  // ─── Mutation: editar venda ────────────────────────────────────────────────
+  const editarVendaMutation = useMutation({
+    mutationFn: async () => {
+      if (!vendaCriada) throw new Error("Venda não encontrada");
+      const body = {
+        data_venda: editDataVenda,
+        valor_entrada: Number(editEntrada),
+        parcelas: Number(editParcelas),
+        porcentagem: Number(editPorcentagem),
+      };
+      const r = await fetch(`/api/vendas/${vendaCriada.id_venda}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error("Erro ao alterar venda");
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["vendas"] });
+      setEditarVendaAberto(false);
+      toast({ title: "Venda alterada com sucesso!" });
+    },
+    onError: (err) => {
+      toast({ title: "Erro ao alterar venda", description: err instanceof Error ? err.message : "", variant: "destructive" });
+    },
+  });
+
+  // ─── Mutation: editar vencimento de parcela ────────────────────────────────
+  const editarVencimentoMutation = useMutation({
+    mutationFn: async ({ id_pagamento, vencimento }: { id_pagamento: number; vencimento: string }) => {
+      const r = await fetch(`/api/pagamentos/${id_pagamento}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ vencimento }),
+      });
+      if (!r.ok) throw new Error("Erro ao alterar vencimento");
+      return r.json();
+    },
+    onSuccess: (_, vars) => {
+      // Atualiza localmente a lista de parcelas sem refetch completo
+      setVendaCriada((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          pagamentos: prev.pagamentos.map((p) =>
+            p.id_pagamento === vars.id_pagamento ? { ...p, vencimento: vars.vencimento } : p
+          ),
+        };
+      });
+      setVencimentoEditando(null);
+      toast({ title: "Vencimento alterado!" });
+    },
+    onError: (err) => {
+      toast({ title: "Erro ao alterar vencimento", description: err instanceof Error ? err.message : "", variant: "destructive" });
     },
   });
 
@@ -893,10 +1020,21 @@ const Vendas = () => {
       <Dialog open={novaVendaAberto} onOpenChange={(open) => { if (!open) { setNovaVendaAberto(false); resetNovaVenda(); } }}>
         <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <ShoppingCart className="h-5 w-5 text-primary" />
-              Nova Venda
-            </DialogTitle>
+            <div className="flex items-center justify-between">
+              <DialogTitle className="flex items-center gap-2">
+                <ShoppingCart className="h-5 w-5 text-primary" />
+                Nova Venda
+              </DialogTitle>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 rounded-full opacity-70 hover:opacity-100"
+                onClick={() => { setNovaVendaAberto(false); resetNovaVenda(); }}
+              >
+                <span className="text-lg leading-none">×</span>
+                <span className="sr-only">Fechar</span>
+              </Button>
+            </div>
             {/* Steps indicator */}
             <div className="flex items-center gap-2 pt-2">
               {([
@@ -1172,22 +1310,32 @@ const Vendas = () => {
                 <ChevronRight className="h-4 w-4" />
               </Button>
             ) : (
-              <Button
-                onClick={() => criarVendaMutation.mutate()}
-                disabled={
-                  criarVendaMutation.isPending ||
-                  Number(porcentagem) <= 0 ||
-                  !dataVenda || Number(numParcelas) < 1
-                }
-                className="gap-2"
-              >
-                {criarVendaMutation.isPending ? "Registrando..." : (
-                  <>
-                    <ClipboardList className="h-4 w-4" />
-                    Registrar Venda
-                  </>
-                )}
-              </Button>
+              <>
+                <Button
+                  onClick={() => criarVendaMutation.mutate()}
+                  disabled={
+                    criarVendaMutation.isPending ||
+                    Number(porcentagem) <= 0 ||
+                    !dataVenda || Number(numParcelas) < 1
+                  }
+                  className="gap-2"
+                >
+                  {criarVendaMutation.isPending ? "Registrando..." : (
+                    <>
+                      <ClipboardList className="h-4 w-4" />
+                      Registrar Venda
+                    </>
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setNovaVendaAberto(false); resetNovaVenda(); }}
+                  className="ml-auto"
+                >
+                  Sair
+                </Button>
+              </>
             )}
           </DialogFooter>
         </DialogContent>
@@ -1224,7 +1372,35 @@ const Vendas = () => {
                   .map((p) => (
                     <tr key={p.id_pagamento} className="hover:bg-muted/30">
                       <td className="py-2 px-3 font-medium">{String(p.numero_parcela).padStart(2, "0")}</td>
-                      <td className="py-2 px-3 text-muted-foreground">{fmtDate(p.vencimento)}</td>
+                      <td className="py-2 px-3">
+                        {vencimentoEditando === p.id_pagamento ? (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="date"
+                              className="h-7 text-xs w-36"
+                              value={vencimentoEditando_valor}
+                              onChange={(e) => setVencimentoEditando_valor(e.target.value)}
+                              autoFocus
+                            />
+                            <Button
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => editarVencimentoMutation.mutate({ id_pagamento: p.id_pagamento, vencimento: vencimentoEditando_valor })}
+                              disabled={editarVencimentoMutation.isPending}
+                            >✓</Button>
+                            <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setVencimentoEditando(null)}>✕</Button>
+                          </div>
+                        ) : (
+                          <button
+                            className="text-muted-foreground hover:text-primary hover:underline text-left flex items-center gap-1 group"
+                            onClick={() => { setVencimentoEditando(p.id_pagamento); setVencimentoEditando_valor(p.vencimento?.split("T")[0] ?? ""); }}
+                            title="Clique para alterar vencimento"
+                          >
+                            {fmtDate(p.vencimento)}
+                            <Pencil className="h-3 w-3 opacity-0 group-hover:opacity-60" />
+                          </button>
+                        )}
+                      </td>
                       <td className="py-2 px-3 text-right font-medium">{fmtCurrency(p.valor)}</td>
                       <td className="py-2 px-3 text-center">
                         <Badge variant="outline" className="text-xs">Aberto</Badge>
@@ -1235,10 +1411,34 @@ const Vendas = () => {
             </table>
           </div>
 
-          <DialogFooter className="border-t border-border pt-3 flex-row justify-between gap-2">
+          <DialogFooter className="border-t border-border pt-3 flex-wrap gap-2">
             <Button variant="outline" onClick={() => imprimirCarne()} className="gap-2">
               <Printer className="h-4 w-4" />
               Imprimir Carnê
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => {
+                setContratoDialogAberto(true);
+              }}
+            >
+              <FileText className="h-4 w-4" />
+              Imprimir Contrato
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => {
+                setEditDataVenda(new Date().toISOString().split("T")[0]);
+                setEditEntrada("0");
+                setEditParcelas(String(vendaCriada?.pagamentos.length ?? 12));
+                setEditPorcentagem("0");
+                setEditarVendaAberto(true);
+              }}
+            >
+              <Pencil className="h-4 w-4" />
+              Alterar Venda
             </Button>
             <Button onClick={() => setDialogSucessoAberto(false)}>Fechar</Button>
           </DialogFooter>
@@ -1916,6 +2116,61 @@ const Vendas = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          DIALOG — EDITAR VENDA
+      ═══════════════════════════════════════════════════════════════════════ */}
+      <Dialog open={editarVendaAberto} onOpenChange={setEditarVendaAberto}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Pencil className="h-5 w-5 text-primary" />
+              Alterar Venda #{vendaCriada?.id_venda}
+            </DialogTitle>
+            <DialogDescription>Edite os dados da venda registrada.</DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-4 py-2">
+            <div className="col-span-2 space-y-1.5">
+              <Label>Data da Venda</Label>
+              <Input type="date" value={editDataVenda} onChange={(e) => setEditDataVenda(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Entrada (R$)</Label>
+              <Input type="number" min="0" step="0.01" value={editEntrada} onChange={(e) => setEditEntrada(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Nº de Parcelas</Label>
+              <Input type="number" min="1" value={editParcelas} onChange={(e) => setEditParcelas(e.target.value)} />
+            </div>
+            <div className="col-span-2 space-y-1.5">
+              <Label>% do Salário Mínimo</Label>
+              <Input type="number" min="0" step="0.01" value={editPorcentagem} onChange={(e) => setEditPorcentagem(e.target.value)} />
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setEditarVendaAberto(false)}>Cancelar</Button>
+            <Button
+              onClick={() => editarVendaMutation.mutate()}
+              disabled={editarVendaMutation.isPending}
+            >
+              {editarVendaMutation.isPending ? "Salvando..." : "Salvar Alterações"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ═══════════════════════════════════════════════════════════════════════
+          DIALOG — CONTRATO
+      ═══════════════════════════════════════════════════════════════════════ */}
+      {contratoDialogAberto && vendaCriadaCliente && (
+        <ContratoDialog
+          open={contratoDialogAberto}
+          onClose={() => setContratoDialogAberto(false)}
+          idCliente={vendaCriadaCliente.id}
+          nomeCliente={vendaCriadaCliente.nome}
+          idVenda={vendaCriada?.id_venda}
+        />
+      )}
     </AppLayout>
   );
 };

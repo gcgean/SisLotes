@@ -20,6 +20,7 @@ import { MultiTenantEnsureEmpresaGeral1700000000006 } from "../migrations/170000
 import { FixEmpresasSequence1700000000007 } from "../migrations/1700000000007-FixEmpresasSequence";
 import { AddEmailTelefoneToUsuario1700000000008 } from "../migrations/1700000000008-AddEmailTelefoneToUsuario";
 import { AddSalarioMinimoAndVendaSnapshots1700000000009 } from "../migrations/1700000000009-AddSalarioMinimoAndVendaSnapshots";
+import { CreateAuditoria1700000000010 } from "../migrations/1700000000010-CreateAuditoria";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -40,6 +41,7 @@ export const AppDataSource = new DataSource({
     FixEmpresasSequence1700000000007,
     AddEmailTelefoneToUsuario1700000000008,
     AddSalarioMinimoAndVendaSnapshots1700000000009,
+    CreateAuditoria1700000000010,
   ],
   synchronize: false,
   logging: false,

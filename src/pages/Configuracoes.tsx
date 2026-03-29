@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -209,31 +209,35 @@ const Configuracoes = () => {
     },
   });
 
-  const { isLoading: loadingMinhaEmpresa } = useQuery({
+  const { isLoading: loadingMinhaEmpresa, data: minhaEmpresaData } = useQuery({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
       const r = await fetch("/api/empresas/minha", { headers: { ...getAuthHeaders() } });
       if (!r.ok) return null;
-      const data = await r.json();
-      setMinhaEmpresa({
-        nome_fantasia: data.nome_fantasia ?? "",
-        razao_social: data.razao_social ?? "",
-        cnpj: data.cnpj ?? "",
-        ie: data.ie ?? "",
-        endereco: data.endereco ?? "",
-        bairro: data.bairro ?? "",
-        cidade: data.cidade ?? "",
-        estado: data.estado ?? "",
-        cep: data.cep ?? "",
-        telefone: data.telefone ?? "",
-        email: data.email ?? "",
-        site: data.site ?? "",
-        salario_minimo: data.salario_minimo ? String(data.salario_minimo) : "",
-        logo: data.logo ?? null,
-      });
-      return data;
+      return r.json();
     },
   });
+
+  useEffect(() => {
+    if (minhaEmpresaData) {
+      setMinhaEmpresa({
+        nome_fantasia: minhaEmpresaData.nome_fantasia ?? "",
+        razao_social: minhaEmpresaData.razao_social ?? "",
+        cnpj: minhaEmpresaData.cnpj ?? "",
+        ie: minhaEmpresaData.ie ?? "",
+        endereco: minhaEmpresaData.endereco ?? "",
+        bairro: minhaEmpresaData.bairro ?? "",
+        cidade: minhaEmpresaData.cidade ?? "",
+        estado: minhaEmpresaData.estado ?? "",
+        cep: minhaEmpresaData.cep ?? "",
+        telefone: minhaEmpresaData.telefone ?? "",
+        email: minhaEmpresaData.email ?? "",
+        site: minhaEmpresaData.site ?? "",
+        salario_minimo: minhaEmpresaData.salario_minimo ? String(minhaEmpresaData.salario_minimo) : "",
+        logo: minhaEmpresaData.logo ?? null,
+      });
+    }
+  }, [minhaEmpresaData]);
 
   const usuarioForm = useForm<UsuarioFormValues>({
     resolver: zodResolver(usuarioFormSchema),
@@ -753,7 +757,7 @@ const Configuracoes = () => {
                     <Label>CNPJ</Label>
                     <Input
                       value={minhaEmpresa.cnpj}
-                      onChange={(e) => setEmpresaField("cnpj", e.target.value)}
+                      disabled={true}
                       placeholder="00.000.000/0001-00"
                     />
                   </div>

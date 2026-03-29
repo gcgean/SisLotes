@@ -63,7 +63,7 @@ authRouter.post("/login", async (req, res) => {
         id_empresa: user.id_empresa,
       },
       secret,
-      { expiresIn: "1h" },
+      { expiresIn: "8h" },
     );
 
     return res.json({
@@ -124,6 +124,27 @@ authRouter.post("/esqueci-senha", async (req, res) => {
     console.error("Erro ao recuperar senha:", error);
     return res.status(500).json({ error: "Erro ao processar recuperação de senha" });
   }
+});
+
+// ─── POST /refresh — Renova o token JWT sem precisar da senha ────────────────
+authRouter.post("/refresh", requireAuth, (req: AuthRequest, res) => {
+  const user = req.user;
+  if (!user) return res.status(401).json({ error: "Não autenticado" });
+
+  const secret = process.env.JWT_SECRET || "development-secret";
+
+  const token = jwt.sign(
+    {
+      sub: user.id_usuario,
+      login: user.login,
+      user_master: user.user_master,
+      id_empresa: user.id_empresa,
+    },
+    secret,
+    { expiresIn: "8h" }
+  );
+
+  return res.json({ token });
 });
 
 authRouter.get("/me", requireAuth, (req: AuthRequest, res) => {

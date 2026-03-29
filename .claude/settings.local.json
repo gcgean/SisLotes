@@ -30,7 +30,23 @@
       "Bash(dir 'C:\\\\Program Files\\\\PostgreSQL')",
       "Bash(curl -s -X POST http://localhost:3334/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"login\"\":\"\"leide\"\",\"\"senha\"\":\"\"246135\"\"}')",
       "Bash(curl -s -X POST http://localhost:3334/api/auth/login -H \"Content-Type: application/json\" -d '{\"\"\"\"login\"\"\"\":\"\"\"\"leide\"\"\"\",\"\"\"\"senha\"\"\"\":\"\"\"\"246135\"\"\"\"}')",
-      "Bash(curl -s http://localhost:3334/api/empresas/minha -H \"Authorization: Bearer test\")"
+      "Bash(curl -s http://localhost:3334/api/empresas/minha -H \"Authorization: Bearer test\")",
+      "Bash(npx typeorm:*)",
+      "Bash(xargs kill:*)",
+      "Bash(netstat -tuln)",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3334 -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue\")",
+      "Bash(psql -h localhost -U postgres -d sislotes -f drop-db.sql)",
+      "Bash(grep -l \"usuario\" *.ts)",
+      "Bash(curl -s http://localhost:59612/api/empresas/minha -H \"Authorization: Bearer test\")",
+      "Bash(curl -s \"http://localhost:4175/api/empresas/minha\" -H \"Authorization: Bearer test\")",
+      "Bash(curl -s \"http://localhost:59612/api/auth/login\" -X POST -H \"Content-Type: application/json\" -d '{\"\"login\"\":\"\"test\"\",\"\"senha\"\":\"\"test\"\"}')",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 3334 -ErrorAction SilentlyContinue | Select-Object -Property LocalAddress,LocalPort,State,OwningProcess | Format-List\")",
+      "Bash(powershell -Command \"Get-Process -Id 31024 | Select-Object Name,Id,Path\")",
+      "Bash(powershell -Command \"Get-Service -Name ''postgresql*'' -ErrorAction SilentlyContinue | Select-Object Name, Status\")",
+      "Bash(powershell -Command \"Get-Service | Where-Object {$_Name -like ''*post*'' -or $_Name -like ''*pg*''} | Select-Object Name,Status,DisplayName\")",
+      "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 5433 -ErrorAction SilentlyContinue | Select-Object State,OwningProcess\")",
+      "Bash(powershell -Command \"Start-Service ''postgresql-x64-15'' -ErrorAction SilentlyContinue; Start-Service ''postgresql-x64-16'' -ErrorAction SilentlyContinue; Start-Service ''postgresql-x64-17'' -ErrorAction SilentlyContinue; Write-Host ''Tentativa concluída''\")",
+      "Bash(xargs grep:*)"
     ]
   }
 }

@@ -13,7 +13,7 @@ import { Venda } from "./Venda";
 import { Conta } from "./Conta";
 import { Usuario } from "./Usuario";
 
-export type PagamentoTipo = "boleto" | "carne";
+export type PagamentoTipo = "boleto" | "carne" | "entrada";
 export type PagamentoSituacao = "aberto" | "pago";
 
 @Entity({ name: "pagamentos" })

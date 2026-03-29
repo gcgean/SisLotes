@@ -211,6 +211,25 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
 
     const pagamentos: Pagamento[] = [];
 
+    // Parcela 0 = entrada (já paga na data da venda)
+    if (valor_entrada > 0) {
+      const entradaPagamento = queryRunner.manager.create(Pagamento, {
+        id_venda: savedVenda.id_venda,
+        numero_parcela: 0,
+        tipo: "entrada",
+        situacao: "pago",
+        vencimento: data_venda,
+        valor: valor_entrada.toFixed(2),
+        pago_data: data_venda,
+        valor_pago: valor_entrada.toFixed(2),
+        multa: "0.00",
+        juros: "0.00",
+        id_empresa: user?.id_empresa ?? 1,
+        id_usuario: user?.id_usuario ?? null,
+      });
+      pagamentos.push(entradaPagamento);
+    }
+
     for (let i = 1; i <= parcelas; i++) {
       const baseDate = new Date(data_venda + "T12:00:00");
       const vencimentoDate = new Date(baseDate);

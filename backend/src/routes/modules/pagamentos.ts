@@ -39,6 +39,7 @@ pagamentosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
     .leftJoinAndSelect("pagamento.venda", "venda")
     .leftJoinAndSelect("venda.cliente", "cliente")
     .leftJoinAndSelect("venda.lote", "lote")
+    .leftJoinAndSelect("lote.loteamento", "loteamento")
     .where("1=1");
 
   if (req.user?.id_empresa) {
@@ -102,6 +103,21 @@ pagamentosRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
   }
 
   return res.json(pagamento);
+});
+
+// ─── PUT /:id — Alterar vencimento (e outros campos) de uma parcela ──────────
+pagamentosRouter.put("/:id", requireAuth, async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const repo = AppDataSource.getRepository(Pagamento);
+
+  const pagamento = await repo.findOne({ where: { id_pagamento: Number(id) } });
+  if (!pagamento) return res.status(404).json({ error: "Pagamento não encontrado" });
+
+  const { vencimento } = req.body as { vencimento?: string };
+  if (vencimento) pagamento.vencimento = vencimento;
+
+  const saved = await repo.save(pagamento);
+  return res.json(saved);
 });
 
 pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) => {

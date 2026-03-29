@@ -73,6 +73,7 @@ interface Props {
   onClose: () => void;
   idCliente: number;
   nomeCliente: string;
+  idVenda?: number; // opcional: pula a tela de seleção e vai direto ao formulário
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -145,7 +146,7 @@ function buildTimbrado(empresa: EmpresaHeader, semTimbrado: boolean): string {
 
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
-export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props) {
+export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda }: Props) {
   const [etapa, setEtapa] = useState<"selecionar" | "formulario">("selecionar");
   const [vendaSelecionada, setVendaSelecionada] = useState<VendaResumo | null>(null);
   const [tipoContrato, setTipoContrato] = useState<"a-prazo" | "a-vista">("a-prazo");
@@ -226,6 +227,16 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
     setVendaSelecionada(vendas[0]);
     setEtapa("formulario");
   }, [acaoAutomatica, vendas]);
+
+  // Pré-seleciona a venda automaticamente quando idVenda é fornecido
+  useEffect(() => {
+    if (!idVenda || !vendas || vendas.length === 0) return;
+    const vendaEncontrada = vendas.find((v) => v.id_venda === idVenda);
+    if (vendaEncontrada) {
+      setVendaSelecionada(vendaEncontrada);
+      setEtapa("formulario");
+    }
+  }, [idVenda, vendas]);
 
   function handleVoltar() {
     setEtapa("selecionar");
@@ -803,6 +814,20 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
       margin-bottom: 24px;
       color: #555;
     }
+    .btn-print {
+      display: block;
+      margin: 32px auto 0;
+      padding: 10px 32px;
+      background: #1a56db;
+      color: #fff;
+      font-size: 13pt;
+      font-family: Arial, sans-serif;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-print:hover { background: #1e429f; }
+    .conteudo:focus { outline: none; }
     @media print {
       body { padding: 15mm 20mm; }
       .assinatura .espaco-assinar {
@@ -810,10 +835,12 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
         border: none;
         background: transparent;
       }
+      .btn-print { display: none; }
     }
   </style>
 </head>
 <body>
+  <div class="conteudo" contenteditable="true">
   ${buildTimbrado(empresa, false)}
   <div class="titulo">${titulo}</div>
   <div class="subtitulo">${loteamento?.nome ?? ""}</div>
@@ -981,6 +1008,9 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
     </div>
 
   </div>
+  </div>
+
+  <button class="btn-print" onclick="this.style.display='none'; window.print();">Gerar Contrato</button>
 </body>
 </html>`;
 
@@ -992,7 +1022,6 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
     printWindow.document.write(htmlContent);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(() => printWindow.print(), 400);
   }
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -1248,9 +1277,14 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente }: Props)
 
                 {/* Botões */}
                 <div className="flex items-center justify-between pt-2">
-                  <Button variant="outline" onClick={handleVoltar}>
-                    Voltar
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={handleVoltar}>
+                      Voltar
+                    </Button>
+                    <Button variant="default" onClick={onClose} className="bg-primary hover:bg-primary/90">
+                      Concluir
+                    </Button>
+                  </div>
                   <div className="flex gap-2 flex-wrap justify-end">
                     <Button variant="secondary" onClick={() => gerarMinuta(false)} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
                       <FileText className="h-4 w-4" />
