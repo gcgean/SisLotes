@@ -40,9 +40,9 @@ interface TimelineEvent {
 }
 
 const PLANOS = [
-  { code: "BASICO", title: "Básico", amount: 99 },
-  { code: "PROFISSIONAL", title: "Profissional", amount: 199 },
-  { code: "ENTERPRISE", title: "Enterprise", amount: 399 },
+  { code: "TESTE", title: "Plano Teste", amount: 1 },
+  { code: "BASICO", title: "Básico", amount: 49.9 },
+  { code: "INTERMEDIARIO", title: "Intermediário", amount: 99.9 },
 ];
 
 const Planos = () => {

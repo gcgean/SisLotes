@@ -1,6 +1,16 @@
-export type LicensePlanCode = "BASICO" | "PROFISSIONAL" | "ENTERPRISE";
+export type LicensePlanCode = "TESTE" | "BASICO" | "INTERMEDIARIO";
 
 export const PLAN_FEATURE_MATRIX: Record<LicensePlanCode, Record<string, unknown>> = {
+  TESTE: {
+    module_planos: true,
+    module_relatorios: false,
+    module_auditoria: false,
+    module_vendas: false,
+    module_pagamentos: false,
+    export_csv: false,
+    export_pdf: false,
+    max_users: 1,
+  },
   BASICO: {
     module_planos: true,
     module_relatorios: true,
@@ -8,10 +18,10 @@ export const PLAN_FEATURE_MATRIX: Record<LicensePlanCode, Record<string, unknown
     module_vendas: true,
     module_pagamentos: true,
     export_csv: true,
-    export_pdf: false,
-    max_users: 3,
+    export_pdf: true,
+    max_users: 1,
   },
-  PROFISSIONAL: {
+  INTERMEDIARIO: {
     module_planos: true,
     module_relatorios: true,
     module_auditoria: true,
@@ -19,17 +29,7 @@ export const PLAN_FEATURE_MATRIX: Record<LicensePlanCode, Record<string, unknown
     module_pagamentos: true,
     export_csv: true,
     export_pdf: true,
-    max_users: 10,
-  },
-  ENTERPRISE: {
-    module_planos: true,
-    module_relatorios: true,
-    module_auditoria: true,
-    module_vendas: true,
-    module_pagamentos: true,
-    export_csv: true,
-    export_pdf: true,
-    max_users: 999,
+    max_users: 5,
   },
 };
 
@@ -58,7 +58,7 @@ function isTruthy(value: unknown) {
 
 function normalizePlan(plan?: string | null): LicensePlanCode | null {
   const normalized = String(plan || "").trim().toUpperCase();
-  if (normalized === "BASICO" || normalized === "PROFISSIONAL" || normalized === "ENTERPRISE") {
+  if (normalized === "TESTE" || normalized === "BASICO" || normalized === "INTERMEDIARIO") {
     return normalized;
   }
   return null;
@@ -85,4 +85,3 @@ export function isFeatureEnabledForPlan(args: {
   }
   return isTruthy(effective[args.feature]);
 }
-

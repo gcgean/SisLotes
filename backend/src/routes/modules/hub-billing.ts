@@ -40,9 +40,9 @@ const changePlanSchema = z.object({
 });
 
 const PLAN_PRICES: Record<string, number> = {
-  BASICO: 99,
-  PROFISSIONAL: 199,
-  ENTERPRISE: 399,
+  TESTE: 1,
+  BASICO: 49.9,
+  INTERMEDIARIO: 99.9,
 };
 
 const subscriptionCheckoutSchema = z.object({
