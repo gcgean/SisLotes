@@ -8,6 +8,9 @@ export interface HubAccessResult {
   reason?: string;
   features?: Record<string, unknown>;
   expiresAt?: string | null;
+  daysLeft?: number | null;
+  banner?: string | null;
+  accessStatus?: string | null;
 }
 
 type HubAdminAuthResponse = {
@@ -17,8 +20,11 @@ type HubAdminAuthResponse = {
 type RequestMethod = "GET" | "POST";
 
 const NEGATIVE_LICENSE_REASONS = new Set([
+  "blocked",
+  "trial_expired",
   "customer_blocked",
   "no_license",
+  "product_not_found",
   "license_suspended",
   "license_expired",
   "license_revoked",
@@ -64,6 +70,43 @@ export class HubBillingService {
     return response;
   }
 
+  static async resolveAccess(payload: {
+    document: string;
+    personType: "PF" | "PJ";
+    productId: string;
+    name: string;
+    email: string;
+    phone?: string;
+  }): Promise<Record<string, unknown>> {
+    return this.requestApiKey<Record<string, unknown>>("POST", "/access/resolve", payload);
+  }
+
+  static async getAccessStatus(customerId: string, productId: string): Promise<Record<string, unknown>> {
+    const query = new URLSearchParams({
+      customerId,
+      productId,
+    });
+    return this.requestApiKey<Record<string, unknown>>("GET", `/access/status?${query.toString()}`);
+  }
+
+  static async resolveExternalCustomer(document: string) {
+    const clean = document.replace(/\D/g, "");
+    return this.requestApiKey<Record<string, unknown>>(
+      "GET",
+      `/access/customers/resolve?document=${encodeURIComponent(clean)}`,
+    );
+  }
+
+  static async upsertExternalCustomer(payload: {
+    document: string;
+    personType: "PF" | "PJ";
+    name: string;
+    email: string;
+    phone?: string;
+  }) {
+    return this.requestApiKey<Record<string, unknown>>("POST", "/access/customers/upsert", payload);
+  }
+
   static async getEntitlements(customerId: string) {
     return this.requestApiKey<{ products?: Array<Record<string, unknown>> }>(
       "GET",
@@ -81,6 +124,18 @@ export class HubBillingService {
 
   static async createSubscription(payload: Record<string, unknown>) {
     return this.requestAdmin<Record<string, unknown>>("POST", "/subscriptions", payload);
+  }
+
+  static async createCustomer(payload: Record<string, unknown>) {
+    return this.requestAdmin<Record<string, unknown>>("POST", "/customers", payload);
+  }
+
+  static async findCustomerByDocument(document: string) {
+    const clean = document.replace(/\D/g, "");
+    return this.requestAdmin<{ id?: string; data?: Array<Record<string, unknown>> }>(
+      "GET",
+      `/customers?search=${encodeURIComponent(clean)}`,
+    );
   }
 
   static async createSubscriptionCheckout(subscriptionId: string, payload: Record<string, unknown>) {
@@ -141,10 +196,10 @@ export class HubBillingService {
       };
     }
 
-    const access = await this.checkAccess(empresa.hub_customer_id, empresa.hub_product_code);
+    const access = await this.resolveEmpresaAccess(empresa);
 
-    empresa.hub_license_status = access.allowed ? "active" : access.reason || "license_inactive";
-    empresa.hub_license_reason = access.allowed ? null : access.reason || "license_inactive";
+    empresa.hub_license_status = access.accessStatus || (access.allowed ? "licensed" : access.reason || "license_inactive");
+    empresa.hub_license_reason = access.allowed ? null : access.reason || access.accessStatus || "license_inactive";
     empresa.hub_features = access.features ?? {};
     empresa.hub_last_sync = new Date();
     empresa.hub_cache_until = new Date(Date.now() + (access.allowed ? 60_000 : 10_000));
@@ -169,13 +224,57 @@ export class HubBillingService {
     return {
       synced: true,
       allowed: access.allowed,
-      reason: access.reason,
+      reason: access.reason || access.accessStatus,
       features: access.features ?? {},
       expiresAt: access.expiresAt ?? null,
+      daysLeft: access.daysLeft ?? null,
+      banner: access.banner ?? null,
+      accessStatus: access.accessStatus ?? null,
     };
   }
 
-  private static async requestApiKey<T>(method: RequestMethod, endpoint: string) {
+  private static async resolveEmpresaAccess(empresa: Empresa): Promise<HubAccessResult> {
+    const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+    if (productId) {
+      const statusData = await this.getAccessStatus(empresa.hub_customer_id!, productId);
+      const canAccess = Boolean((statusData as { canAccess?: unknown }).canAccess);
+      const accessStatus =
+        typeof (statusData as { accessStatus?: unknown }).accessStatus === "string"
+          ? String((statusData as { accessStatus?: string }).accessStatus)
+          : null;
+      const daysLeftRaw = (statusData as { daysLeft?: unknown }).daysLeft;
+      const daysLeft = typeof daysLeftRaw === "number" ? daysLeftRaw : null;
+      const bannerRaw = (statusData as { banner?: unknown }).banner;
+      const banner = typeof bannerRaw === "string" ? bannerRaw : null;
+      const trialEndAtRaw = (statusData as { trialEndAt?: unknown }).trialEndAt;
+      const licenseEndAtRaw = (statusData as { licenseEndAt?: unknown }).licenseEndAt;
+      const expiresAtRaw =
+        typeof trialEndAtRaw === "string"
+          ? trialEndAtRaw
+          : typeof licenseEndAtRaw === "string"
+            ? licenseEndAtRaw
+            : null;
+      const featuresRaw = (statusData as { features?: unknown }).features;
+      const features =
+        featuresRaw && typeof featuresRaw === "object" && !Array.isArray(featuresRaw)
+          ? (featuresRaw as Record<string, unknown>)
+          : undefined;
+
+      return {
+        allowed: canAccess,
+        reason: canAccess ? undefined : accessStatus || "license_inactive",
+        features,
+        expiresAt: expiresAtRaw,
+        daysLeft,
+        banner,
+        accessStatus,
+      };
+    }
+
+    return this.checkAccess(empresa.hub_customer_id!, empresa.hub_product_code || "");
+  }
+
+  private static async requestApiKey<T>(method: RequestMethod, endpoint: string, body?: Record<string, unknown>) {
     const base = getBaseUrl();
     const apiKey = getApiKey();
     if (!base || !apiKey) {
@@ -188,6 +287,7 @@ export class HubBillingService {
         "X-API-Key": apiKey,
         "Content-Type": "application/json",
       },
+      body: body ? JSON.stringify(body) : undefined,
     });
 
     if (response.status === 429) {

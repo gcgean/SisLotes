@@ -4,13 +4,72 @@ import { AppSidebar } from "./AppSidebar";
 import { BottomNav } from "./BottomNav";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Menu, LogOut, Sun, Moon, Building2 } from "lucide-react";
+import { Menu, LogOut, Sun, Moon, Building2, CreditCard, Lock } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface AppLayoutProps {
   children: ReactNode;
+}
+
+interface LicenseStatus {
+  plano?: string | null;
+  hub_license_status?: string | null;
+  hub_license_reason?: string | null;
+  hub_expires_at?: string | null;
+  hub_customer_id?: string | null;
+  hub_configured?: boolean;
+  days_left?: number | null;
+}
+
+const BLOCKED_STATUSES = new Set([
+  "blocked",
+  "trial_expired",
+  "customer_blocked",
+  "no_license",
+  "license_suspended",
+  "license_expired",
+  "license_revoked",
+  "license_inactive",
+]);
+
+function isLicenseBlocked(data?: LicenseStatus | null) {
+  if (!data?.hub_configured) return false;
+  if (!data?.hub_customer_id) return false;
+  const status = (data?.hub_license_status || "").toLowerCase();
+  return BLOCKED_STATUSES.has(status);
+}
+
+function fmtDate(date?: string | null) {
+  if (!date) return null;
+  try {
+    return format(parseISO(date), "dd/MM/yyyy", { locale: ptBR });
+  } catch {
+    return date;
+  }
+}
+
+function getAuthToken() {
+  return window.localStorage.getItem("token");
+}
+
+function getPlanLabel(data?: LicenseStatus | null) {
+  const raw = (data?.plano || "").trim();
+  if (raw) return raw;
+  const status = (data?.hub_license_status || "").toLowerCase();
+  if (status === "trial" || status === "trial_active") return "Teste";
+  if (status === "licensed" || status === "active") return "Licença ativa";
+  return "Sem plano";
+}
+
+function getLicenseTimeLabel(daysLeft?: number | null) {
+  if (typeof daysLeft !== "number") return "Tempo indisponível";
+  if (daysLeft >= 0) return `Restam ${daysLeft} dia${daysLeft === 1 ? "" : "s"}`;
+  const expiredDays = Math.abs(daysLeft);
+  return `Expirada há ${expiredDays} dia${expiredDays === 1 ? "" : "s"}`;
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -26,14 +85,26 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { data: empresa } = useQuery<{ nome_fantasia: string }>({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
-      const token = window.localStorage.getItem("token");
       const res = await fetch("/api/empresas/minha", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
       });
       if (!res.ok) throw new Error("Erro ao carregar empresa");
       return res.json();
     },
     staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: licenseData } = useQuery<LicenseStatus>({
+    queryKey: ["hub-billing", "license-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/hub-billing/license-status", {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 60_000,
+    refetchInterval: 5 * 60 * 1000,
   });
 
   function handleLogout() {
@@ -45,6 +116,12 @@ export function AppLayout({ children }: AppLayoutProps) {
     setTheme(theme === "dark" ? "light" : "dark");
   }
 
+  const blocked = isLicenseBlocked(licenseData);
+  const expiresDate = fmtDate(licenseData?.hub_expires_at);
+  const daysLeft = typeof licenseData?.days_left === "number" ? licenseData.days_left : null;
+  const planLabel = getPlanLabel(licenseData);
+  const licenseTimeLabel = getLicenseTimeLabel(daysLeft);
+
   return (
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
@@ -53,19 +130,29 @@ export function AppLayout({ children }: AppLayoutProps) {
 
         <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
           <header className="h-14 flex items-center border-b border-border px-4 bg-background/80 backdrop-blur-sm sticky top-0 z-30">
-            {/* Sidebar trigger — on mobile opens the Sheet, on desktop toggles collapse */}
+            {/* Sidebar trigger */}
             <SidebarTrigger className="mr-4">
               <Menu className="h-5 w-5" />
             </SidebarTrigger>
 
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-semibold text-foreground">SISLOTE</span>
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-semibold text-foreground shrink-0">SISLOTE</span>
               {empresa && (
                 <span className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground border-l border-border pl-3 ml-1">
                   <Building2 className="h-3.5 w-3.5 shrink-0" />
-                  <span className="font-medium text-foreground">{empresa.nome_fantasia}</span>
+                  <span className="font-medium text-foreground truncate max-w-[140px]">{empresa.nome_fantasia}</span>
                 </span>
               )}
+              <span className="hidden md:flex items-center gap-1 text-xs text-muted-foreground border-l border-border pl-3 ml-1">
+                  <CreditCard className="h-3.5 w-3.5 shrink-0" />
+                  <span className="capitalize font-medium text-foreground">{planLabel.toLowerCase()}</span>
+                  {expiresDate && (
+                    <span className="text-muted-foreground/70">· até {expiresDate}</span>
+                  )}
+                  <span className={daysLeft != null && daysLeft <= 5 ? "text-amber-600 font-medium" : "text-muted-foreground/70"}>
+                    · {licenseTimeLabel.toLowerCase()}
+                  </span>
+              </span>
             </div>
 
             <div className="ml-auto flex items-center gap-2">
@@ -101,8 +188,45 @@ export function AppLayout({ children }: AppLayoutProps) {
         </div>
       </div>
 
-      {/* Bottom navigation bar — only on mobile (md:hidden via CSS) */}
+      {/* Bottom navigation bar — only on mobile */}
       <BottomNav />
+
+      {/* ── Bloqueio de licença ───────────────────────────────────────── */}
+      {blocked && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background/95 backdrop-blur-sm">
+          <div className="max-w-md w-full mx-4 rounded-xl border bg-card p-8 space-y-5 text-center shadow-xl">
+            <div className="flex justify-center">
+              <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
+                <Lock className="h-8 w-8 text-destructive" />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-bold">Acesso bloqueado</h2>
+              <p className="text-sm text-muted-foreground">
+                {licenseData?.hub_license_status === "license_expired" || licenseData?.hub_license_status === "trial_expired"
+                  ? "Seu período de teste encerrou."
+                : licenseData?.hub_license_status === "license_suspended"
+                  ? "Sua licença foi suspensa por falta de pagamento."
+                  : "Sua licença está inativa."}
+                {" "}Regularize seu plano para continuar usando o sistema.
+              </p>
+              {licenseData?.plano && (
+                <p className="text-xs text-muted-foreground">
+                  Plano atual: <span className="font-medium capitalize">{licenseData.plano.toLowerCase()}</span>
+                </p>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Button className="w-full" onClick={() => navigate("/planos")}>
+                Ver planos e renovar
+              </Button>
+              <Button variant="ghost" size="sm" className="w-full" onClick={handleLogout}>
+                Sair da conta
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </SidebarProvider>
   );
 }

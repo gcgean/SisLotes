@@ -52,7 +52,24 @@
       "Bash(docker-compose up:*)",
       "Bash(docker context:*)",
       "Bash(docker-compose -f \"C:\\\\Projetos Web\\\\SisLotes\\\\docker-compose.yml\" up -d)",
-      "Bash(timeout 8 npx tsx src/server.ts)"
+      "Bash(timeout 8 npx tsx src/server.ts)",
+      "Bash(grep -v \"^$\")",
+      "Bash(curl -s http://localhost:3000/api/setup/planos-disponiveis)",
+      "Bash(curl -s http://localhost:3001/api/setup/planos-disponiveis)",
+      "Bash(curl -s http://localhost:4000/api/setup/planos-disponiveis)",
+      "Bash(findstr \"LISTEN\")",
+      "Bash(findstr -v \"127.0.0.1:1\")",
+      "Bash(findstr \"3[0-9][0-9][0-9]\")",
+      "Bash(curl -s -X POST http://localhost:3334/api/setup/primeiro-acesso ^)",
+      "Bash(-H \"Content-Type: application/json\" ^)",
+      "Bash(-d \"{\"\"empresa\"\":{\"\"nome_fantasia\"\":\"\"Imobiliaria Teste CPF\"\",\"\"razao_social\"\":\"\"Imobiliaria Teste CPF ME\"\",\"\"cnpj\"\":\"\"053.477.823-23\"\",\"\"telefone\"\":\"\"\\(11\\) 99999-0001\"\",\"\"cidade\"\":\"\"Sao Paulo\"\",\"\"estado\"\":\"\"SP\"\"},\"\"usuario\"\":{\"\"login\"\":\"\"usuario_teste_cpf\"\",\"\"senha\"\":\"\"teste123\"\",\"\"email\"\":\"\"cpfteste@sislote.com\"\",\"\"telefone\"\":\"\"\\(11\\) 99999-0001\"\"},\"\"planCode\"\":\"\"TESTE\"\"}\")",
+      "Bash(curl -s -X POST \"http://localhost:3334/api/setup/primeiro-acesso\" -H \"Content-Type: application/json\" -d \"{\"\"empresa\"\":{\"\"nome_fantasia\"\":\"\"Imobiliaria Teste CPF\"\",\"\"razao_social\"\":\"\"Imobiliaria Teste CPF ME\"\",\"\"cnpj\"\":\"\"053.477.823-23\"\",\"\"telefone\"\":\"\"\\(11\\) 99999-0001\"\",\"\"cidade\"\":\"\"Sao Paulo\"\",\"\"estado\"\":\"\"SP\"\"},\"\"usuario\"\":{\"\"login\"\":\"\"usuario_teste_cpf\"\",\"\"senha\"\":\"\"teste123\"\",\"\"email\"\":\"\"cpfteste@sislote.com\"\",\"\"telefone\"\":\"\"\\(11\\) 99999-0001\"\"},\"\"planCode\"\":\"\"TESTE\"\"}\")",
+      "Bash(findstr \"DB_\\\\|DATABASE\\\\|POSTGRES\")",
+      "Bash(curl -s -X POST \"http://localhost:3334/api/setup/primeiro-acesso\" -H \"Content-Type: application/json\" -d \"{\"\"empresa\"\":{\"\"nome_fantasia\"\":\"\"Imobiliaria Gean\"\",\"\"razao_social\"\":\"\"Imobiliaria Gean ME\"\",\"\"cnpj\"\":\"\"053.477.823-23\"\",\"\"telefone\"\":\"\"\\(11\\) 99999-0001\"\",\"\"cidade\"\":\"\"Sao Paulo\"\",\"\"estado\"\":\"\"SP\"\"},\"\"usuario\"\":{\"\"login\"\":\"\"geanteste\"\",\"\"senha\"\":\"\"teste123\"\",\"\"email\"\":\"\"gean@sislote.com\"\",\"\"telefone\"\":\"\"\\(11\\) 99999-0001\"\"},\"\"planCode\"\":\"\"TESTE\"\"}\")",
+      "Bash(curl -s -X POST \"http://localhost:3334/api/auth/login\" -H \"Content-Type: application/json\" -d \"{\"\"login\"\":\"\"geanteste\"\",\"\"senha\"\":\"\"teste123\"\"}\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjI0LCJsb2dpbiI6ImdlYW50ZXN0ZSIsInVzZXJfbWFzdGVyIjp0cnVlLCJpZF9lbXByZXNhIjo0OCwiaWF0IjoxNzc0ODQwNTE1LCJleHAiOjE3NzQ4NjkzMTV9.4zmaM3UTwI5exhObc0-BbRmv1oN7dBNSi21h8R3f7ss\")",
+      "Bash(curl -s \"http://localhost:3334/api/hub-billing/license-status\" -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(curl -s -X POST \"http://localhost:3334/api/hub-billing/planos/subscription/checkout\" -H \"Content-Type: application/json\" -H \"Authorization: Bearer $TOKEN\" -d \"{\"\"planCode\"\":\"\"BASICO\"\",\"\"paymentMethod\"\":\"\"pix\"\"}\")"
     ]
   }
 }

@@ -48,6 +48,14 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
         return res.status(403).json({ error: "Empresa inativa. Acesso bloqueado." });
       }
 
+      if (HubBillingService.isConfigured() && empresa.hub_customer_id) {
+        try {
+          await HubBillingService.syncEmpresaLicense(empresa);
+        } catch (hubError) {
+          console.warn("Falha ao sincronizar licença no middleware auth:", hubError);
+        }
+      }
+
       if (HubBillingService.isLicenseDenied(empresa)) {
         return res.status(403).json({
           error: HubBillingService.getLicenseMessage(empresa),

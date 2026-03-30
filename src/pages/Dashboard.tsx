@@ -50,6 +50,14 @@ interface DashboardVendaRecente {
 interface LicenseStatus {
   plano?: string | null;
   hub_license_status?: string | null;
+  days_left?: number | null;
+}
+
+function getLicenseTempo(daysLeft?: number | null) {
+  if (typeof daysLeft !== "number") return "Tempo indisponível";
+  if (daysLeft >= 0) return `Restam ${daysLeft} dia${daysLeft === 1 ? "" : "s"}`;
+  const expiredDays = Math.abs(daysLeft);
+  return `Expirada há ${expiredDays} dia${expiredDays === 1 ? "" : "s"}`;
 }
 
 const Dashboard = () => {
@@ -238,6 +246,7 @@ const Dashboard = () => {
                   {licenca.hub_license_status}
                 </Badge>
               )}
+              <Badge variant="secondary">{getLicenseTempo(licenca?.days_left ?? null)}</Badge>
             </p>
           ) : (
             <p className="text-sm text-muted-foreground mt-1">Visão geral do sistema</p>

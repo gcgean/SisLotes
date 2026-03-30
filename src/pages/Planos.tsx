@@ -345,7 +345,7 @@ const Planos = () => {
                     })
                   }
                 >
-                  {subscriptionMutation.isPending ? "Processando..." : "Assinatura recorrente"}
+                  {subscriptionMutation.isPending ? "Processando..." : "Pagamento"}
                 </Button>
               </CardContent>
             </Card>

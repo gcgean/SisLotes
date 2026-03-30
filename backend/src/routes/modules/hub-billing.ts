@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Empresa } from "../../entities/Empresa";
+import { Usuario } from "../../entities/Usuario";
 import { HubBillingCharge } from "../../entities/HubBillingCharge";
 import { HubBillingEvent } from "../../entities/HubBillingEvent";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
@@ -195,6 +196,86 @@ function toAmountString(value: number | null) {
   return value != null ? value.toFixed(2) : null;
 }
 
+/**
+ * Garante que a empresa possui um hub_customer_id.
+ * Se não tiver, cria o cliente no Hub Billing (ou recupera se já existir via 409)
+ * e salva o ID na empresa antes de retornar.
+ */
+async function ensureHubCustomer(
+  empresa: Empresa,
+  empresaRepo: ReturnType<typeof AppDataSource.getRepository<Empresa>>,
+): Promise<string> {
+  if (empresa.hub_customer_id) {
+    return empresa.hub_customer_id;
+  }
+
+  const docClean = (empresa.cnpj || "").replace(/\D/g, "");
+  if (!docClean) {
+    throw new Error("CNPJ/CPF da empresa não informado — impossível criar cliente no Hub Billing");
+  }
+
+  const personType = docClean.length === 11 ? "PF" : "PJ";
+  const productCode = process.env.HUB_BILLING_PRODUCT_CODE || "SISLOTE_NOVO_OFICIAL_2";
+
+  // Se a empresa não tem email, busca do usuário master
+  let emailParaHub = empresa.email?.trim() || null;
+  if (!emailParaHub) {
+    const master = await AppDataSource.getRepository(Usuario).findOne({
+      where: { id_empresa: empresa.id_empresa, user_master: true },
+    });
+    emailParaHub = master?.email?.trim() || null;
+  }
+
+  if (!emailParaHub) {
+    throw new Error("E-mail não configurado para a empresa — informe um e-mail para continuar");
+  }
+
+  let customerId: string | null = null;
+
+  try {
+    const customer = await HubBillingService.createCustomer({
+      personType,
+      legalName: empresa.razao_social || empresa.nome_fantasia,
+      document: docClean,
+      email: emailParaHub,
+      phone: (empresa.telefone || "").replace(/\D/g, "") || undefined,
+    });
+    const obj = customer as Record<string, unknown>;
+    customerId = typeof obj.id === "string" ? obj.id : null;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // 409 = cliente já existe → busca pelo documento
+    if (msg.includes("409")) {
+      try {
+        const found = await HubBillingService.findCustomerByDocument(docClean);
+        const obj = found as Record<string, unknown>;
+        if (typeof obj.id === "string") {
+          customerId = obj.id;
+        } else if (Array.isArray(obj.data) && obj.data.length > 0) {
+          const first = obj.data[0] as Record<string, unknown>;
+          customerId = typeof first.id === "string" ? first.id : null;
+        }
+      } catch (findErr) {
+        console.warn("[Hub] findCustomerByDocument falhou:", findErr instanceof Error ? findErr.message : findErr);
+      }
+    } else {
+      throw err;
+    }
+  }
+
+  if (!customerId) {
+    throw new Error("Não foi possível criar ou localizar o cliente no Hub Billing");
+  }
+
+  empresa.hub_customer_id = customerId;
+  if (!empresa.hub_product_code) {
+    empresa.hub_product_code = productCode;
+  }
+  await empresaRepo.save(empresa);
+
+  return customerId;
+}
+
 hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, res) => {
   const idEmpresa = req.user?.id_empresa;
   if (!idEmpresa) {
@@ -208,6 +289,20 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     return res.status(404).json({ error: "Empresa não encontrada" });
   }
 
+  if (HubBillingService.isConfigured() && empresa.hub_customer_id) {
+    try {
+      await HubBillingService.syncEmpresaLicense(empresa);
+    } catch (err) {
+      console.warn("[Hub] sync em /license-status falhou:", err instanceof Error ? err.message : err);
+    }
+  }
+
+  const expiresAt = empresa.hub_expires_at ?? (empresa.data_vencimento ? new Date(`${empresa.data_vencimento}T00:00:00`) : null);
+  const daysLeft =
+    expiresAt && !Number.isNaN(expiresAt.getTime())
+      ? Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+      : null;
+
   return res.json({
     id_empresa: empresa.id_empresa,
     plano: empresa.plano,
@@ -220,6 +315,7 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     hub_features: getEffectiveFeatures(empresa.plano, empresa.hub_features ?? {}),
     hub_last_sync: empresa.hub_last_sync,
     hub_configured: HubBillingService.isConfigured(),
+    days_left: daysLeft,
   });
 });
 
@@ -412,8 +508,11 @@ hubBillingRouter.post("/planos/checkout", requireAuth, async (req: AuthRequest, 
     return res.status(404).json({ error: "Empresa não encontrada" });
   }
 
-  if (!empresa.hub_customer_id) {
-    return res.status(400).json({ error: "Hub Customer ID não configurado para a empresa" });
+  try {
+    await ensureHubCustomer(empresa, empresaRepo);
+  } catch (autoErr) {
+    const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
+    return res.status(502).json({ error: msg });
   }
 
   const payload = parseResult.data;
@@ -479,8 +578,12 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
   if (!empresa) {
     return res.status(404).json({ error: "Empresa não encontrada" });
   }
-  if (!empresa.hub_customer_id) {
-    return res.status(400).json({ error: "Hub Customer ID não configurado para a empresa" });
+
+  try {
+    await ensureHubCustomer(empresa, empresaRepo);
+  } catch (autoErr) {
+    const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
+    return res.status(502).json({ error: msg });
   }
 
   const payload = parseResult.data;
@@ -594,8 +697,12 @@ hubBillingRouter.post("/planos/alterar", requireAuth, async (req: AuthRequest, r
   if (!empresa) {
     return res.status(404).json({ error: "Empresa não encontrada" });
   }
-  if (!empresa.hub_customer_id) {
-    return res.status(400).json({ error: "Hub Customer ID não configurado para a empresa" });
+
+  try {
+    await ensureHubCustomer(empresa, empresaRepo);
+  } catch (autoErr) {
+    const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
+    return res.status(502).json({ error: msg });
   }
 
   const payload = parseResult.data;

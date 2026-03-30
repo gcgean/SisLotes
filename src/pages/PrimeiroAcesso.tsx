@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useNavigate, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -16,7 +16,20 @@ import {
 } from "@/components/ui/form";
 import { toast } from "@/hooks/use-toast";
 import { formatCpfCnpj } from "@/lib/cpfCnpj";
-import { Building2, UserRound, CheckCircle2, ArrowLeft, ArrowRight, Eye, EyeOff } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import {
+  Building2,
+  UserRound,
+  CheckCircle2,
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  EyeOff,
+  CreditCard,
+  Loader2,
+} from "lucide-react";
 
 // ─── Schemas ───────────────────────────────────────────────────────────────────
 const usuarioSchema = z.object({
@@ -59,13 +72,53 @@ const empresaSchema = z.object({
 type UsuarioForm = z.infer<typeof usuarioSchema>;
 type EmpresaForm = z.infer<typeof empresaSchema>;
 
+interface PlanoDisponivel {
+  code: string;
+  title: string;
+  amount: number;
+  description: string;
+  isTrial?: boolean;
+}
+
+interface PlanosResponse {
+  planos: PlanoDisponivel[];
+  trialDays: number;
+}
+
+interface SetupResult {
+  success: boolean;
+  empresa: { id_empresa: number; nome_fantasia: string };
+  hub?: { planCode?: string; expiresAt?: string | null; trialDays?: number };
+  auth?: {
+    token: string;
+    usuario: {
+      id_usuario: number;
+      login: string;
+      user_master: boolean;
+      id_empresa: number;
+    };
+  };
+}
+
+function fmtDate(date?: string | null) {
+  if (!date) return null;
+  try {
+    return format(parseISO(date), "dd/MM/yyyy", { locale: ptBR });
+  } catch {
+    return date;
+  }
+}
+
 // ─── Componente ────────────────────────────────────────────────────────────────
 const PrimeiroAcesso = () => {
   const navigate = useNavigate();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const { login: doLogin } = useAuth();
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [usuarioData, setUsuarioData] = useState<UsuarioForm | null>(null);
+  const [empresaDataSaved, setEmpresaDataSaved] = useState<EmpresaForm | null>(null);
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmar, setMostrarConfirmar] = useState(false);
+  const [setupResult, setSetupResult] = useState<SetupResult | null>(null);
 
   const formUsuario = useForm<UsuarioForm>({
     resolver: zodResolver(usuarioSchema),
@@ -87,15 +140,27 @@ const PrimeiroAcesso = () => {
     },
   });
 
+  const { data: planosData, isLoading: planosLoading } = useQuery<PlanosResponse>({
+    queryKey: ["setup", "planos-disponiveis"],
+    queryFn: async () => {
+      const res = await fetch("/api/setup/planos-disponiveis");
+      if (!res.ok) throw new Error("Erro ao carregar planos");
+      return res.json();
+    },
+    enabled: step === 3,
+    staleTime: Infinity,
+  });
+
   const mutation = useMutation({
     mutationFn: async ({
       empresa,
       usuario,
+      planCode,
     }: {
       empresa: EmpresaForm;
       usuario: UsuarioForm;
+      planCode: string;
     }) => {
-      // Remove campos vazios da empresa
       const empresaLimpa = Object.fromEntries(
         Object.entries({ ...empresa, email: usuario.email })
           .filter(([, v]) => v !== "" && v !== undefined)
@@ -112,6 +177,7 @@ const PrimeiroAcesso = () => {
             email: usuario.email,
             telefone: usuario.celular,
           },
+          planCode,
         }),
       });
 
@@ -133,16 +199,32 @@ const PrimeiroAcesso = () => {
         throw new Error(msg);
       }
 
-      return data;
+      return data as SetupResult;
     },
-    onSuccess: () => {
-      setStep(3);
+    onSuccess: (data) => {
+      if (data.auth?.token && data.auth?.usuario) {
+        doLogin({
+          token: data.auth.token,
+          usuario: {
+            id_usuario: data.auth.usuario.id_usuario,
+            login: data.auth.usuario.login,
+            user_master: data.auth.usuario.user_master,
+          },
+        });
+        toast({
+          title: "Conta criada com sucesso",
+          description: "Você já está logado no sistema.",
+        });
+        navigate("/", { replace: true });
+        return;
+      }
+      setSetupResult(data);
+      setStep(4);
     },
     onError: (error) => {
       toast({
         title: "Erro ao cadastrar",
-        description:
-          error instanceof Error ? error.message : "Tente novamente.",
+        description: error instanceof Error ? error.message : "Tente novamente.",
         variant: "destructive",
       });
     },
@@ -150,20 +232,25 @@ const PrimeiroAcesso = () => {
 
   function handleUsuarioSubmit(values: UsuarioForm) {
     setUsuarioData(values);
-    // Auto-preenche o telefone da empresa com o celular do usuário
     formEmpresa.setValue("telefone", values.celular);
     setStep(2);
   }
 
   function handleEmpresaSubmit(values: EmpresaForm) {
-    if (!usuarioData) return;
-    mutation.mutate({ empresa: values, usuario: usuarioData });
+    setEmpresaDataSaved(values);
+    setStep(3);
+  }
+
+  function handlePlanSelect(planCode: string) {
+    if (!usuarioData || !empresaDataSaved) return;
+    mutation.mutate({ empresa: empresaDataSaved, usuario: usuarioData, planCode });
   }
 
   const passos = [
     { num: 1, label: "Usuário", icon: UserRound },
     { num: 2, label: "Empresa", icon: Building2 },
-    { num: 3, label: "Concluído", icon: CheckCircle2 },
+    { num: 3, label: "Plano", icon: CreditCard },
+    { num: 4, label: "Concluído", icon: CheckCircle2 },
   ];
 
   return (
@@ -181,13 +268,13 @@ const PrimeiroAcesso = () => {
         </div>
 
         {/* Indicador de passos */}
-        <div className="flex items-center justify-center gap-2">
+        <div className="flex items-center justify-center gap-1">
           {passos.map((p, i) => {
             const Icon = p.icon;
             const active = step === p.num;
             const done = step > p.num;
             return (
-              <div key={p.num} className="flex items-center gap-2">
+              <div key={p.num} className="flex items-center gap-1">
                 <div
                   className={`flex flex-col items-center gap-1 ${
                     active
@@ -208,11 +295,11 @@ const PrimeiroAcesso = () => {
                   >
                     <Icon className="h-4 w-4" />
                   </div>
-                  <span className="text-[11px] font-medium hidden sm:block">{p.label}</span>
+                  <span className="text-[10px] font-medium hidden sm:block">{p.label}</span>
                 </div>
                 {i < passos.length - 1 && (
                   <div
-                    className={`h-px w-10 sm:w-16 mx-1 ${
+                    className={`h-px w-8 sm:w-12 mx-1 mb-4 ${
                       step > p.num ? "bg-green-500" : "bg-muted"
                     }`}
                   />
@@ -508,16 +595,103 @@ const PrimeiroAcesso = () => {
                 >
                   <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
                 </Button>
-                <Button type="submit" disabled={mutation.isPending}>
-                  {mutation.isPending ? "Salvando..." : "Criar conta"}
+                <Button type="submit">
+                  Próximo <ArrowRight className="h-4 w-4 ml-1" />
                 </Button>
               </div>
             </form>
           </Form>
         )}
 
-        {/* ── PASSO 3: Sucesso ──────────────────────────────────────────── */}
+        {/* ── PASSO 3: Escolha do plano ─────────────────────────────────── */}
         {step === 3 && (
+          <div className="space-y-4">
+            <div>
+              <h2 className="font-semibold text-base mb-1">Escolha seu plano</h2>
+              <p className="text-sm text-muted-foreground">
+                Teste grátis por {planosData?.trialDays ?? 14} dias. Cancele a qualquer momento.
+              </p>
+            </div>
+
+            {planosLoading ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {(planosData?.planos ?? []).map((plano) => (
+                  <div
+                    key={plano.code}
+                    className={`border rounded-lg p-4 space-y-2 ${
+                      plano.isTrial
+                        ? "border-primary/40 bg-primary/5"
+                        : ""
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold">{plano.title}</p>
+                          {plano.isTrial && (
+                            <span className="text-[10px] font-bold uppercase bg-primary text-primary-foreground rounded px-1.5 py-0.5">
+                              Grátis 14 dias
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">{plano.description}</p>
+                      </div>
+                      <div className="text-right shrink-0 ml-3">
+                        {plano.isTrial ? (
+                          <>
+                            <p className="font-bold text-lg text-primary">Grátis</p>
+                            <p className="text-xs text-muted-foreground">14 dias</p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="font-bold text-lg">R$ {plano.amount.toFixed(2)}</p>
+                            <p className="text-xs text-muted-foreground">/mês</p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <Button
+                      className="w-full"
+                      variant={plano.isTrial ? "default" : "outline"}
+                      disabled={mutation.isPending}
+                      onClick={() => handlePlanSelect(plano.code)}
+                    >
+                      {mutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Criando conta...
+                        </>
+                      ) : plano.isTrial ? (
+                        "Começar gratuitamente"
+                      ) : (
+                        `Começar com ${plano.title}`
+                      )}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-between pt-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep(2)}
+                disabled={mutation.isPending}
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" /> Voltar
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── PASSO 4: Sucesso ──────────────────────────────────────────── */}
+        {step === 4 && (
           <div className="text-center space-y-4 py-4">
             <div className="flex justify-center">
               <div className="h-16 w-16 rounded-full bg-green-100 dark:bg-green-950/40 flex items-center justify-center">
@@ -528,10 +702,35 @@ const PrimeiroAcesso = () => {
               <h2 className="text-xl font-semibold">Tudo pronto!</h2>
               <p className="text-sm text-muted-foreground">
                 Empresa{" "}
-                <strong>{formEmpresa.getValues("nome_fantasia")}</strong> cadastrada
-                com sucesso. Faça login para começar a usar o sistema.
+                <strong>{setupResult?.empresa.nome_fantasia ?? formEmpresa.getValues("nome_fantasia")}</strong>{" "}
+                cadastrada com sucesso.
               </p>
             </div>
+
+            {setupResult?.hub && (
+              <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-1 text-sm">
+                <p className="font-medium text-primary">
+                  Plano {setupResult.hub.planCode} ativado
+                </p>
+                {setupResult.hub.expiresAt ? (
+                  <p className="text-muted-foreground">
+                    Teste gratuito válido até{" "}
+                    <span className="font-medium text-foreground">
+                      {fmtDate(setupResult.hub.expiresAt)}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Período de teste de {setupResult.hub.trialDays ?? 14} dias ativado.
+                  </p>
+                )}
+              </div>
+            )}
+
+            <p className="text-sm text-muted-foreground">
+              Faça login para começar a usar o sistema.
+            </p>
+
             <Button
               className="w-full mt-2"
               onClick={() => navigate("/login", { replace: true })}
