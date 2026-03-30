@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -27,6 +29,17 @@ interface LicenseInfo {
   plano?: string | null;
   hub_license_status?: string | null;
   hub_license_reason?: string | null;
+  hub_expires_at?: string | null;
+  data_vencimento?: string | null;
+}
+
+function fmtDate(date?: string | null) {
+  if (!date) return null;
+  try {
+    return format(parseISO(date), "dd/MM/yyyy", { locale: ptBR });
+  } catch {
+    return date;
+  }
 }
 
 interface TimelineEvent {
@@ -225,9 +238,13 @@ const Planos = () => {
       toast({ title: "Checkout de assinatura criado com sucesso" });
     },
     onError: (error) => {
+      const msg = error instanceof Error ? error.message : "Falha inesperada";
+      const isConflict = msg.includes("409") || msg.toLowerCase().includes("já possui assinatura");
       toast({
-        title: "Erro ao criar assinatura",
-        description: error instanceof Error ? error.message : "Falha inesperada",
+        title: isConflict ? "Assinatura já existe" : "Erro ao criar assinatura",
+        description: isConflict
+          ? "Este cliente já tem uma assinatura ativa. Use Upgrade/Downgrade para alterar o plano."
+          : msg,
         variant: "destructive",
       });
     },
@@ -250,12 +267,22 @@ const Planos = () => {
             <CardTitle className="text-sm">Licença Atual</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3 items-center">
-            <Badge variant="outline" className="capitalize">Plano: {planoAtual}</Badge>
+            <Badge variant="outline" className="capitalize">
+              Plano: {planoAtual}
+            </Badge>
             <Badge variant={licenca?.hub_license_status === "active" ? "default" : "destructive"}>
               {licenca?.hub_license_status || "sem status"}
             </Badge>
             {licenca?.hub_license_reason && (
               <Badge variant="secondary">{licenca.hub_license_reason}</Badge>
+            )}
+            {(licenca?.hub_expires_at || licenca?.data_vencimento) && (
+              <span className="text-sm text-muted-foreground">
+                Válido até{" "}
+                <span className="font-medium text-foreground">
+                  {fmtDate(licenca.hub_expires_at ?? licenca.data_vencimento)}
+                </span>
+              </span>
             )}
           </CardContent>
         </Card>

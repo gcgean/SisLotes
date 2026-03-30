@@ -34,6 +34,9 @@ export class HubBillingEvent {
   @Column({ type: "jsonb", nullable: true })
   payload!: Record<string, unknown> | null;
 
+  @Column({ type: "varchar", length: 120, name: "webhook_event_id", nullable: true, unique: true })
+  webhook_event_id!: string | null;
+
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 }

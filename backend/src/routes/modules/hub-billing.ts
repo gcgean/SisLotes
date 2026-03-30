@@ -45,6 +45,24 @@ const PLAN_PRICES: Record<string, number> = {
   INTERMEDIARIO: 99.9,
 };
 
+// Mapeamento para os UUIDs de plano no Hub Billing (em centavos)
+function getHubPlanMap(): Record<string, { planId: string; amountCents: number }> {
+  return {
+    TESTE: {
+      planId: process.env.HUB_BILLING_PLAN_TESTE || "",
+      amountCents: 100,
+    },
+    BASICO: {
+      planId: process.env.HUB_BILLING_PLAN_BASICO || "",
+      amountCents: 4990,
+    },
+    INTERMEDIARIO: {
+      planId: process.env.HUB_BILLING_PLAN_INTERMEDIARIO || "",
+      amountCents: 9990,
+    },
+  };
+}
+
 const subscriptionCheckoutSchema = z.object({
   planCode: z.string().min(1),
   paymentMethod: z.enum(["pix", "boleto", "cartao"]).default("pix"),
@@ -466,21 +484,33 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
   }
 
   const payload = parseResult.data;
-  const subscription = await HubBillingService.createSubscription({
-    customerId: empresa.hub_customer_id,
-    productCode: payload.planCode,
-    cycle: payload.cycle,
-    currency: payload.currency,
-    ...(payload.subscriptionPayload ?? {}),
-  });
+  const planCode = payload.planCode.toUpperCase();
+  const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || "";
+  const hubPlanMap = getHubPlanMap();
+  const hubPlan = hubPlanMap[planCode];
 
-  const subscriptionObj = subscription as Record<string, unknown>;
-  const subscriptionId = pickString(subscriptionObj, ["id", "subscriptionId"]);
-  if (!subscriptionId) {
-    return res.status(502).json({ error: "Hub Billing não retornou subscriptionId" });
+  if (!hubProductId) {
+    return res.status(500).json({ error: "HUB_BILLING_PRODUCT_ID não configurado" });
+  }
+  if (!hubPlan?.planId) {
+    return res.status(400).json({ error: `Plano '${planCode}' não mapeado para o Hub Billing` });
   }
 
   try {
+    const subscription = await HubBillingService.createSubscription({
+      customerId: empresa.hub_customer_id,
+      productId: hubProductId,
+      planId: hubPlan.planId,
+      contractedAmount: hubPlan.amountCents,
+      ...(payload.subscriptionPayload ?? {}),
+    });
+
+    const subscriptionObj = subscription as Record<string, unknown>;
+    const subscriptionId = pickString(subscriptionObj, ["id", "subscriptionId"]);
+    if (!subscriptionId) {
+      return res.status(502).json({ error: "Hub Billing não retornou subscriptionId" });
+    }
+
     const checkout = await HubBillingService.createSubscriptionCheckout(subscriptionId, {
       paymentMethod: payload.paymentMethod,
       ...(payload.checkoutPayload ?? {}),
@@ -504,7 +534,7 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
       amount: toAmountString(amount),
       payload: {
         mode: "subscription_checkout",
-        planCode: payload.planCode,
+        planCode,
         subscription: subscriptionObj,
         checkout: checkoutObj,
       },
@@ -520,9 +550,7 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
       subscription_id: subscriptionId,
       status: status ?? "created",
       amount: toAmountString(amount),
-      payload: {
-        planCode: payload.planCode,
-      },
+      payload: { planCode },
     }));
 
     return res.status(201).json({
@@ -536,8 +564,15 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
       localChargeId: saved.id_hub_charge,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Erro ao criar checkout de assinatura";
-    return res.status(502).json({ error: message });
+    const raw = error instanceof Error ? error.message : "Erro ao criar assinatura";
+    // 409 = já tem assinatura ativa → informa de forma amigável
+    if (raw.includes("409") || raw.toLowerCase().includes("já possui assinatura")) {
+      return res.status(409).json({
+        error: "Este cliente já possui uma assinatura ativa para este produto.",
+        hint: "Use Upgrade/Downgrade para alterar o plano existente.",
+      });
+    }
+    return res.status(502).json({ error: raw });
   }
 });
 
@@ -655,9 +690,12 @@ hubBillingRouter.post("/webhook", async (req, res) => {
   }
 
   const bodySchema = z.object({
+    id: z.string().optional(),
     type: z.string(),
+    productId: z.string().optional(),
     customerId: z.string().optional(),
     payload: z.record(z.unknown()).optional(),
+    createdAt: z.string().optional(),
   });
 
   const parsed = bodySchema.safeParse(req.body);
@@ -666,7 +704,17 @@ hubBillingRouter.post("/webhook", async (req, res) => {
   }
 
   const event = parsed.data;
+  const webhookEventId = event.id ?? null;
   const customerId = event.customerId;
+
+  // Idempotência: ignora evento já processado
+  if (webhookEventId) {
+    const eventRepo = AppDataSource.getRepository(HubBillingEvent);
+    const existing = await eventRepo.findOne({ where: { webhook_event_id: webhookEventId } });
+    if (existing) {
+      return res.status(200).json({ ok: true, duplicate: true });
+    }
+  }
 
   if (!customerId) {
     return res.status(200).json({ ok: true });
@@ -731,6 +779,7 @@ hubBillingRouter.post("/webhook", async (req, res) => {
     status: status ?? event.type,
     amount: toAmountString(amount),
     payload: payloadObj,
+    webhook_event_id: webhookEventId,
   }));
 
   if (event.type === "payment.approved") {

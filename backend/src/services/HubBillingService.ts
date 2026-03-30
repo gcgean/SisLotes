@@ -157,7 +157,7 @@ export class HubBillingService {
       }
     }
 
-    const featurePlan = access.features?.plan;
+    const featurePlan = access.features?.plan ?? (access as unknown as Record<string, unknown>).planCode;
     if (typeof featurePlan === "string" && featurePlan.trim()) {
       empresa.plano = featurePlan.trim();
     }
@@ -190,6 +190,10 @@ export class HubBillingService {
       },
     });
 
+    if (response.status === 429) {
+      throw new Error("Hub Billing rate limit atingido. Tente novamente em alguns segundos.");
+    }
+
     if (!response.ok) {
       const body = await response.text();
       throw new Error(`Hub Billing API Key request falhou (${response.status}): ${body}`);
@@ -211,6 +215,10 @@ export class HubBillingService {
       },
       body: body ? JSON.stringify(body) : undefined,
     });
+
+    if (response.status === 429) {
+      throw new Error("Hub Billing rate limit atingido. Tente novamente em alguns segundos.");
+    }
 
     if (!response.ok) {
       const raw = await response.text();

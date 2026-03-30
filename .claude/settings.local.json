@@ -46,7 +46,13 @@
       "Bash(powershell -Command \"Get-Service | Where-Object {$_Name -like ''*post*'' -or $_Name -like ''*pg*''} | Select-Object Name,Status,DisplayName\")",
       "Bash(powershell -Command \"Get-NetTCPConnection -LocalPort 5433 -ErrorAction SilentlyContinue | Select-Object State,OwningProcess\")",
       "Bash(powershell -Command \"Start-Service ''postgresql-x64-15'' -ErrorAction SilentlyContinue; Start-Service ''postgresql-x64-16'' -ErrorAction SilentlyContinue; Start-Service ''postgresql-x64-17'' -ErrorAction SilentlyContinue; Write-Host ''Tentativa concluída''\")",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker info:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker context:*)",
+      "Bash(docker-compose -f \"C:\\\\Projetos Web\\\\SisLotes\\\\docker-compose.yml\" up -d)",
+      "Bash(timeout 8 npx tsx src/server.ts)"
     ]
   }
 }
