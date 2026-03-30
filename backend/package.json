@@ -6,7 +6,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
-    "migrate": "tsx src/migrate.ts"
+    "migrate": "tsx src/migrate.ts",
+    "hub:diag": "tsx src/scripts/hub-billing-diagnostic.ts"
   },
   "dependencies": {
     "@types/pg": "^8.18.0",
