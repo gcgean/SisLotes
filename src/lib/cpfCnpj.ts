@@ -45,5 +45,55 @@ export function formatCpfCnpj(value: string): string {
  */
 export function isValidCpfCnpj(value: string): boolean {
   const d = onlyDigits(value);
-  return d.length === 11 || d.length === 14;
+  if (d.length === 11) return isValidCpf(d);
+  if (d.length === 14) return isValidCnpj(d);
+  return false;
+}
+
+function allDigitsEqual(digits: string): boolean {
+  return /^(\d)\1+$/.test(digits);
+}
+
+function isValidCpf(digits: string): boolean {
+  if (digits.length !== 11) return false;
+  if (allDigitsEqual(digits)) return false;
+
+  const nums = digits.split("").map((n) => Number(n));
+
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += nums[i] * (10 - i);
+  let mod = sum % 11;
+  const d1 = mod < 2 ? 0 : 11 - mod;
+  if (nums[9] !== d1) return false;
+
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += nums[i] * (11 - i);
+  mod = sum % 11;
+  const d2 = mod < 2 ? 0 : 11 - mod;
+  if (nums[10] !== d2) return false;
+
+  return true;
+}
+
+function isValidCnpj(digits: string): boolean {
+  if (digits.length !== 14) return false;
+  if (allDigitsEqual(digits)) return false;
+
+  const nums = digits.split("").map((n) => Number(n));
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += nums[i] * w1[i];
+  let mod = sum % 11;
+  const d1 = mod < 2 ? 0 : 11 - mod;
+  if (nums[12] !== d1) return false;
+
+  sum = 0;
+  for (let i = 0; i < 13; i++) sum += nums[i] * w2[i];
+  mod = sum % 11;
+  const d2 = mod < 2 ? 0 : 11 - mod;
+  if (nums[13] !== d2) return false;
+
+  return true;
 }

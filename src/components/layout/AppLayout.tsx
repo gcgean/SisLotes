@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./AppSidebar";
 import { BottomNav } from "./BottomNav";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -23,6 +23,8 @@ interface LicenseStatus {
   hub_customer_id?: string | null;
   hub_configured?: boolean;
   days_left?: number | null;
+  banner?: string | null;
+  access_status?: string | null;
 }
 
 const BLOCKED_STATUSES = new Set([
@@ -74,6 +76,7 @@ function getLicenseTimeLabel(daysLeft?: number | null) {
 
 export function AppLayout({ children }: AppLayoutProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -121,6 +124,45 @@ export function AppLayout({ children }: AppLayoutProps) {
   const daysLeft = typeof licenseData?.days_left === "number" ? licenseData.days_left : null;
   const planLabel = getPlanLabel(licenseData);
   const licenseTimeLabel = getLicenseTimeLabel(daysLeft);
+  const onPlanosPage = location.pathname.startsWith("/planos");
+  const isDueSoon = daysLeft != null && daysLeft >= 0 && daysLeft <= 5;
+
+  useEffect(() => {
+    if (!blocked) return;
+    if (onPlanosPage) return;
+    const reason = licenseData?.hub_license_reason || licenseData?.hub_license_status || "license_inactive";
+    navigate(`/planos?reason=${encodeURIComponent(reason)}`, { replace: true });
+  }, [blocked, onPlanosPage, licenseData?.hub_license_reason, licenseData?.hub_license_status, navigate]);
+
+  useEffect(() => {
+    if (!licenseData?.hub_configured) return;
+    if (!licenseData?.hub_customer_id) return;
+    if (!isDueSoon) return;
+    if (blocked) return;
+    if (onPlanosPage) return;
+
+    const companyKey = user?.id_empresa ?? "empresa";
+    const key = `hub-payment-prompt:${companyKey}:${licenseData?.hub_expires_at ?? daysLeft}`;
+    if (window.sessionStorage.getItem(key)) return;
+    window.sessionStorage.setItem(key, "1");
+
+    const wantsToPay = window.confirm(
+      "Seu plano vence em breve. Deseja efetuar o pagamento agora para não perder acesso ao sistema?",
+    );
+    if (wantsToPay) {
+      navigate("/planos?payCurrent=1", { replace: false });
+    }
+  }, [
+    blocked,
+    daysLeft,
+    isDueSoon,
+    licenseData?.hub_configured,
+    licenseData?.hub_customer_id,
+    licenseData?.hub_expires_at,
+    navigate,
+    onPlanosPage,
+    user?.id_empresa,
+  ]);
 
   return (
     <SidebarProvider>
@@ -143,7 +185,11 @@ export function AppLayout({ children }: AppLayoutProps) {
                   <span className="font-medium text-foreground truncate max-w-[140px]">{empresa.nome_fantasia}</span>
                 </span>
               )}
-              <span className="hidden md:flex items-center gap-1 text-xs text-muted-foreground border-l border-border pl-3 ml-1">
+              <Link
+                  to="/planos"
+                  className="hidden md:flex items-center gap-1 text-xs text-muted-foreground border-l border-border pl-3 ml-1 transition-colors hover:text-foreground hover:underline underline-offset-4"
+                  title="Ir para Planos"
+              >
                   <CreditCard className="h-3.5 w-3.5 shrink-0" />
                   <span className="capitalize font-medium text-foreground">{planLabel.toLowerCase()}</span>
                   {expiresDate && (
@@ -152,7 +198,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   <span className={daysLeft != null && daysLeft <= 5 ? "text-amber-600 font-medium" : "text-muted-foreground/70"}>
                     · {licenseTimeLabel.toLowerCase()}
                   </span>
-              </span>
+              </Link>
             </div>
 
             <div className="ml-auto flex items-center gap-2">
@@ -183,6 +229,28 @@ export function AppLayout({ children }: AppLayoutProps) {
 
           {/* pb-20 on mobile to clear bottom nav, pb-6 on desktop */}
           <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6">
+            {licenseData?.banner && (
+              <div className="mb-4 rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                {licenseData.banner}
+              </div>
+            )}
+            {!blocked && isDueSoon && (
+              <div className="mb-4 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex flex-wrap items-center justify-between gap-2">
+                <span>
+                  Seu plano vence em breve ({licenseTimeLabel.toLowerCase()}). Evite bloqueio efetuando o pagamento agora.
+                </span>
+                {!onPlanosPage && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-amber-400 bg-white hover:bg-amber-100"
+                    onClick={() => navigate("/planos?payCurrent=1")}
+                  >
+                    Pagar agora
+                  </Button>
+                )}
+              </div>
+            )}
             {children}
           </main>
         </div>
@@ -192,7 +260,7 @@ export function AppLayout({ children }: AppLayoutProps) {
       <BottomNav />
 
       {/* ── Bloqueio de licença ───────────────────────────────────────── */}
-      {blocked && (
+      {blocked && !onPlanosPage && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background/95 backdrop-blur-sm">
           <div className="max-w-md w-full mx-4 rounded-xl border bg-card p-8 space-y-5 text-center shadow-xl">
             <div className="flex justify-center">

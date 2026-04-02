@@ -15,7 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { toast } from "@/hooks/use-toast";
-import { formatCpfCnpj } from "@/lib/cpfCnpj";
+import { formatCpfCnpj, isValidCpfCnpj } from "@/lib/cpfCnpj";
 import { useAuth } from "@/hooks/useAuth";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -58,7 +58,7 @@ const empresaSchema = z.object({
     .string()
     .min(1, "CPF ou CNPJ é obrigatório")
     .refine(
-      (v) => { const d = v.replace(/\D/g, ""); return d.length === 11 || d.length === 14; },
+      (v) => isValidCpfCnpj(v),
       "Informe um CPF (000.000.000-00) ou CNPJ (00.000.000/0001-00) válido"
     ),
   telefone: z.string().optional(),
@@ -88,7 +88,15 @@ interface PlanosResponse {
 interface SetupResult {
   success: boolean;
   empresa: { id_empresa: number; nome_fantasia: string };
-  hub?: { planCode?: string; expiresAt?: string | null; trialDays?: number };
+  hub?: {
+    planCode?: string;
+    expiresAt?: string | null;
+    trialDays?: number;
+    accessStatus?: string | null;
+    canAccess?: boolean;
+    daysLeft?: number | null;
+    banner?: string | null;
+  };
   auth?: {
     token: string;
     usuario: {
@@ -213,8 +221,12 @@ const PrimeiroAcesso = () => {
         });
         toast({
           title: "Conta criada com sucesso",
-          description: "Você já está logado no sistema.",
+          description: "Cadastro finalizado e sessão iniciada.",
         });
+        if (data.hub && data.hub.canAccess === false) {
+          navigate(`/planos?reason=${encodeURIComponent(data.hub.accessStatus || "no_license")}`, { replace: true });
+          return;
+        }
         navigate("/", { replace: true });
         return;
       }

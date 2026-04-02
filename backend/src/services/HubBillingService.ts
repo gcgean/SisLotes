@@ -17,9 +17,11 @@ type HubAdminAuthResponse = {
   accessToken: string;
 };
 
-type RequestMethod = "GET" | "POST";
+type RequestMethod = "GET" | "POST" | "PATCH";
 
 const NEGATIVE_LICENSE_REASONS = new Set([
+  "not_mapped",
+  "hub_mapping_missing",
   "blocked",
   "trial_expired",
   "customer_blocked",
@@ -42,6 +44,30 @@ function getApiKey() {
 
 function hasHubConfig() {
   return Boolean(getBaseUrl() && getApiKey());
+}
+
+function extractHubErrorMessage(rawBody: string, fallback: string) {
+  try {
+    const parsed = JSON.parse(rawBody) as {
+      code?: unknown;
+      message?: unknown;
+      details?: unknown;
+      correlationId?: unknown;
+      path?: unknown;
+    };
+    const code = typeof parsed.code === "string" ? parsed.code : null;
+    const message = typeof parsed.message === "string" ? parsed.message : null;
+    const details = Array.isArray(parsed.details) ? parsed.details.join("; ") : null;
+    const correlationId = typeof parsed.correlationId === "string" ? parsed.correlationId : null;
+    const path = typeof parsed.path === "string" ? parsed.path : null;
+    const suffix = [correlationId ? `correlationId=${correlationId}` : null, path ? `path=${path}` : null]
+      .filter(Boolean)
+      .join(" ");
+    const base = [code, message, details].filter(Boolean).join(" - ") || fallback;
+    return suffix ? `${base} (${suffix})` : base;
+  } catch {
+    return rawBody || fallback;
+  }
 }
 
 let cachedAdminToken: string | null = null;
@@ -76,7 +102,6 @@ export class HubBillingService {
     productId: string;
     name: string;
     email: string;
-    phone?: string;
   }): Promise<Record<string, unknown>> {
     return this.requestApiKey<Record<string, unknown>>("POST", "/access/resolve", payload);
   }
@@ -146,10 +171,32 @@ export class HubBillingService {
     );
   }
 
+  static async changeSubscriptionPlan(subscriptionId: string, payload: Record<string, unknown>) {
+    return this.requestAdmin<Record<string, unknown>>(
+      "PATCH",
+      `/subscriptions/${encodeURIComponent(subscriptionId)}/change-plan`,
+      payload,
+    );
+  }
+
+  static async getCustomerLicenses(customerId: string) {
+    return this.requestAdmin<Array<Record<string, unknown>>>(
+      "GET",
+      `/customers/${encodeURIComponent(customerId)}/licenses`,
+    );
+  }
+
   static async getCharges(originType: "order" | "subscription", originId: string) {
     return this.requestAdmin<Record<string, unknown>>(
       "GET",
       `/payments/charges?originType=${encodeURIComponent(originType)}&originId=${encodeURIComponent(originId)}`,
+    );
+  }
+
+  static async getProductPlans(productId: string) {
+    return this.requestAdmin<Array<Record<string, unknown>>>(
+      "GET",
+      `/products/${encodeURIComponent(productId)}/plans`,
     );
   }
 
@@ -172,7 +219,7 @@ export class HubBillingService {
       };
     }
 
-    if (!empresa.hub_customer_id || !empresa.hub_product_code) {
+    if (!empresa.hub_customer_id || (!empresa.hub_product_code && !process.env.HUB_BILLING_PRODUCT_ID)) {
       empresa.hub_license_status = "not_mapped";
       empresa.hub_license_reason = "hub_mapping_missing";
       empresa.hub_last_sync = new Date();
@@ -242,6 +289,8 @@ export class HubBillingService {
         typeof (statusData as { accessStatus?: unknown }).accessStatus === "string"
           ? String((statusData as { accessStatus?: string }).accessStatus)
           : null;
+      const reasonRaw = (statusData as { reason?: unknown }).reason;
+      const reason = typeof reasonRaw === "string" ? reasonRaw : accessStatus || "license_inactive";
       const daysLeftRaw = (statusData as { daysLeft?: unknown }).daysLeft;
       const daysLeft = typeof daysLeftRaw === "number" ? daysLeftRaw : null;
       const bannerRaw = (statusData as { banner?: unknown }).banner;
@@ -262,7 +311,7 @@ export class HubBillingService {
 
       return {
         allowed: canAccess,
-        reason: canAccess ? undefined : accessStatus || "license_inactive",
+        reason: canAccess ? reason : reason,
         features,
         expiresAt: expiresAtRaw,
         daysLeft,
@@ -295,8 +344,12 @@ export class HubBillingService {
     }
 
     if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`Hub Billing API Key request falhou (${response.status}): ${body}`);
+      const raw = await response.text();
+      const parsedMessage = extractHubErrorMessage(raw, "Erro não detalhado");
+      if (response.status === 401) {
+        throw new Error(`Hub Billing API key inválida ou revogada (${response.status}): ${parsedMessage}`);
+      }
+      throw new Error(`Hub Billing API Key request falhou (${response.status}): ${parsedMessage}`);
     }
 
     return response.json() as Promise<T>;
@@ -322,7 +375,8 @@ export class HubBillingService {
 
     if (!response.ok) {
       const raw = await response.text();
-      throw new Error(`Hub Billing admin request falhou (${response.status}): ${raw}`);
+      const parsedMessage = extractHubErrorMessage(raw, "Erro não detalhado");
+      throw new Error(`Hub Billing admin request falhou (${response.status}): ${parsedMessage}`);
     }
 
     return response.json() as Promise<T>;

@@ -8,6 +8,59 @@ import { HubBillingService } from "../../services/HubBillingService";
 
 export const setupRouter = Router();
 
+function allDigitsEqual(digits: string): boolean {
+  return /^(\d)\1+$/.test(digits);
+}
+
+function isValidCpf(digits: string): boolean {
+  if (digits.length !== 11) return false;
+  if (allDigitsEqual(digits)) return false;
+  const nums = digits.split("").map((n) => Number(n));
+
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += nums[i] * (10 - i);
+  let mod = sum % 11;
+  const d1 = mod < 2 ? 0 : 11 - mod;
+  if (nums[9] !== d1) return false;
+
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += nums[i] * (11 - i);
+  mod = sum % 11;
+  const d2 = mod < 2 ? 0 : 11 - mod;
+  if (nums[10] !== d2) return false;
+
+  return true;
+}
+
+function isValidCnpj(digits: string): boolean {
+  if (digits.length !== 14) return false;
+  if (allDigitsEqual(digits)) return false;
+  const nums = digits.split("").map((n) => Number(n));
+  const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+
+  let sum = 0;
+  for (let i = 0; i < 12; i++) sum += nums[i] * w1[i];
+  let mod = sum % 11;
+  const d1 = mod < 2 ? 0 : 11 - mod;
+  if (nums[12] !== d1) return false;
+
+  sum = 0;
+  for (let i = 0; i < 13; i++) sum += nums[i] * w2[i];
+  mod = sum % 11;
+  const d2 = mod < 2 ? 0 : 11 - mod;
+  if (nums[13] !== d2) return false;
+
+  return true;
+}
+
+function isValidCpfCnpj(value: string): boolean {
+  const digits = (value || "").replace(/\D/g, "");
+  if (digits.length === 11) return isValidCpf(digits);
+  if (digits.length === 14) return isValidCnpj(digits);
+  return false;
+}
+
 // ─── Planos disponíveis (rota pública) ────────────────────────────────────────
 const PLANOS_DISPONIVEIS = [
   {
@@ -31,8 +84,78 @@ const PLANOS_DISPONIVEIS = [
   },
 ];
 
-setupRouter.get("/planos-disponiveis", (_req, res) => {
-  return res.json({ planos: PLANOS_DISPONIVEIS, trialDays: 14 });
+setupRouter.get("/planos-disponiveis", async (_req, res) => {
+  const planMap: Record<string, string> = {
+    TESTE: process.env.HUB_BILLING_PLAN_TESTE || "",
+    BASICO: process.env.HUB_BILLING_PLAN_BASICO || "",
+    INTERMEDIARIO: process.env.HUB_BILLING_PLAN_INTERMEDIARIO || "",
+  };
+
+  const fallbackPlanos = PLANOS_DISPONIVEIS.filter((plan) => Boolean(planMap[plan.code]));
+  const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+
+  const responseWithFallback = () => res.json({ planos: fallbackPlanos, trialDays: 14 });
+  if (!productId) return responseWithFallback();
+
+  try {
+    const plansFromHub = await HubBillingService.getProductPlans(productId);
+    const byCode = plansFromHub.reduce<Record<string, Record<string, unknown>>>((acc, item) => {
+      const code = typeof item.code === "string" ? item.code.toUpperCase() : "";
+      if (code) acc[code] = item;
+      return acc;
+    }, {});
+    const byId = plansFromHub.reduce<Record<string, Record<string, unknown>>>((acc, item) => {
+      const id = typeof item.id === "string" ? item.id : "";
+      if (id) acc[id] = item;
+      return acc;
+    }, {});
+
+    const planos = PLANOS_DISPONIVEIS.map((plan) => {
+      const mappedId = planMap[plan.code];
+      const hubPlan = (mappedId ? byId[mappedId] : null) || byCode[plan.code] || null;
+      if (!hubPlan) return null;
+
+      const hubStatus = typeof hubPlan.status === "string" ? hubPlan.status.toLowerCase() : "";
+      const active =
+        typeof hubPlan.isActive === "boolean"
+          ? hubPlan.isActive
+          : hubStatus
+          ? hubStatus === "active"
+          : false;
+      if (!active) return null;
+
+      const name = typeof hubPlan.name === "string" && hubPlan.name.trim() ? hubPlan.name : plan.title;
+      const hubDescription =
+        typeof hubPlan.description === "string" && hubPlan.description.trim()
+          ? hubPlan.description
+          : null;
+      const amountRaw =
+        typeof hubPlan.amount === "number"
+          ? hubPlan.amount
+          : typeof hubPlan.amount === "string" && hubPlan.amount.trim() && !Number.isNaN(Number(hubPlan.amount))
+          ? Number(hubPlan.amount)
+          : plan.amount;
+      const amount =
+        Number.isInteger(amountRaw) && Math.abs(amountRaw) >= 100
+          ? amountRaw / 100
+          : Number(amountRaw);
+
+      return {
+        ...plan,
+        title: name,
+        description: hubDescription || `Plano ${name}`,
+        amount: Number.isFinite(amount) ? amount : plan.amount,
+      };
+    }).filter(Boolean);
+
+    if (planos.length > 0) {
+      return res.json({ planos, trialDays: 14 });
+    }
+    return responseWithFallback();
+  } catch (err) {
+    console.warn("[Setup] Falha ao buscar planos no Hub:", err instanceof Error ? err.message : err);
+    return responseWithFallback();
+  }
 });
 
 // ─── Status: sistema já tem empresas? (rota pública) ─────────────────────────
@@ -55,10 +178,7 @@ const primeiroAcessoSchema = z.object({
     cnpj: z
       .string()
       .min(1, "CPF/CNPJ é obrigatório")
-      .refine((v) => {
-        const digits = v.replace(/\D/g, "");
-        return digits.length === 11 || digits.length === 14;
-      }, "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido"),
+      .refine((v) => isValidCpfCnpj(v), "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido"),
     ie: z.string().max(20).optional(),
     endereco: z.string().max(300).optional(),
     bairro: z.string().max(100).optional(),
@@ -188,7 +308,8 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
   });
   await usuarioRepo.save(usuario);
 
-  // ── 7. Hub Billing: onboarding centralizado via /access/resolve (opcional)
+  // ── 7. Hub Billing: onboarding centralizado via /access/resolve
+  // Quando o Hub está configurado e há plano selecionado, o mapeamento é obrigatório.
   let hubInfo: {
     planCode?: string;
     expiresAt?: string | null;
@@ -206,63 +327,73 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
 
     try {
       if (!hubProductId) {
-        console.warn("[Hub] HUB_BILLING_PRODUCT_ID ausente. Onboarding Hub será ignorado.");
-      } else {
-        const personType = documentClean.length === 11 ? "PF" : "PJ";
-        const resolved = await HubBillingService.resolveAccess({
-          document: documentClean,
-          personType,
-          productId: hubProductId,
-          name: empresaData.razao_social || empresaData.nome_fantasia,
-          email: usuarioData.email?.trim() || empresaData.email?.trim() || `${usuarioData.login.trim()}@local.invalid`,
-          phone: (usuarioData.telefone || "").replace(/\D/g, "") || undefined,
+        return res.status(500).json({
+          error: "Integração Hub incompleta: HUB_BILLING_PRODUCT_ID não configurado.",
         });
-
-        const customerId = typeof resolved.customerId === "string" ? resolved.customerId : null;
-        const accessStatus = typeof resolved.accessStatus === "string" ? resolved.accessStatus : null;
-        const canAccess = Boolean(resolved.canAccess);
-        const trialEndAt = typeof resolved.trialEndAt === "string" ? resolved.trialEndAt : null;
-        const licenseEndAt = typeof resolved.licenseEndAt === "string" ? resolved.licenseEndAt : null;
-        const daysLeft = typeof resolved.daysLeft === "number" ? resolved.daysLeft : null;
-        const banner = typeof resolved.banner === "string" ? resolved.banner : null;
-        const features =
-          resolved.features && typeof resolved.features === "object" && !Array.isArray(resolved.features)
-            ? (resolved.features as Record<string, unknown>)
-            : null;
-        const hubExpiresAt = trialEndAt || licenseEndAt || null;
-
-        empresaSalva.hub_customer_id = customerId;
-        empresaSalva.hub_product_code = hubProductId;
-        empresaSalva.hub_license_status = accessStatus;
-        empresaSalva.hub_license_reason = canAccess ? null : accessStatus;
-        empresaSalva.hub_features = features;
-        empresaSalva.plano = (typeof resolved.planCode === "string" ? resolved.planCode : planCode) || planCode;
-        empresaSalva.hub_last_sync = new Date();
-        empresaSalva.hub_cache_until = new Date(Date.now() + (canAccess ? 60_000 : 10_000));
-
-        if (hubExpiresAt) {
-          const parsed = new Date(hubExpiresAt);
-          if (!Number.isNaN(parsed.getTime())) {
-            empresaSalva.hub_expires_at = parsed;
-            empresaSalva.data_vencimento = parsed.toISOString().slice(0, 10);
-          }
-        }
-
-        await AppDataSource.getRepository(Empresa).save(empresaSalva);
-
-        hubInfo = {
-          planCode: empresaSalva.plano ?? planCode,
-          expiresAt: hubExpiresAt,
-          trialDays: 14,
-          customerId,
-          accessStatus,
-          canAccess,
-          daysLeft,
-          banner,
-        };
       }
+
+      const personType = documentClean.length === 11 ? "PF" : "PJ";
+      const resolved = await HubBillingService.resolveAccess({
+        document: documentClean,
+        personType,
+        productId: hubProductId,
+        name: empresaData.razao_social || empresaData.nome_fantasia,
+        email: usuarioData.email?.trim() || empresaData.email?.trim() || `${usuarioData.login.trim()}@local.invalid`,
+      });
+
+      const customerId = typeof resolved.customerId === "string" ? resolved.customerId : null;
+      const accessStatus = typeof resolved.accessStatus === "string" ? resolved.accessStatus : null;
+      const canAccess = Boolean(resolved.canAccess);
+      const trialEndAt = typeof resolved.trialEndAt === "string" ? resolved.trialEndAt : null;
+      const licenseEndAt = typeof resolved.licenseEndAt === "string" ? resolved.licenseEndAt : null;
+      const daysLeft = typeof resolved.daysLeft === "number" ? resolved.daysLeft : null;
+      const banner = typeof resolved.banner === "string" ? resolved.banner : null;
+      const features =
+        resolved.features && typeof resolved.features === "object" && !Array.isArray(resolved.features)
+          ? (resolved.features as Record<string, unknown>)
+          : null;
+      const hubExpiresAt = trialEndAt || licenseEndAt || null;
+
+      if (!customerId) {
+        return res.status(502).json({
+          error: "Não foi possível mapear o cliente no Hub Billing durante o cadastro.",
+        });
+      }
+
+      empresaSalva.hub_customer_id = customerId;
+      empresaSalva.hub_product_code = hubProductId;
+      empresaSalva.hub_license_status = accessStatus;
+      empresaSalva.hub_license_reason = canAccess ? null : accessStatus;
+      empresaSalva.hub_features = features;
+      empresaSalva.plano = (typeof resolved.planCode === "string" ? resolved.planCode : planCode) || planCode;
+      empresaSalva.hub_last_sync = new Date();
+      empresaSalva.hub_cache_until = new Date(Date.now() + (canAccess ? 60_000 : 10_000));
+
+      if (hubExpiresAt) {
+        const parsed = new Date(hubExpiresAt);
+        if (!Number.isNaN(parsed.getTime())) {
+          empresaSalva.hub_expires_at = parsed;
+          empresaSalva.data_vencimento = parsed.toISOString().slice(0, 10);
+        }
+      }
+
+      await AppDataSource.getRepository(Empresa).save(empresaSalva);
+
+      hubInfo = {
+        planCode: empresaSalva.plano ?? planCode,
+        expiresAt: hubExpiresAt,
+        trialDays: 14,
+        customerId,
+        accessStatus,
+        canAccess,
+        daysLeft,
+        banner,
+      };
     } catch (err) {
-      console.warn("[Hub] Integração ignorada durante onboarding:", err instanceof Error ? err.message : err);
+      const msg = err instanceof Error ? err.message : String(err);
+      return res.status(502).json({
+        error: `Falha ao mapear cliente no Hub Billing: ${msg}`,
+      });
     }
   }
 

@@ -8,6 +8,21 @@
 //   4. Se não conseguir renovar em nenhum cenário, chama onForceLogout().
 
 const API_REFRESH_URL = "/api/auth/refresh";
+const LICENSE_REDIRECT_PATH = "/planos";
+
+const LICENSE_BLOCK_REASONS = new Set([
+  "not_mapped",
+  "hub_mapping_missing",
+  "blocked",
+  "trial_expired",
+  "customer_blocked",
+  "no_license",
+  "product_not_found",
+  "license_suspended",
+  "license_expired",
+  "license_revoked",
+  "license_inactive",
+]);
 
 /** Renova quando restar menos de 30 minutos */
 const REFRESH_THRESHOLD_MS = 30 * 60 * 1000;
@@ -32,6 +47,14 @@ function getTokenExpMs(token: string): number | null {
 let _originalFetch: typeof window.fetch;
 let _refreshInFlight: Promise<string | null> | null = null;
 let _onForceLogout: (() => void) | null = null;
+
+function safeJsonParse<T = unknown>(raw: string): T | null {
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
 
 // ─── Refresh ─────────────────────────────────────────────────────────────────
 
@@ -142,6 +165,24 @@ export function installAuthInterceptor(onForceLogout: () => void): void {
     }
 
     const response = await _originalFetch(input, reqInit);
+
+    // 403 por licença: força ida para /planos
+    if (response.status === 403 && token && !url.includes("/api/auth/login")) {
+      try {
+        const raw = await response.clone().text();
+        const payload = safeJsonParse<{ reason?: unknown }>(raw);
+        const reason = typeof payload?.reason === "string" ? payload.reason : null;
+        if (reason && LICENSE_BLOCK_REASONS.has(reason.toLowerCase())) {
+          const currentPath = window.location.pathname;
+          if (!currentPath.startsWith(LICENSE_REDIRECT_PATH)) {
+            const target = `${LICENSE_REDIRECT_PATH}?reason=${encodeURIComponent(reason)}`;
+            window.location.replace(target);
+          }
+        }
+      } catch {
+        // ignora falhas de parse
+      }
+    }
 
     // Se recebeu 401, tenta renovar o token e retentar UMA vez
     if (response.status === 401 && token) {

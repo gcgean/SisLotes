@@ -20,6 +20,52 @@ function calcDaysLeft(empresa?: Empresa | null) {
   return Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
 }
 
+async function resolveHubOnLoginIfNeeded(args: { empresa: Empresa; user: Usuario }) {
+  const { empresa, user } = args;
+  if (!HubBillingService.isConfigured()) return;
+  if (empresa.hub_customer_id) return;
+
+  const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || "";
+  const document = (empresa.cnpj || "").replace(/\D/g, "");
+  if (!hubProductId || !document) return;
+
+  const personType: "PF" | "PJ" = document.length === 11 ? "PF" : "PJ";
+  const email = user.email?.trim() || empresa.email?.trim() || `${user.login.trim()}@local.invalid`;
+
+  const resolved = await HubBillingService.resolveAccess({
+    document,
+    personType,
+    productId: hubProductId,
+    name: empresa.razao_social || empresa.nome_fantasia,
+    email,
+  });
+
+  empresa.hub_customer_id = typeof resolved.customerId === "string" ? resolved.customerId : empresa.hub_customer_id;
+  empresa.hub_product_code = hubProductId;
+  empresa.hub_license_status =
+    typeof resolved.accessStatus === "string" ? resolved.accessStatus : empresa.hub_license_status;
+  empresa.hub_license_reason = Boolean(resolved.canAccess)
+    ? null
+    : typeof resolved.reason === "string"
+      ? resolved.reason
+      : typeof resolved.accessStatus === "string"
+        ? resolved.accessStatus
+        : empresa.hub_license_reason;
+  empresa.hub_last_sync = new Date();
+  empresa.hub_cache_until = new Date(Date.now() + (Boolean(resolved.canAccess) ? 60_000 : 10_000));
+
+  const trialEndAt = typeof resolved.trialEndAt === "string" ? resolved.trialEndAt : null;
+  const licenseEndAt = typeof resolved.licenseEndAt === "string" ? resolved.licenseEndAt : null;
+  const expiresAtRaw = trialEndAt || licenseEndAt;
+  if (expiresAtRaw) {
+    const parsed = new Date(expiresAtRaw);
+    if (!Number.isNaN(parsed.getTime())) {
+      empresa.hub_expires_at = parsed;
+      empresa.data_vencimento = parsed.toISOString().slice(0, 10);
+    }
+  }
+}
+
 authRouter.post("/login", async (req, res) => {
   try {
     const parseResult = loginSchema.safeParse(req.body);
@@ -63,7 +109,9 @@ authRouter.post("/login", async (req, res) => {
 
     if (empresa) {
       try {
+        await resolveHubOnLoginIfNeeded({ empresa, user });
         await HubBillingService.syncEmpresaLicense(empresa);
+        await empresaRepo.save(empresa);
       } catch (hubError) {
         console.error("Falha ao sincronizar licença Hub Billing no login:", hubError);
       }
