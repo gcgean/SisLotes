@@ -3,13 +3,13 @@ export type LicensePlanCode = "TESTE" | "BASICO" | "INTERMEDIARIO";
 export const PLAN_FEATURE_MATRIX: Record<LicensePlanCode, Record<string, unknown>> = {
   TESTE: {
     module_planos: true,
-    module_relatorios: false,
-    module_auditoria: false,
-    module_vendas: false,
-    module_pagamentos: false,
-    export_csv: false,
-    export_pdf: false,
-    max_users: 1,
+    module_relatorios: true,
+    module_auditoria: true,
+    module_vendas: true,
+    module_pagamentos: true,
+    export_csv: true,
+    export_pdf: true,
+    max_users: 5,
   },
   BASICO: {
     module_planos: true,
@@ -67,7 +67,10 @@ function normalizePlan(plan?: string | null): LicensePlanCode | null {
 export function getEffectiveFeatures(plan?: string | null, rawFeatures?: Record<string, unknown> | null) {
   const planCode = normalizePlan(plan);
   const defaults = planCode ? PLAN_FEATURE_MATRIX[planCode] : {};
-  return { ...defaults, ...(rawFeatures ?? {}) };
+  const sanitizedRaw = Object.fromEntries(
+    Object.entries(rawFeatures ?? {}).filter(([, value]) => value !== null && value !== undefined),
+  );
+  return { ...defaults, ...sanitizedRaw };
 }
 
 export function isFeatureEnabledForPlan(args: {
