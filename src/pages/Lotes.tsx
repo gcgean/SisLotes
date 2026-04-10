@@ -274,6 +274,7 @@ const Lotes = () => {
 
   const loteamentos = loteamentosData ?? [];
   const lotes = lotesData ?? [];
+  const loteamentosCarregados = loteamentosData !== undefined;
   const loteamentosMap = new Map(loteamentos.map((l) => [l.id_loteamento, l]));
 
   const criarLoteMutation = useMutation({
@@ -465,6 +466,15 @@ const Lotes = () => {
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function abrirNovoLote() {
+    if (loteamentosCarregados && loteamentos.length === 0) {
+      toast({
+        title: "Cadastre um loteamento primeiro",
+        description: "Para criar um lote, primeiro é necessário cadastrar ao menos um loteamento.",
+      });
+      navigate("/loteamentos");
+      return;
+    }
+
     form.reset({
       id_loteamento: filterLoteamento !== "all" ? filterLoteamento : "",
       lote: "",
@@ -733,7 +743,7 @@ const Lotes = () => {
                       <Select
                         onValueChange={field.onChange}
                         value={field.value}
-                        disabled={isReadOnly || loteamentos.length === 0}
+                        disabled={isReadOnly || !loteamentosCarregados}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -741,13 +751,35 @@ const Lotes = () => {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          {loteamentos.map((l) => (
-                            <SelectItem key={l.id_loteamento} value={String(l.id_loteamento)}>
-                              {l.nome}
-                            </SelectItem>
-                          ))}
+                          {loteamentos.length === 0 ? (
+                            <div className="px-2 py-2 text-xs text-muted-foreground">
+                              Nenhum loteamento cadastrado
+                            </div>
+                          ) : (
+                            loteamentos.map((l) => (
+                              <SelectItem key={l.id_loteamento} value={String(l.id_loteamento)}>
+                                {l.nome}
+                              </SelectItem>
+                            ))
+                          )}
                         </SelectContent>
                       </Select>
+                      {!isReadOnly && loteamentosCarregados && loteamentos.length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Cadastre um loteamento em{" "}
+                          <button
+                            type="button"
+                            className="underline text-primary"
+                            onClick={() => {
+                              setDialogAberto(false);
+                              navigate("/loteamentos");
+                            }}
+                          >
+                            Loteamentos
+                          </button>{" "}
+                          para continuar.
+                        </p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}

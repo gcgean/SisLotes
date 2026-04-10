@@ -5,7 +5,6 @@ import { AppDataSource } from "../../db/data-source";
 import { Venda } from "../../entities/Venda";
 import { Cliente } from "../../entities/Cliente";
 import { Lote } from "../../entities/Lote";
-import { Empresa } from "../../entities/Empresa";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
@@ -40,7 +39,7 @@ const createVendaSchema = z.object({
   data_venda: z.string(),
   valor_entrada: z.number().nonnegative(),
   parcelas: z.number().int().positive(),
-  porcentagem: z.number().nonnegative(),
+  valor_parcela: z.number().nonnegative(),
 });
 
 vendasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
@@ -60,6 +59,7 @@ vendasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
       v.valor_entrada,
       v.parcelas,
       v.porcentagem,
+      v.valor_parcela,
       v.status,
       v.valor_entrada + COALESCE(SUM(p.valor), 0) AS valor_total
     FROM vendas v
@@ -78,6 +78,7 @@ vendasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
       v.valor_entrada,
       v.parcelas,
       v.porcentagem,
+      v.valor_parcela,
       v.status
     ORDER BY v.data_venda DESC, v.id_venda DESC
   `;
@@ -93,6 +94,7 @@ vendasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
     valor_entrada: string | number;
     parcelas: number | string;
     porcentagem: string | number;
+    valor_parcela: string | number | null;
     status: string;
     valor_total: string | number | null;
   };
@@ -106,6 +108,7 @@ vendasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
     valor_entrada: Number(row.valor_entrada ?? 0),
     parcelas: Number(row.parcelas ?? 0),
     porcentagem: Number(row.porcentagem ?? 0),
+    valor_parcela: Number(row.valor_parcela ?? 0),
     status: row.status,
     valor_total: Number(row.valor_total ?? 0),
   }));
@@ -143,20 +146,12 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
   }
 
-  const { id_cliente, id_lote, data_venda, valor_entrada, parcelas, porcentagem } = parseResult.data;
+  const { id_cliente, id_lote, data_venda, valor_entrada, parcelas, valor_parcela } = parseResult.data;
 
   const user = req.user;
 
-  const empresaRepo = AppDataSource.getRepository(Empresa);
-  const empresa = await empresaRepo.findOne({ where: { id_empresa: user?.id_empresa ?? 1 } });
-  const salarioMinimo = empresa?.salario_minimo ? Number(empresa.salario_minimo) : 0;
-
-  if (salarioMinimo <= 0) {
-    return res.status(400).json({ error: "Configure o valor do salário mínimo nas Configurações antes de registrar uma venda" });
-  }
-
-  if (porcentagem <= 0) {
-    return res.status(400).json({ error: "O percentual do salário mínimo deve ser maior que zero" });
+  if (valor_parcela <= 0) {
+    return res.status(400).json({ error: "O valor da parcela deve ser maior que zero" });
   }
 
   const clienteRepo = AppDataSource.getRepository(Cliente);
@@ -196,7 +191,7 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     });
   }
 
-  const valorParcela = Math.round(salarioMinimo * (porcentagem / 100) * 100) / 100;
+  const valorParcela = Math.round(valor_parcela * 100) / 100;
   const totalParcelado = parcelas * valorParcela;
 
   const queryRunner = AppDataSource.createQueryRunner();
@@ -210,8 +205,8 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
       data_venda,
       valor_entrada: valor_entrada.toFixed(2),
       parcelas,
-      porcentagem: porcentagem.toFixed(2),
-      salario_minimo_base: salarioMinimo.toFixed(2),
+      porcentagem: "0.00",
+      salario_minimo_base: null,
       valor_parcela: valorParcela.toFixed(2),
       status: "aberta",
       id_empresa: user?.id_empresa ?? 1,
@@ -269,7 +264,7 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
       id_lote,
       servico: "venda_criada",
       url: "/api/vendas",
-      log: `Venda ${savedVenda.id_venda} criada com ${parcelas} parcelas de R$ ${valorParcela.toFixed(2)}`,
+      log: `Venda ${savedVenda.id_venda} criada com ${parcelas} parcelas de R$ ${valorParcela.toFixed(2)} (modelo por valor de parcela).`,
       query: JSON.stringify(parseResult.data),
     });
 
@@ -287,8 +282,8 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
       req,
       "CREATE",
       savedVenda.id_venda,
-      `Venda criada com ${parcelas} parcelas de R$ ${valorParcela.toFixed(2)} (${porcentagem}% de R$ ${salarioMinimo.toFixed(2)}). Total parcelado: R$ ${totalParcelado.toFixed(2)}`,
-      { id_cliente, id_lote, valor_entrada, parcelas, porcentagem, salario_minimo_base: salarioMinimo, valor_parcela: valorParcela }
+      `Venda criada com ${parcelas} parcelas de R$ ${valorParcela.toFixed(2)}. Total parcelado: R$ ${totalParcelado.toFixed(2)}`,
+      { id_cliente, id_lote, valor_entrada, parcelas, valor_parcela: valorParcela, salario_minimo_base: null, porcentagem: 0 }
     );
 
     return res.status(201).json(vendaCompleta);

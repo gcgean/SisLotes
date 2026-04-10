@@ -47,3 +47,18 @@ cd backend && npm run dev
 - **Auditoria** de ações do sistema
 - Suporte a **PWA** (instalável no celular)
 - **Tema claro/escuro** por preferência do usuário
+
+## Diretrizes para IA/Automação (Codex)
+
+Este repositório possui um arquivo de diretrizes em [AGENTS.md](C:\Projetos Web\SisLotes\AGENTS.md) com regras de trabalho para alterações no projeto.
+
+Resumo do que ele define:
+
+- comunicação em pt-BR e descrição prévia de impacto em mudanças sensíveis;
+- foco em estabilidade, mudanças mínimas e rollback simples;
+- proteção de segredos e respeito a arquivos read-only;
+- manutenção dos padrões atuais (React/Node/TypeORM) e continuidade dos fluxos;
+- atenção especial para regras de licença/plano/trial com Hub Billing;
+- validação mínima (build frontend/backend + teste funcional do fluxo alterado).
+
+Se você for integrar novos agentes/skills, mantenha este arquivo como fonte principal de comportamento global do projeto.
