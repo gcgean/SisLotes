@@ -156,8 +156,15 @@ const PrimeiroAcesso = () => {
       return res.json();
     },
     enabled: step === 3,
-    staleTime: Infinity,
+    staleTime: 30_000,
   });
+  const trialDays = planosData?.trialDays ?? 14;
+  const setupPlanLabel = (() => {
+    const code = (setupResult?.hub?.planCode || "").trim().toUpperCase();
+    if (!code) return setupResult?.hub?.planCode ?? "";
+    const match = (planosData?.planos ?? []).find((p) => p.code.toUpperCase() === code);
+    return match?.title || setupResult?.hub?.planCode || code;
+  })();
 
   const mutation = useMutation({
     mutationFn: async ({
@@ -621,7 +628,7 @@ const PrimeiroAcesso = () => {
             <div>
               <h2 className="font-semibold text-base mb-1">Escolha seu plano</h2>
               <p className="text-sm text-muted-foreground">
-                Teste grátis por {planosData?.trialDays ?? 14} dias. Cancele a qualquer momento.
+                Teste grátis por {trialDays} dias. Cancele a qualquer momento.
               </p>
             </div>
 
@@ -646,7 +653,7 @@ const PrimeiroAcesso = () => {
                           <p className="font-semibold">{plano.title}</p>
                           {plano.isTrial && (
                             <span className="text-[10px] font-bold uppercase bg-primary text-primary-foreground rounded px-1.5 py-0.5">
-                              Grátis 14 dias
+                              Grátis {trialDays} dias
                             </span>
                           )}
                         </div>
@@ -656,7 +663,7 @@ const PrimeiroAcesso = () => {
                         {plano.isTrial ? (
                           <>
                             <p className="font-bold text-lg text-primary">Grátis</p>
-                            <p className="text-xs text-muted-foreground">14 dias</p>
+                            <p className="text-xs text-muted-foreground">{trialDays} dias</p>
                           </>
                         ) : (
                           <>
@@ -722,7 +729,7 @@ const PrimeiroAcesso = () => {
             {setupResult?.hub && (
               <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 space-y-1 text-sm">
                 <p className="font-medium text-primary">
-                  Plano {setupResult.hub.planCode} ativado
+                  Plano {setupPlanLabel} ativado
                 </p>
                 {setupResult.hub.expiresAt ? (
                   <p className="text-muted-foreground">

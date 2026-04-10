@@ -18,6 +18,12 @@ type HubAdminAuthResponse = {
 };
 
 type RequestMethod = "GET" | "POST" | "PATCH";
+type HubFeatureMeta = {
+  daysLeft?: number | null;
+  expiresAt?: string | null;
+  accessStatus?: string | null;
+  syncedAt?: string | null;
+};
 
 const NEGATIVE_LICENSE_REASONS = new Set([
   "not_mapped",
@@ -74,8 +80,25 @@ let cachedAdminToken: string | null = null;
 let cachedAdminTokenUntil = 0;
 
 export class HubBillingService {
+  private static readonly HUB_FEATURE_META_KEY = "__hubMeta";
+
   static isConfigured() {
     return hasHubConfig();
+  }
+
+  static getStoredDaysLeft(empresa: Empresa | null | undefined) {
+    const features = empresa?.hub_features;
+    if (!features || typeof features !== "object" || Array.isArray(features)) return null;
+    const meta = (features as Record<string, unknown>)[this.HUB_FEATURE_META_KEY];
+    if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+    const value = (meta as Record<string, unknown>).daysLeft;
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+  private static attachHubMeta(features: Record<string, unknown> | null | undefined, meta: HubFeatureMeta) {
+    const base = { ...(features ?? {}) };
+    base[this.HUB_FEATURE_META_KEY] = meta;
+    return base;
   }
 
   static isLicenseDenied(empresa: Empresa | null | undefined) {
@@ -200,6 +223,13 @@ export class HubBillingService {
     );
   }
 
+  static async getProduct(productId: string) {
+    return this.requestAdmin<Record<string, unknown>>(
+      "GET",
+      `/products/${encodeURIComponent(productId)}`,
+    );
+  }
+
   static verifyWebhookSignature(rawBody: string, signatureHeader?: string | string[] | null) {
     const secret = process.env.HUB_BILLING_WEBHOOK_SECRET || "";
     const signature = Array.isArray(signatureHeader) ? signatureHeader[0] : signatureHeader;
@@ -216,6 +246,7 @@ export class HubBillingService {
         allowed: empresa.ativo,
         reason: "hub_not_configured",
         features: empresa.hub_features ?? {},
+        daysLeft: this.getStoredDaysLeft(empresa),
       };
     }
 
@@ -230,24 +261,34 @@ export class HubBillingService {
         allowed: false,
         reason: "hub_mapping_missing",
         features: {},
+        daysLeft: null,
       };
     }
 
     const now = Date.now();
     if (empresa.hub_cache_until && empresa.hub_cache_until.getTime() > now) {
-      return {
-        synced: true,
-        allowed: !this.isLicenseDenied(empresa),
-        reason: empresa.hub_license_reason || empresa.hub_license_status || undefined,
-        features: empresa.hub_features ?? {},
-      };
+      const cachedDaysLeft = this.getStoredDaysLeft(empresa);
+      if (cachedDaysLeft !== null) {
+        return {
+          synced: true,
+          allowed: !this.isLicenseDenied(empresa),
+          reason: empresa.hub_license_reason || empresa.hub_license_status || undefined,
+          features: empresa.hub_features ?? {},
+          daysLeft: cachedDaysLeft,
+        };
+      }
     }
 
     const access = await this.resolveEmpresaAccess(empresa);
 
     empresa.hub_license_status = access.accessStatus || (access.allowed ? "licensed" : access.reason || "license_inactive");
     empresa.hub_license_reason = access.allowed ? null : access.reason || access.accessStatus || "license_inactive";
-    empresa.hub_features = access.features ?? {};
+    empresa.hub_features = this.attachHubMeta(access.features, {
+      daysLeft: access.daysLeft ?? null,
+      expiresAt: access.expiresAt ?? null,
+      accessStatus: access.accessStatus ?? null,
+      syncedAt: new Date().toISOString(),
+    });
     empresa.hub_last_sync = new Date();
     empresa.hub_cache_until = new Date(Date.now() + (access.allowed ? 60_000 : 10_000));
 

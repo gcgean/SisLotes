@@ -440,6 +440,11 @@ const Planos = () => {
 
   const planoAtual = useMemo(() => licenca?.plano || "não definido", [licenca]);
   const planoAtualUpper = useMemo(() => (licenca?.plano || "").toUpperCase(), [licenca?.plano]);
+  const planoAtualLabel = useMemo(() => {
+    if (!planoAtualUpper) return planoAtual;
+    const match = (planosDisponiveis ?? []).find((p) => p.code.toUpperCase() === planoAtualUpper);
+    return match?.title || planoAtual;
+  }, [planoAtual, planoAtualUpper, planosDisponiveis]);
   const planosRender = useMemo(() => {
     const source = (planosDisponiveis && planosDisponiveis.length > 0 ? planosDisponiveis : PLANOS).map((p) => ({
       ...p,
@@ -518,7 +523,7 @@ const Planos = () => {
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3 items-center">
             <Badge variant="outline" className="capitalize">
-              Plano: {planoAtual}
+              Plano: {planoAtualLabel}
             </Badge>
             <Badge variant={licenca?.hub_license_status === "active" ? "default" : "destructive"}>
               {licenca?.hub_license_status || "sem status"}

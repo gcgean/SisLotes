@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Users,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
+import { formatLicenseRemainingTime } from "@/lib/license-time";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -51,16 +53,19 @@ interface LicenseStatus {
   plano?: string | null;
   hub_license_status?: string | null;
   days_left?: number | null;
+  hub_expires_at?: string | null;
 }
-
-function getLicenseTempo(daysLeft?: number | null) {
-  if (typeof daysLeft !== "number") return "Tempo indisponível";
-  if (daysLeft >= 0) return `Restam ${daysLeft} dia${daysLeft === 1 ? "" : "s"}`;
-  const expiredDays = Math.abs(daysLeft);
-  return `Expirada há ${expiredDays} dia${expiredDays === 1 ? "" : "s"}`;
+interface PlanoCatalogo {
+  code: string;
+  title: string;
 }
 
 const Dashboard = () => {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
   const { data: empresa } = useQuery<{ nome_fantasia: string; cidade?: string; estado?: string }>({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
@@ -105,6 +110,28 @@ const Dashboard = () => {
       return response.json();
     },
   });
+  const { data: planosDisponiveis = [] } = useQuery<PlanoCatalogo[]>({
+    queryKey: ["hub-billing", "planos-disponiveis"],
+    queryFn: async () => {
+      const response = await fetch("/api/hub-billing/planos-disponiveis", {
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray((data as { planos?: unknown[] }).planos)
+        ? ((data as { planos: PlanoCatalogo[] }).planos)
+        : [];
+    },
+    staleTime: 60_000,
+  });
+  const planoAtualLabel = (() => {
+    const raw = (licenca?.plano || "").trim();
+    if (!raw) return null;
+    const hub = planosDisponiveis.find((p) => p.code.toUpperCase() === raw.toUpperCase())?.title;
+    return hub || raw;
+  })();
 
   const { data: atrasos = [] } = useQuery<DashboardTituloAtraso[]>({
     queryKey: ["dashboard", "titulos-em-atraso"],
@@ -233,9 +260,9 @@ const Dashboard = () => {
                   — {empresa.cidade}{empresa.estado ? `/${empresa.estado}` : ""}
                 </span>
               )}
-              {licenca?.plano && (
+              {planoAtualLabel && (
                 <Badge variant="outline" className="ml-2 capitalize">
-                  Plano {licenca.plano}
+                  Plano {planoAtualLabel}
                 </Badge>
               )}
               {licenca?.hub_license_status && (
@@ -246,7 +273,13 @@ const Dashboard = () => {
                   {licenca.hub_license_status}
                 </Badge>
               )}
-              <Badge variant="secondary">{getLicenseTempo(licenca?.days_left ?? null)}</Badge>
+              <Badge variant="secondary">
+                {formatLicenseRemainingTime({
+                  daysLeft: licenca?.days_left ?? null,
+                  expiresAt: licenca?.hub_expires_at ?? null,
+                  nowMs,
+                })}
+              </Badge>
             </p>
           ) : (
             <p className="text-sm text-muted-foreground mt-1">Visão geral do sistema</p>

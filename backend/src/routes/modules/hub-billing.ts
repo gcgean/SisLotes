@@ -52,6 +52,22 @@ const PLAN_CATALOG = [
   { code: "INTERMEDIARIO", title: "Intermediário", amount: 99.9, description: "Recursos avançados e suporte prioritário." },
 ];
 
+function selectHubPlanForCode(args: {
+  expectedCode: string;
+  mappedId?: string;
+  byCode: Record<string, Record<string, unknown>>;
+  byId: Record<string, Record<string, unknown>>;
+}) {
+  const byCodePlan = args.byCode[args.expectedCode] ?? null;
+  if (byCodePlan) return byCodePlan;
+
+  if (!args.mappedId) return null;
+  const mapped = args.byId[args.mappedId] ?? null;
+  if (!mapped) return null;
+  const mappedCode = typeof mapped.code === "string" ? mapped.code.toUpperCase() : "";
+  return mappedCode === args.expectedCode ? mapped : null;
+}
+
 // Mapeamento para os UUIDs de plano no Hub Billing (em centavos)
 function getHubPlanMap(): Record<string, { planId: string; amountCents: number }> {
   return {
@@ -98,7 +114,12 @@ hubBillingRouter.get("/planos-disponiveis", requireAuth, async (_req: AuthReques
 
   const planos = PLAN_CATALOG.map((basePlan) => {
     const localPlanId = map[basePlan.code]?.planId || "";
-    const hubPlan = (localPlanId ? plansFromHubById[localPlanId] : null) || plansFromHubByCode[basePlan.code] || null;
+    const hubPlan = selectHubPlanForCode({
+      expectedCode: basePlan.code,
+      mappedId: localPlanId,
+      byCode: plansFromHubByCode,
+      byId: plansFromHubById,
+    });
     const hubStatus = hubPlan ? String(hubPlan.status ?? "").toLowerCase() : "";
     const hubActiveFlag = hubPlan ? hubPlan.isActive : undefined;
     const hubName = hubPlan ? pickString(hubPlan, ["name"]) : null;
@@ -548,12 +569,7 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     }
   }
 
-  const expiresAt = empresa.hub_expires_at ?? (empresa.data_vencimento ? new Date(`${empresa.data_vencimento}T00:00:00`) : null);
-  const daysLeftFromDate =
-    expiresAt && !Number.isNaN(expiresAt.getTime())
-      ? Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
-      : null;
-  const daysLeft = syncResult?.daysLeft ?? daysLeftFromDate;
+  const daysLeft = syncResult?.daysLeft ?? HubBillingService.getStoredDaysLeft(empresa);
 
   return res.json({
     id_empresa: empresa.id_empresa,

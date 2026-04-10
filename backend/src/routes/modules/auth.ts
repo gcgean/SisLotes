@@ -14,12 +14,6 @@ const loginSchema = z.object({
   senha: z.string(),
 });
 
-function calcDaysLeft(empresa?: Empresa | null) {
-  const expiresAt = empresa?.hub_expires_at ?? (empresa?.data_vencimento ? new Date(`${empresa.data_vencimento}T00:00:00`) : null);
-  if (!expiresAt || Number.isNaN(expiresAt.getTime())) return null;
-  return Math.ceil((expiresAt.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
-}
-
 async function resolveHubOnLoginIfNeeded(args: { empresa: Empresa; user: Usuario }) {
   const { empresa, user } = args;
   if (!HubBillingService.isConfigured()) return;
@@ -161,7 +155,7 @@ authRouter.post("/login", async (req, res) => {
             expiresAt: empresa.hub_expires_at,
             features: empresa.hub_features ?? {},
             plano: empresa.plano,
-            daysLeft: calcDaysLeft(empresa),
+            daysLeft: HubBillingService.getStoredDaysLeft(empresa),
           }
         : null,
     });
@@ -260,7 +254,7 @@ authRouter.get("/me", requireAuth, async (req: AuthRequest, res) => {
           expiresAt: empresa.hub_expires_at,
           features: empresa.hub_features ?? {},
           plano: empresa.plano,
-          daysLeft: calcDaysLeft(empresa),
+          daysLeft: HubBillingService.getStoredDaysLeft(empresa),
         }
       : null,
   });

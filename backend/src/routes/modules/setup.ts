@@ -84,6 +84,49 @@ const PLANOS_DISPONIVEIS = [
   },
 ];
 
+function getTrialDaysConfigured() {
+  const raw = Number(process.env.HUB_BILLING_TRIAL_DAYS ?? "");
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 14;
+}
+
+async function getTrialDaysFromHub(productId: string) {
+  const fallback = getTrialDaysConfigured();
+  if (!productId) return fallback;
+  try {
+    const product = await HubBillingService.getProduct(productId);
+    const trialRaw = (product as { trial_days?: unknown; trialDays?: unknown }).trial_days
+      ?? (product as { trial_days?: unknown; trialDays?: unknown }).trialDays;
+    const parsed =
+      typeof trialRaw === "number"
+        ? trialRaw
+        : typeof trialRaw === "string" && trialRaw.trim() && !Number.isNaN(Number(trialRaw))
+          ? Number(trialRaw)
+          : null;
+    if (parsed != null && Number.isFinite(parsed) && parsed >= 0) {
+      return Math.floor(parsed);
+    }
+  } catch (err) {
+    console.warn("[Setup] Falha ao obter trial_days do produto no Hub:", err instanceof Error ? err.message : err);
+  }
+  return fallback;
+}
+
+function selectHubPlanForCode(args: {
+  expectedCode: string;
+  mappedId?: string;
+  byCode: Record<string, Record<string, unknown>>;
+  byId: Record<string, Record<string, unknown>>;
+}) {
+  const byCodePlan = args.byCode[args.expectedCode] ?? null;
+  if (byCodePlan) return byCodePlan;
+
+  if (!args.mappedId) return null;
+  const mapped = args.byId[args.mappedId] ?? null;
+  if (!mapped) return null;
+  const mappedCode = typeof mapped.code === "string" ? mapped.code.toUpperCase() : "";
+  return mappedCode === args.expectedCode ? mapped : null;
+}
+
 setupRouter.get("/planos-disponiveis", async (_req, res) => {
   const planMap: Record<string, string> = {
     TESTE: process.env.HUB_BILLING_PLAN_TESTE || "",
@@ -94,7 +137,8 @@ setupRouter.get("/planos-disponiveis", async (_req, res) => {
   const fallbackPlanos = PLANOS_DISPONIVEIS.filter((plan) => Boolean(planMap[plan.code]));
   const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
 
-  const responseWithFallback = () => res.json({ planos: fallbackPlanos, trialDays: 14 });
+  const trialDays = await getTrialDaysFromHub(productId);
+  const responseWithFallback = () => res.json({ planos: fallbackPlanos, trialDays });
   if (!productId) return responseWithFallback();
 
   try {
@@ -112,7 +156,12 @@ setupRouter.get("/planos-disponiveis", async (_req, res) => {
 
     const planos = PLANOS_DISPONIVEIS.map((plan) => {
       const mappedId = planMap[plan.code];
-      const hubPlan = (mappedId ? byId[mappedId] : null) || byCode[plan.code] || null;
+      const hubPlan = selectHubPlanForCode({
+        expectedCode: plan.code,
+        mappedId,
+        byCode,
+        byId,
+      });
       if (!hubPlan) return null;
 
       const hubStatus = typeof hubPlan.status === "string" ? hubPlan.status.toLowerCase() : "";
@@ -149,7 +198,7 @@ setupRouter.get("/planos-disponiveis", async (_req, res) => {
     }).filter(Boolean);
 
     if (planos.length > 0) {
-      return res.json({ planos, trialDays: 14 });
+      return res.json({ planos, trialDays });
     }
     return responseWithFallback();
   } catch (err) {
@@ -324,6 +373,7 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
   if (HubBillingService.isConfigured() && parseResult.data.planCode) {
     const planCode = parseResult.data.planCode.toUpperCase();
     const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || "";
+    const hubTrialDays = await getTrialDaysFromHub(hubProductId);
 
     try {
       if (!hubProductId) {
@@ -382,7 +432,7 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
       hubInfo = {
         planCode: empresaSalva.plano ?? planCode,
         expiresAt: hubExpiresAt,
-        trialDays: 14,
+        trialDays: hubTrialDays,
         customerId,
         accessStatus,
         canAccess,

@@ -10,6 +10,7 @@ import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { formatLicenseRemainingTime } from "@/lib/license-time";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -25,6 +26,11 @@ interface LicenseStatus {
   days_left?: number | null;
   banner?: string | null;
   access_status?: string | null;
+}
+
+interface PlanoCatalogo {
+  code: string;
+  title: string;
 }
 
 const BLOCKED_STATUSES = new Set([
@@ -58,20 +64,16 @@ function getAuthToken() {
   return window.localStorage.getItem("token");
 }
 
-function getPlanLabel(data?: LicenseStatus | null) {
+function getPlanLabel(data?: LicenseStatus | null, planos?: PlanoCatalogo[] | null) {
   const raw = (data?.plano || "").trim();
-  if (raw) return raw;
+  if (raw) {
+    const fromHub = (planos ?? []).find((p) => p.code.toUpperCase() === raw.toUpperCase())?.title;
+    return fromHub || raw;
+  }
   const status = (data?.hub_license_status || "").toLowerCase();
   if (status === "trial" || status === "trial_active") return "Teste";
   if (status === "licensed" || status === "active") return "Licença ativa";
   return "Sem plano";
-}
-
-function getLicenseTimeLabel(daysLeft?: number | null) {
-  if (typeof daysLeft !== "number") return "Tempo indisponível";
-  if (daysLeft >= 0) return `Restam ${daysLeft} dia${daysLeft === 1 ? "" : "s"}`;
-  const expiredDays = Math.abs(daysLeft);
-  return `Expirada há ${expiredDays} dia${expiredDays === 1 ? "" : "s"}`;
 }
 
 export function AppLayout({ children }: AppLayoutProps) {
@@ -80,9 +82,15 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { user, logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
+    return () => window.clearInterval(id);
   }, []);
 
   const { data: empresa } = useQuery<{ nome_fantasia: string }>({
@@ -109,6 +117,20 @@ export function AppLayout({ children }: AppLayoutProps) {
     staleTime: 60_000,
     refetchInterval: 5 * 60 * 1000,
   });
+  const { data: planosDisponiveis } = useQuery<PlanoCatalogo[]>({
+    queryKey: ["hub-billing", "planos-disponiveis"],
+    queryFn: async () => {
+      const res = await fetch("/api/hub-billing/planos-disponiveis", {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray((data as { planos?: unknown[] }).planos)
+        ? ((data as { planos: PlanoCatalogo[] }).planos)
+        : [];
+    },
+    staleTime: 60_000,
+  });
 
   function handleLogout() {
     logout();
@@ -122,8 +144,12 @@ export function AppLayout({ children }: AppLayoutProps) {
   const blocked = isLicenseBlocked(licenseData);
   const expiresDate = fmtDate(licenseData?.hub_expires_at);
   const daysLeft = typeof licenseData?.days_left === "number" ? licenseData.days_left : null;
-  const planLabel = getPlanLabel(licenseData);
-  const licenseTimeLabel = getLicenseTimeLabel(daysLeft);
+  const planLabel = getPlanLabel(licenseData, planosDisponiveis);
+  const licenseTimeLabel = formatLicenseRemainingTime({
+    daysLeft,
+    expiresAt: licenseData?.hub_expires_at ?? null,
+    nowMs,
+  });
   const onPlanosPage = location.pathname.startsWith("/planos");
   const isDueSoon = daysLeft != null && daysLeft >= 0 && daysLeft <= 5;
 
@@ -191,7 +217,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                   title="Ir para Planos"
               >
                   <CreditCard className="h-3.5 w-3.5 shrink-0" />
-                  <span className="capitalize font-medium text-foreground">{planLabel.toLowerCase()}</span>
+                  <span className="font-medium text-foreground">{planLabel}</span>
                   {expiresDate && (
                     <span className="text-muted-foreground/70">· até {expiresDate}</span>
                   )}
@@ -280,7 +306,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               </p>
               {licenseData?.plano && (
                 <p className="text-xs text-muted-foreground">
-                  Plano atual: <span className="font-medium capitalize">{licenseData.plano.toLowerCase()}</span>
+                  Plano atual: <span className="font-medium">{planLabel}</span>
                 </p>
               )}
             </div>
