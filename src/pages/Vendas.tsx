@@ -5,8 +5,6 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -54,6 +52,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { gerarReciboParcela, ReciboEmpresa } from "@/utils/reciboParcela";
 import { ContratoDialog } from "@/components/contratos/ContratoDialog";
+import { NovoClienteDialog, NovoClienteFormValues } from "@/components/clientes/NovoClienteDialog";
 import { FileText, Pencil } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -132,58 +131,6 @@ interface Conta {
   id_conta: number;
   apelido: string;
 }
-
-type ClienteTipo = "f" | "j";
-type NovoClienteTab = "dados" | "endereco" | "contato";
-
-interface NovoClienteFormValues {
-  tipo: ClienteTipo;
-  nome: string;
-  razao_social: string;
-  cpf: string;
-  cnpj: string;
-  rg: string;
-  estado_civil: string;
-  conjuge: string;
-  profissao: string;
-  endereco: string;
-  bairro: string;
-  cidade: string;
-  estado: string;
-  cep: string;
-  complemento: string;
-  fone_res: string;
-  fone_com: string;
-}
-
-const defaultNovoClienteValues: NovoClienteFormValues = {
-  tipo: "f",
-  nome: "",
-  razao_social: "",
-  cpf: "",
-  cnpj: "",
-  rg: "",
-  estado_civil: "",
-  conjuge: "",
-  profissao: "",
-  endereco: "",
-  bairro: "",
-  cidade: "",
-  estado: "",
-  cep: "",
-  complemento: "",
-  fone_res: "",
-  fone_com: "",
-};
-
-const ESTADO_CIVIL_LIST = [
-  "Solteiro(a)",
-  "Casado(a)",
-  "Separado(a)",
-  "Divorciado(a)",
-  "Viúvo(a)",
-  "União estável",
-];
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function getAuthHeaders() {
@@ -272,8 +219,6 @@ const Vendas = () => {
 
   // ── cadastro rápido de cliente (no step 2)
   const [novoClienteAberto, setNovoClienteAberto] = useState(false);
-  const [novoClienteTab, setNovoClienteTab] = useState<NovoClienteTab>("dados");
-  const [novoClienteForm, setNovoClienteForm] = useState<NovoClienteFormValues>(defaultNovoClienteValues);
 
   // ── cancelar
   const [confirmarCancelamento, setConfirmarCancelamento] = useState<VendaListItem | null>(null);
@@ -516,26 +461,25 @@ const Vendas = () => {
   });
 
   const criarClienteRapidoMutation = useMutation({
-    mutationFn: async () => {
-      if (!novoClienteForm.nome.trim()) throw new Error("Nome obrigatório");
+    mutationFn: async (values: NovoClienteFormValues) => {
       const body = {
-        tipo: novoClienteForm.tipo,
-        nome: novoClienteForm.nome.trim(),
-        razao_social: novoClienteForm.razao_social.trim() || undefined,
-        cpf: novoClienteForm.cpf.trim() || undefined,
-        cnpj: novoClienteForm.cnpj.trim() || undefined,
-        rg: novoClienteForm.rg.trim() || undefined,
-        estado_civil: novoClienteForm.estado_civil.trim() || undefined,
-        conjuge: novoClienteForm.conjuge.trim() || undefined,
-        profissao: novoClienteForm.profissao.trim() || undefined,
-        endereco: novoClienteForm.endereco.trim() || undefined,
-        bairro: novoClienteForm.bairro.trim() || undefined,
-        cidade: novoClienteForm.cidade.trim() || undefined,
-        estado: novoClienteForm.estado.trim() || undefined,
-        cep: novoClienteForm.cep.trim() || undefined,
-        complemento: novoClienteForm.complemento.trim() || undefined,
-        fone_res: novoClienteForm.fone_res.trim() || undefined,
-        fone_com: novoClienteForm.fone_com.trim() || undefined,
+        tipo: values.tipo,
+        nome: values.nome.trim(),
+        razao_social: values.razao_social.trim() || undefined,
+        cpf: values.cpf.trim() || undefined,
+        cnpj: values.cnpj.trim() || undefined,
+        rg: values.rg.trim() || undefined,
+        estado_civil: values.estado_civil.trim() || undefined,
+        conjuge: values.conjuge.trim() || undefined,
+        profissao: values.profissao.trim() || undefined,
+        endereco: values.endereco.trim() || undefined,
+        bairro: values.bairro.trim() || undefined,
+        cidade: values.cidade.trim() || undefined,
+        estado: values.estado.trim() || undefined,
+        cep: values.cep.trim() || undefined,
+        complemento: values.complemento.trim() || undefined,
+        fone_res: values.fone_res.trim() || undefined,
+        fone_com: values.fone_com.trim() || undefined,
       };
       const r = await fetch("/api/clientes", {
         method: "POST",
@@ -552,7 +496,6 @@ const Vendas = () => {
       queryClient.invalidateQueries({ queryKey: ["clientes-venda"] });
       setSelectedCliente(cliente);
       setNovoClienteAberto(false);
-      resetNovoClienteForm();
       toast({ title: "Cliente cadastrado e selecionado" });
     },
     onError: (err) => {
@@ -721,11 +664,6 @@ const Vendas = () => {
     setValorEntrada("0");
     setNumParcelas("12");
     setValorParcelaVenda("");
-  }
-
-  function resetNovoClienteForm() {
-    setNovoClienteTab("dados");
-    setNovoClienteForm(defaultNovoClienteValues);
   }
 
   function resetHistorico() {
@@ -1677,283 +1615,15 @@ const Vendas = () => {
         </DialogContent>
       </Dialog>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          DIALOG — NOVO CLIENTE (COMPLETO)
-      ══════════════════════════════════════════════════════════════════════ */}
-      <Dialog
+      <NovoClienteDialog
         open={novoClienteAberto}
-        onOpenChange={(open) => {
-          if (!open) {
-            setNovoClienteAberto(false);
-            resetNovoClienteForm();
-          }
+        onOpenChange={setNovoClienteAberto}
+        isSubmitting={criarClienteRapidoMutation.isPending}
+        submitLabel="Cadastrar cliente e selecionar"
+        onSubmit={async (values) => {
+          await criarClienteRapidoMutation.mutateAsync(values);
         }}
-      >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <UserPlus className="h-5 w-5 text-primary" />
-              Novo Cliente
-            </DialogTitle>
-            <DialogDescription>
-              Preencha os dados do cliente. Campos não obrigatórios podem ficar em branco.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div>
-              <Label>Tipo de cliente</Label>
-              <Select
-                value={novoClienteForm.tipo}
-                onValueChange={(value) => setNovoClienteForm((prev) => ({ ...prev, tipo: value as ClienteTipo }))}
-              >
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="f">Pessoa Física</SelectItem>
-                  <SelectItem value="j">Pessoa Jurídica</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Tabs value={novoClienteTab} onValueChange={(value) => setNovoClienteTab(value as NovoClienteTab)} className="w-full">
-              <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="dados" className="gap-1.5">
-                  <User className="h-3.5 w-3.5" />
-                  Dados Pessoais
-                </TabsTrigger>
-                <TabsTrigger value="endereco" className="gap-1.5">
-                  <MapPin className="h-3.5 w-3.5" />
-                  Endereço
-                </TabsTrigger>
-                <TabsTrigger value="contato" className="gap-1.5">
-                  <Search className="h-3.5 w-3.5" />
-                  Contato
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="dados" className="pt-4 space-y-4">
-                <div>
-                  <Label htmlFor="nc_nome">Nome completo *</Label>
-                  <Input
-                    id="nc_nome"
-                    value={novoClienteForm.nome}
-                    onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, nome: e.target.value }))}
-                    placeholder="Digite o nome completo"
-                    className="mt-1.5"
-                    autoFocus
-                  />
-                </div>
-
-                {novoClienteForm.tipo === "f" ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="nc_cpf">CPF</Label>
-                        <Input
-                          id="nc_cpf"
-                          value={novoClienteForm.cpf}
-                          onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, cpf: e.target.value }))}
-                          placeholder="000.000.000-00"
-                          className="mt-1.5"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="nc_rg">RG</Label>
-                        <Input
-                          id="nc_rg"
-                          value={novoClienteForm.rg}
-                          onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, rg: e.target.value }))}
-                          placeholder="0000000"
-                          className="mt-1.5"
-                        />
-                      </div>
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="nc_estado_civil">Estado civil</Label>
-                        <Select
-                          value={novoClienteForm.estado_civil || "nao-informado"}
-                          onValueChange={(value) =>
-                            setNovoClienteForm((prev) => ({
-                              ...prev,
-                              estado_civil: value === "nao-informado" ? "" : value,
-                            }))
-                          }
-                        >
-                          <SelectTrigger id="nc_estado_civil" className="mt-1.5">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="nao-informado">— Não informado —</SelectItem>
-                            {ESTADO_CIVIL_LIST.map((estadoCivil) => (
-                              <SelectItem key={estadoCivil} value={estadoCivil}>
-                                {estadoCivil}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div>
-                        <Label htmlFor="nc_conjuge">Cônjuge / Companheiro(a)</Label>
-                        <Input
-                          id="nc_conjuge"
-                          value={novoClienteForm.conjuge}
-                          onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, conjuge: e.target.value }))}
-                          placeholder="Nome do cônjuge"
-                          className="mt-1.5"
-                        />
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="nc_profissao">Profissão</Label>
-                      <Input
-                        id="nc_profissao"
-                        value={novoClienteForm.profissao}
-                        onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, profissao: e.target.value }))}
-                        placeholder="Ex: Engenheiro, Professor..."
-                        className="mt-1.5"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="nc_cnpj">CNPJ</Label>
-                      <Input
-                        id="nc_cnpj"
-                        value={novoClienteForm.cnpj}
-                        onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, cnpj: e.target.value }))}
-                        placeholder="00.000.000/0000-00"
-                        className="mt-1.5"
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="nc_razao_social">Razão social</Label>
-                      <Input
-                        id="nc_razao_social"
-                        value={novoClienteForm.razao_social}
-                        onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, razao_social: e.target.value }))}
-                        placeholder="Razão social da empresa"
-                        className="mt-1.5"
-                      />
-                    </div>
-                  </div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="endereco" className="pt-4 space-y-4">
-                <div>
-                  <Label htmlFor="nc_endereco">Endereço</Label>
-                  <Input
-                    id="nc_endereco"
-                    value={novoClienteForm.endereco}
-                    onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, endereco: e.target.value }))}
-                    placeholder="Rua, número"
-                    className="mt-1.5"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="nc_bairro">Bairro</Label>
-                    <Input
-                      id="nc_bairro"
-                      value={novoClienteForm.bairro}
-                      onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, bairro: e.target.value }))}
-                      placeholder="Bairro"
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="nc_complemento">Complemento</Label>
-                    <Input
-                      id="nc_complemento"
-                      value={novoClienteForm.complemento}
-                      onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, complemento: e.target.value }))}
-                      placeholder="Apto, bloco, referência"
-                      className="mt-1.5"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="col-span-2">
-                    <Label htmlFor="nc_cidade">Cidade</Label>
-                    <Input
-                      id="nc_cidade"
-                      value={novoClienteForm.cidade}
-                      onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, cidade: e.target.value }))}
-                      placeholder="Cidade"
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="nc_estado">UF</Label>
-                    <Input
-                      id="nc_estado"
-                      value={novoClienteForm.estado}
-                      onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, estado: e.target.value.toUpperCase().slice(0, 2) }))}
-                      placeholder="CE"
-                      className="mt-1.5"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label htmlFor="nc_cep">CEP</Label>
-                  <Input
-                    id="nc_cep"
-                    value={novoClienteForm.cep}
-                    onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, cep: e.target.value }))}
-                    placeholder="00000-000"
-                    className="mt-1.5"
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value="contato" className="pt-4 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="nc_fone_res">Telefone residencial</Label>
-                    <Input
-                      id="nc_fone_res"
-                      value={novoClienteForm.fone_res}
-                      onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, fone_res: e.target.value }))}
-                      placeholder="(00) 00000-0000"
-                      className="mt-1.5"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="nc_fone_com">Telefone comercial</Label>
-                    <Input
-                      id="nc_fone_com"
-                      value={novoClienteForm.fone_com}
-                      onChange={(e) => setNovoClienteForm((prev) => ({ ...prev, fone_com: e.target.value }))}
-                      placeholder="(00) 00000-0000"
-                      className="mt-1.5"
-                    />
-                  </div>
-                </div>
-              </TabsContent>
-            </Tabs>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setNovoClienteAberto(false);
-                resetNovoClienteForm();
-              }}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={() => criarClienteRapidoMutation.mutate()}
-              disabled={!novoClienteForm.nome.trim() || criarClienteRapidoMutation.isPending}
-            >
-              {criarClienteRapidoMutation.isPending ? "Salvando..." : "Cadastrar cliente e selecionar"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      />
 
       {/* ══════════════════════════════════════════════════════════════════════
           ALERT — CONFIRMAR CANCELAMENTO

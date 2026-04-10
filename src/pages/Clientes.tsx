@@ -73,6 +73,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { formatCpfCnpj } from "@/lib/cpfCnpj";
+import { NovoClienteDialog, NovoClienteFormValues as NovoClienteDialogValues } from "@/components/clientes/NovoClienteDialog";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
 
@@ -231,6 +232,7 @@ const Clientes = () => {
   const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
   const [modo, setModo] = useState<"create" | "edit" | "view">("create");
   const [dialogAberto, setDialogAberto] = useState(false);
+  const [novoClienteCompartilhadoAberto, setNovoClienteCompartilhadoAberto] = useState(false);
   const [dialogTab, setDialogTab] = useState("dados");
   const [confirmarExclusao, setConfirmarExclusao] = useState<Cliente | null>(null);
   const [loadingFull, setLoadingFull] = useState(false);
@@ -290,7 +292,7 @@ const Clientes = () => {
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   const criarClienteMutation = useMutation({
-    mutationFn: async (values: ClienteFormValues) => {
+    mutationFn: async (values: ClienteFormValues | NovoClienteDialogValues) => {
       const response = await fetch("/api/clientes", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -310,6 +312,7 @@ const Clientes = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clientes"] });
+      setNovoClienteCompartilhadoAberto(false);
       setDialogAberto(false);
       toast({ title: "Cliente cadastrado com sucesso" });
     },
@@ -375,11 +378,7 @@ const Clientes = () => {
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   function abrirNovoCliente() {
-    setModo("create");
-    setClienteSelecionado(null);
-    setDialogTab("dados");
-    form.reset(defaultValues);
-    setDialogAberto(true);
+    setNovoClienteCompartilhadoAberto(true);
   }
 
   async function abrirEdicao(cliente: Cliente) {
@@ -589,6 +588,16 @@ const Clientes = () => {
             </div>
           )}
         </div>
+
+        <NovoClienteDialog
+          open={novoClienteCompartilhadoAberto}
+          onOpenChange={setNovoClienteCompartilhadoAberto}
+          isSubmitting={criarClienteMutation.isPending}
+          submitLabel="Cadastrar cliente"
+          onSubmit={async (values) => {
+            await criarClienteMutation.mutateAsync(values);
+          }}
+        />
 
         {/* ── Dialog Cadastro/Edição/Visualização ── */}
         <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>

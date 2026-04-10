@@ -13,6 +13,15 @@ import { AuditoriaService } from "../../services/AuditoriaService";
 export const vendasRouter = Router();
 vendasRouter.use(requireAuth, requireFeature("module_vendas"));
 
+function normalizeIsoDate(value: string): string | null {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(value)) {
+    const [dd, mm, yyyy] = value.split("/");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return null;
+}
+
 // ─── Schema: histórico manual ──────────────────────────────────────────────────
 const historicoParcelaSchema = z.object({
   numero_parcela: z.number().int().positive(),
@@ -147,6 +156,11 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
   }
 
   const { id_cliente, id_lote, data_venda, valor_entrada, parcelas, valor_parcela } = parseResult.data;
+  const dataVendaIso = normalizeIsoDate(data_venda);
+
+  if (!dataVendaIso) {
+    return res.status(400).json({ error: "Data de venda inválida. Use o formato YYYY-MM-DD." });
+  }
 
   const user = req.user;
 
@@ -202,7 +216,7 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     const venda = queryRunner.manager.create(Venda, {
       id_cliente,
       id_lote,
-      data_venda,
+      data_venda: dataVendaIso,
       valor_entrada: valor_entrada.toFixed(2),
       parcelas,
       porcentagem: "0.00",
@@ -223,9 +237,9 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
         numero_parcela: 0,
         tipo: "entrada",
         situacao: "pago",
-        vencimento: data_venda,
+        vencimento: dataVendaIso,
         valor: valor_entrada.toFixed(2),
-        pago_data: data_venda,
+        pago_data: dataVendaIso,
         valor_pago: valor_entrada.toFixed(2),
         multa: "0.00",
         juros: "0.00",
@@ -236,7 +250,7 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     }
 
     for (let i = 1; i <= parcelas; i++) {
-      const baseDate = new Date(data_venda + "T12:00:00");
+      const baseDate = new Date(dataVendaIso + "T12:00:00");
       const vencimentoDate = new Date(baseDate);
       vencimentoDate.setMonth(vencimentoDate.getMonth() + i);
       const vencimento = vencimentoDate.toISOString().slice(0, 10);
@@ -290,7 +304,11 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
   } catch (error) {
     await queryRunner.rollbackTransaction();
     console.error("[POST /api/vendas] Erro:", error);
-    return res.status(500).json({ error: "Erro ao criar venda" });
+    const detail = error instanceof Error ? error.message : "Erro interno";
+    return res.status(500).json({
+      error: "Erro ao criar venda",
+      ...(process.env.NODE_ENV !== "production" ? { detail } : {}),
+    });
   } finally {
     await queryRunner.release();
   }
@@ -305,6 +323,10 @@ vendasRouter.post("/historico", requireAuth, requirePermission("vendas_cadastrar
   }
 
   const { id_cliente, id_lote, data_venda, valor_entrada, parcelas, valor_parcela, pagamentos: pagamentosInput } = parseResult.data;
+  const dataVendaIso = normalizeIsoDate(data_venda);
+  if (!dataVendaIso) {
+    return res.status(400).json({ error: "Data de venda inválida. Use o formato YYYY-MM-DD." });
+  }
   const user = req.user;
 
   const clienteRepo = AppDataSource.getRepository(Cliente);
@@ -347,7 +369,7 @@ vendasRouter.post("/historico", requireAuth, requirePermission("vendas_cadastrar
     const venda = queryRunner.manager.create(Venda, {
       id_cliente,
       id_lote,
-      data_venda,
+      data_venda: dataVendaIso,
       valor_entrada: valor_entrada.toFixed(2),
       parcelas,
       porcentagem: "0.00",
