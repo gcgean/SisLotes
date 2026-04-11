@@ -87,6 +87,10 @@ export class Empresa {
   @Column({ type: "timestamp", name: "ultimo_acesso", nullable: true })
   ultimo_acesso?: Date | null;
 
+  /** Modelo personalizado do contrato (HTML com placeholders {{variavel}}) */
+  @Column({ type: "text", name: "modelo_contrato", nullable: true })
+  modelo_contrato?: string | null;
+
   /** Observações internas da plataforma */
   @Column({ type: "text", nullable: true })
   observacoes?: string | null;

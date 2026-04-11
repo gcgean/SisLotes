@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 import { FileText, Printer, ChevronDown } from "lucide-react";
+import { MODELO_CONTRATO_PADRAO } from "@/utils/modeloContratoPadrao";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -65,6 +66,7 @@ interface ContratoData {
     cidade: string | null; estado: string | null; cep: string | null;
     telefone: string | null; email: string | null; site: string | null;
     logo: string | null;
+    modelo_contrato?: string | null;
   } | null;
 }
 
@@ -706,9 +708,101 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     printWindow.focus();
   }
 
+  function applyContratoTemplate(template: string): string {
+    if (!contratoData) return template;
+    const { venda, cliente, lote, loteamento, empresa } = contratoData;
+    const parcelasNum = numParcelas || String(venda.parcelas);
+    const replacements: Record<string, string> = {
+      "empresa.nome_fantasia": empresa?.nome_fantasia ?? "",
+      "empresa.razao_social": empresa?.razao_social ?? "",
+      "empresa.cnpj": empresa?.cnpj ?? "",
+      "empresa.ie": empresa?.ie ?? "",
+      "empresa.endereco": empresa?.endereco ?? "",
+      "empresa.bairro": empresa?.bairro ?? "",
+      "empresa.cidade": empresa?.cidade ?? "",
+      "empresa.estado": empresa?.estado ?? "",
+      "empresa.telefone": empresa?.telefone ?? "",
+      "empresa.email": empresa?.email ?? "",
+      "empresa.site": empresa?.site ?? "",
+      "cliente.nome": cliente?.nome ?? "",
+      "cliente.cpf": cliente?.cpf ?? cliente?.cnpj ?? "",
+      "cliente.rg": cliente?.rg ?? "",
+      "cliente.endereco": cliente?.endereco ?? "",
+      "cliente.bairro": cliente?.bairro ?? "",
+      "cliente.cidade": cliente?.cidade ?? "",
+      "cliente.estado": cliente?.estado ?? "",
+      "cliente.cep": cliente?.cep ?? "",
+      "cliente.fone": cliente?.fone_res ?? cliente?.fone_com ?? "",
+      "cliente.profissao": cliente?.profissao ?? "",
+      "cliente.estado_civil": cliente?.estado_civil ?? "",
+      "cliente.conjuge": cliente?.conjuge ?? "",
+      "lote.numero": lote?.lote ?? "",
+      "lote.quadra": lote?.quadra ?? "",
+      "lote.area": areaLote || lote?.area || "",
+      "lote.frente": lote?.frente ?? "",
+      "lote.fundo": lote?.fundo ?? "",
+      "lote.direito": lote?.direito ?? "",
+      "lote.esquerdo": lote?.esquerdo ?? "",
+      "loteamento.nome": loteamento?.nome ?? "",
+      "loteamento.cidade": loteamento?.cidade ?? "",
+      "loteamento.estado": loteamento?.estado ?? "",
+      "loteamento.prop_nome": loteamento?.prop_nome ?? "",
+      "loteamento.prop_fone": loteamento?.prop_fone ?? "",
+      "loteamento.cnpj": loteamento?.cnpj ?? "",
+      "venda.data": formatData(String(venda.data_venda)),
+      "venda.valor_entrada": formatMoeda(venda.valor_entrada),
+      "venda.valor_parcela": formatMoeda(venda.valor_parcela),
+      "venda.parcelas": parcelasNum,
+      "venda.valor_total": formatMoeda(venda.valor_total),
+      "venda.primeiro_vencimento": dataInicio ? formatData(dataInicio) : (venda.primeiro_vencimento ? formatData(venda.primeiro_vencimento) : ""),
+      "venda.local_pagamento": localPagamento,
+      "venda.telefone_contato": telefoneContato,
+    };
+    return template.replace(/\{\{([\w.]+)\}\}/g, (_, key) => replacements[key] ?? `{{${key}}}`);
+  }
+
   function gerarContrato() {
     if (!contratoData) return;
     const { venda, cliente, lote, loteamento, empresa } = contratoData;
+
+    // Usa modelo personalizado da empresa (ou o padrão em formato {{placeholder}})
+    const templateAtivo = empresa?.modelo_contrato ?? MODELO_CONTRATO_PADRAO;
+    if (templateAtivo) {
+      const timbrado = buildTimbrado(empresa, false);
+      const corpo = applyContratoTemplate(templateAtivo);
+      const titulo = tipoContrato === "a-vista"
+        ? "CONTRATO DE PROMESSA DE COMPRA E VENDA DE POSSE DE IMÓVEL (À VISTA)"
+        : "CONTRATO DE PROMESSA DE COMPRA E VENDA DE POSSE DE IMÓVEL (A PRAZO)";
+      const htmlContent = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>${titulo}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Times New Roman, serif; font-size: 12pt; color: #000; background: #fff; padding: 20mm 25mm; line-height: 1.5; }
+    p { margin-bottom: 8px; text-align: justify; }
+    .btn-print { display: block; margin: 32px auto 0; padding: 10px 32px; background: #1a56db; color: #fff; font-size: 13pt; font-family: Arial, sans-serif; border: none; border-radius: 6px; cursor: pointer; }
+    .btn-print:hover { background: #1e429f; }
+    .conteudo:focus { outline: none; }
+    @media print { body { padding: 15mm 20mm; } .btn-print { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="conteudo" contenteditable="true">
+  ${timbrado}
+  ${corpo}
+  </div>
+  <button class="btn-print" onclick="window.print()">Imprimir</button>
+</body>
+</html>`;
+      const printWindow = window.open("", "_blank");
+      if (!printWindow) { toast({ title: "Popup bloqueado", description: "Permita popups para imprimir.", variant: "destructive" }); return; }
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.focus();
+      return;
+    }
     const isAVista = tipoContrato === "a-vista";
 
     const titulo = isAVista

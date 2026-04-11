@@ -27,4 +27,13 @@ installAuthInterceptor(() => {
   window.location.replace("/login");
 });
 
+// ── Dev hardening: evita tela branca por cache de SW antigo no localhost ────
+if (import.meta.env.DEV && "serviceWorker" in navigator) {
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    registrations.forEach((registration) => {
+      registration.unregister().catch(() => undefined);
+    });
+  });
+}
+
 createRoot(document.getElementById("root")!).render(<App />);

@@ -69,7 +69,8 @@
       "Bash(curl -s -X POST \"http://localhost:3334/api/auth/login\" -H \"Content-Type: application/json\" -d \"{\"\"login\"\":\"\"geanteste\"\",\"\"senha\"\":\"\"teste123\"\"}\")",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjI0LCJsb2dpbiI6ImdlYW50ZXN0ZSIsInVzZXJfbWFzdGVyIjp0cnVlLCJpZF9lbXByZXNhIjo0OCwiaWF0IjoxNzc0ODQwNTE1LCJleHAiOjE3NzQ4NjkzMTV9.4zmaM3UTwI5exhObc0-BbRmv1oN7dBNSi21h8R3f7ss\")",
       "Bash(curl -s \"http://localhost:3334/api/hub-billing/license-status\" -H \"Authorization: Bearer $TOKEN\")",
-      "Bash(curl -s -X POST \"http://localhost:3334/api/hub-billing/planos/subscription/checkout\" -H \"Content-Type: application/json\" -H \"Authorization: Bearer $TOKEN\" -d \"{\"\"planCode\"\":\"\"BASICO\"\",\"\"paymentMethod\"\":\"\"pix\"\"}\")"
+      "Bash(curl -s -X POST \"http://localhost:3334/api/hub-billing/planos/subscription/checkout\" -H \"Content-Type: application/json\" -H \"Authorization: Bearer $TOKEN\" -d \"{\"\"planCode\"\":\"\"BASICO\"\",\"\"paymentMethod\"\":\"\"pix\"\"}\")",
+      "Bash(node -e ':*)"
     ]
   }
 }

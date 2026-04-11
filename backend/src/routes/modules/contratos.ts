@@ -135,6 +135,7 @@ contratosRouter.get("/venda/:id_venda", requireAuth, async (req: AuthRequest, re
       email: empresa.email ?? null,
       site: empresa.site ?? null,
       logo: empresa.logo ?? null,
+      modelo_contrato: empresa.modelo_contrato ?? null,
     } : null,
   });
 });

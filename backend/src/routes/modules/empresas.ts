@@ -25,6 +25,7 @@ const empresaBodySchema = z.object({
   site: z.string().max(200).optional(),
   salario_minimo: z.number().nonnegative().optional().nullable(),
   logo: z.string().optional().nullable(),
+  modelo_contrato: z.string().optional().nullable(),
   ativo: z.boolean().optional(),
   hub_customer_id: z.string().max(80).optional().nullable(),
   hub_product_code: z.string().max(80).optional().nullable(),
@@ -86,6 +87,7 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
 
   const {
     logo,
+    modelo_contrato,
     salario_minimo,
     hub_customer_id: _hub_customer_id,
     hub_product_code: _hub_product_code,
@@ -101,6 +103,11 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
   // Logo: aceita null para remover, undefined para não alterar
   if (logo !== undefined) {
     empresa.logo = logo ?? null;
+  }
+
+  // modelo_contrato: aceita null para limpar, undefined para não alterar
+  if (modelo_contrato !== undefined) {
+    empresa.modelo_contrato = modelo_contrato ?? null;
   }
 
   // salario_minimo: converte number para string (decimal no banco)

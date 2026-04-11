@@ -20,6 +20,27 @@ const loteBodySchema = z.object({
   direito: z.string().max(20).optional(),
 });
 
+function getDbErrorMessage(error: unknown): { status: number; error: string } | null {
+  if (!error || typeof error !== "object") return null;
+  const err = error as { code?: string; detail?: string; constraint?: string };
+
+  if (err.code === "23505") {
+    if (String(err.constraint || "").includes("lotes_id_loteamento_quadra_lote")) {
+      return {
+        status: 409,
+        error: "Já existe um lote com esta combinação de loteamento, quadra e lote.",
+      };
+    }
+    return { status: 409, error: "Registro duplicado." };
+  }
+
+  if (err.code === "23503") {
+    return { status: 400, error: "Loteamento inválido para este lote." };
+  }
+
+  return null;
+}
+
 lotesRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const loteRepo = AppDataSource.getRepository(Lote);
   const vendaRepo = AppDataSource.getRepository(Venda);
@@ -200,16 +221,23 @@ lotesRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
     return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
   }
 
-  const repo = AppDataSource.getRepository(Lote);
+  try {
+    const repo = AppDataSource.getRepository(Lote);
 
-  const lote = repo.create({
-    ...parseResult.data,
-    id_empresa: req.user?.id_empresa ?? 1,
-  });
+    const lote = repo.create({
+      ...parseResult.data,
+      id_empresa: req.user?.id_empresa ?? 1,
+    });
 
-  const saved = await repo.save(lote);
+    const saved = await repo.save(lote);
 
-  return res.status(201).json(saved);
+    return res.status(201).json(saved);
+  } catch (error) {
+    const mapped = getDbErrorMessage(error);
+    if (mapped) return res.status(mapped.status).json({ error: mapped.error });
+    console.error("[POST /api/lotes] erro:", error);
+    return res.status(500).json({ error: "Erro ao criar lote" });
+  }
 });
 
 lotesRouter.put("/:id", requireAuth, async (req: AuthRequest, res) => {
@@ -221,25 +249,32 @@ lotesRouter.put("/:id", requireAuth, async (req: AuthRequest, res) => {
     return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
   }
 
-  const repo = AppDataSource.getRepository(Lote);
+  try {
+    const repo = AppDataSource.getRepository(Lote);
 
-  const where: Record<string, unknown> = { id_lote: Number(id) };
+    const where: Record<string, unknown> = { id_lote: Number(id) };
 
-  if (req.user?.id_empresa) {
-    where.id_empresa = req.user.id_empresa;
+    if (req.user?.id_empresa) {
+      where.id_empresa = req.user.id_empresa;
+    }
+
+    const lote = await repo.findOne({ where });
+
+    if (!lote) {
+      return res.status(404).json({ error: "Lote não encontrado" });
+    }
+
+    Object.assign(lote, parseResult.data);
+
+    const saved = await repo.save(lote);
+
+    return res.json(saved);
+  } catch (error) {
+    const mapped = getDbErrorMessage(error);
+    if (mapped) return res.status(mapped.status).json({ error: mapped.error });
+    console.error("[PUT /api/lotes/:id] erro:", error);
+    return res.status(500).json({ error: "Erro ao editar lote" });
   }
-
-  const lote = await repo.findOne({ where });
-
-  if (!lote) {
-    return res.status(404).json({ error: "Lote não encontrado" });
-  }
-
-  Object.assign(lote, parseResult.data);
-
-  const saved = await repo.save(lote);
-
-  return res.json(saved);
 });
 
 lotesRouter.delete("/:id", requireAuth, async (req: AuthRequest, res) => {

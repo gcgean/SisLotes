@@ -29,6 +29,7 @@ import { CreateHubBillingCharges1700000000013 } from "../migrations/170000000001
 import { CreateHubBillingEvents1700000000014 } from "../migrations/1700000000014-CreateHubBillingEvents";
 import { AddWebhookEventIdToHubBillingEvents1700000000015 } from "../migrations/1700000000015-AddWebhookEventIdToHubBillingEvents";
 import { AllowEntradaTipoPagamento1700000000016 } from "../migrations/1700000000016-AllowEntradaTipoPagamento";
+import { AddModeloContratoToEmpresa1700000000017 } from "../migrations/1700000000017-AddModeloContratoToEmpresa";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -56,6 +57,7 @@ export const AppDataSource = new DataSource({
     CreateHubBillingEvents1700000000014,
     AddWebhookEventIdToHubBillingEvents1700000000015,
     AllowEntradaTipoPagamento1700000000016,
+    AddModeloContratoToEmpresa1700000000017,
   ],
   synchronize: false,
   logging: false,

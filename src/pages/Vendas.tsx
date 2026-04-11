@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -53,7 +54,7 @@ import { toast } from "@/hooks/use-toast";
 import { gerarReciboParcela, ReciboEmpresa } from "@/utils/reciboParcela";
 import { ContratoDialog } from "@/components/contratos/ContratoDialog";
 import { NovoClienteDialog, NovoClienteFormValues } from "@/components/clientes/NovoClienteDialog";
-import { FileText, Pencil } from "lucide-react";
+import { FileText, Pencil, FileCheck, Receipt, FileSignature, ArrowRightLeft } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type VendaStatus = "aberta" | "quitada" | "cancelada";
@@ -169,6 +170,7 @@ const Vendas = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const preselectedLoteId = searchParams.get("id_lote");
 
   // ── list state
   const [search, setSearch] = useState("");
@@ -275,7 +277,7 @@ const Vendas = () => {
       return r.json();
     },
     staleTime: 2 * 60 * 1000,
-    enabled: novaVendaAberto,
+    enabled: novaVendaAberto || Boolean(preselectedLoteId),
   });
 
   const { data: clientes = [], refetch: refetchClientes } = useQuery<Cliente[]>({
@@ -320,24 +322,45 @@ const Vendas = () => {
   });
   // ─── Effect para pré-selecionar lote ───────────────────────────────────────
   useEffect(() => {
-    const id_lote = searchParams.get("id_lote");
-    if (!id_lote || todosLotes.length === 0 || novaVendaAberto) return;
+    if (!preselectedLoteId || todosLotes.length === 0 || novaVendaAberto) return;
 
-    const lote = todosLotes.find((l) => l.id_lote === Number(id_lote));
-    if (lote && lote.status === "disponivel") {
-      setSelectedLote(lote);
-      setSelectedLoteamento(
-        loteamentos.find((l) => l.id_loteamento === lote.id_loteamento) || null
-      );
-      setNovaVendaAberto(true);
-      setStep(2);
+    const loteId = Number(preselectedLoteId);
+    if (!Number.isFinite(loteId) || loteId <= 0) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("id_lote");
+      setSearchParams(next, { replace: true });
+      return;
     }
 
-    // Sempre limpa o parâmetro após consumir, para evitar reabertura ao fechar.
+    const lote = todosLotes.find((l) => l.id_lote === loteId);
+    if (!lote) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("id_lote");
+      setSearchParams(next, { replace: true });
+      return;
+    }
+
+    if (lote.status !== "disponivel") {
+      toast({
+        title: "Lote indisponível",
+        description: "Este lote já está vendido e não pode iniciar uma nova venda.",
+        variant: "destructive",
+      });
+      const next = new URLSearchParams(searchParams);
+      next.delete("id_lote");
+      setSearchParams(next, { replace: true });
+      return;
+    }
+
+    setSelectedLote(lote);
+    setSelectedLoteamento(loteamentos.find((l) => l.id_loteamento === lote.id_loteamento) || null);
+    setNovaVendaAberto(true);
+    setStep(2);
+
     const next = new URLSearchParams(searchParams);
     next.delete("id_lote");
     setSearchParams(next, { replace: true });
-  }, [searchParams, setSearchParams, todosLotes, loteamentos, novaVendaAberto]);
+  }, [preselectedLoteId, searchParams, setSearchParams, todosLotes, loteamentos, novaVendaAberto]);
 
   // ─── Mutations ─────────────────────────────────────────────────────────────
   const criarVendaMutation = useMutation({
@@ -1400,36 +1423,92 @@ const Vendas = () => {
             </table>
           </div>
 
-          <DialogFooter className="border-t border-border pt-3 flex-wrap gap-2">
-            <Button variant="outline" onClick={() => imprimirCarne()} className="gap-2">
-              <Printer className="h-4 w-4" />
-              Imprimir Carnê
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => {
-                setContratoDialogAberto(true);
-              }}
-            >
-              <FileText className="h-4 w-4" />
-              Imprimir Contrato
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2"
-              onClick={() => {
-                setEditDataVenda(new Date().toISOString().split("T")[0]);
-                setEditEntrada("0");
-                setEditParcelas(String(vendaCriada?.pagamentos.length ?? 12));
-                setEditValorParcela(Number(vendaCriada?.pagamentos?.find((p) => p.numero_parcela === 1)?.valor ?? 0).toFixed(2));
-                setEditarVendaAberto(true);
-              }}
-            >
-              <Pencil className="h-4 w-4" />
-              Alterar Venda
-            </Button>
-            <Button onClick={() => setDialogSucessoAberto(false)}>Fechar</Button>
+          <DialogFooter className="border-t border-border pt-3 flex-col gap-3 items-stretch sm:items-stretch">
+            {/* Impressão de Documentos */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Impressão de Documentos</p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button" variant="ghost" size="sm"
+                  className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border"
+                  onClick={() => setContratoDialogAberto(true)}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  Contrato
+                </Button>
+                <Button
+                  type="button" variant="ghost" size="sm"
+                  className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border"
+                  onClick={() => setContratoDialogAberto(true)}
+                >
+                  <FileCheck className="h-3.5 w-3.5" />
+                  Contrato À Vista
+                </Button>
+                <Button
+                  type="button" variant="secondary" size="sm"
+                  className="gap-1.5 h-8 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200 border"
+                  onClick={() => { setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-recibo-quitacao")), 100); }}
+                >
+                  <Receipt className="h-3.5 w-3.5" />
+                  Recibo de Quitação
+                </Button>
+                <Button
+                  type="button" variant="ghost" size="sm"
+                  className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border"
+                  onClick={() => { setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-recibo-quitacao")), 100); }}
+                >
+                  <Receipt className="h-3.5 w-3.5" />
+                  Recibo s/ Timbrado
+                </Button>
+                <Button
+                  type="button" variant="ghost" size="sm"
+                  className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border"
+                  onClick={() => { setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-minuta")), 100); }}
+                >
+                  <FileSignature className="h-3.5 w-3.5" />
+                  Minuta
+                </Button>
+                <Button
+                  type="button" variant="ghost" size="sm"
+                  className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border"
+                  onClick={() => { setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-minuta-sem-timbrado")), 100); }}
+                >
+                  <FileSignature className="h-3.5 w-3.5" />
+                  Minuta s/ Timbrado
+                </Button>
+                <Button
+                  type="button" variant="ghost" size="sm"
+                  className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border"
+                  onClick={() => { setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-termo-transferencia")), 100); }}
+                >
+                  <ArrowRightLeft className="h-3.5 w-3.5" />
+                  Termo de Transferência
+                </Button>
+              </div>
+            </div>
+            {/* Ações */}
+            <div className="flex flex-wrap gap-2 justify-between items-center">
+              <Button variant="outline" size="sm" onClick={() => imprimirCarne()} className="gap-2">
+                <Printer className="h-4 w-4" />
+                Imprimir Carnê
+              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline" size="sm" className="gap-2"
+                  onClick={() => {
+                    setEditDataVenda(new Date().toISOString().split("T")[0]);
+                    setEditEntrada("0");
+                    setEditParcelas(String(vendaCriada?.pagamentos.length ?? 12));
+                    setEditValorParcela(Number(vendaCriada?.pagamentos?.find((p) => p.numero_parcela === 1)?.valor ?? 0).toFixed(2));
+                    setEditarVendaAberto(true);
+                  }}
+                >
+                  <Pencil className="h-4 w-4" />
+                  Alterar Venda
+                </Button>
+                <Button size="sm" onClick={() => setDialogSucessoAberto(false)}>Fechar</Button>
+              </div>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -279,6 +279,15 @@ const Lotes = () => {
 
   const criarLoteMutation = useMutation({
     mutationFn: async (values: LoteFormValues) => {
+      const duplicate = lotes.find((l) =>
+        Number(l.id_loteamento) === Number(values.id_loteamento) &&
+        String(l.quadra ?? "").trim().toLowerCase() === String(values.quadra ?? "").trim().toLowerCase() &&
+        String(l.lote ?? "").trim().toLowerCase() === String(values.lote ?? "").trim().toLowerCase()
+      );
+      if (duplicate) {
+        throw new Error("Já existe um lote com esta combinação de loteamento, quadra e lote.");
+      }
+
       const response = await fetch("/api/lotes", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },

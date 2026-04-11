@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, Shield, Building2, Upload, X } from "lucide-react";
+import { Plus, Edit, Trash2, Shield, Building2, Upload, X, FileText, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { toast } from "@/hooks/use-toast";
+import { MODELO_CONTRATO_PADRAO } from "@/utils/modeloContratoPadrao";
 
 interface Conta {
   id_conta: number;
@@ -63,12 +65,14 @@ interface MinhaEmpresaData {
   site: string;
   salario_minimo: string;
   logo: string | null;
+  modelo_contrato: string | null;
 }
 
 const MINHA_EMPRESA_EMPTY: MinhaEmpresaData = {
   nome_fantasia: "", razao_social: "", cnpj: "", ie: "",
   endereco: "", bairro: "", cidade: "", estado: "", cep: "",
   telefone: "", email: "", site: "", salario_minimo: "", logo: null,
+  modelo_contrato: null,
 };
 
 type UsuarioPermissaoKey =
@@ -236,6 +240,7 @@ const Configuracoes = () => {
         site: minhaEmpresaData.site ?? "",
         salario_minimo: minhaEmpresaData.salario_minimo ? String(minhaEmpresaData.salario_minimo) : "",
         logo: minhaEmpresaData.logo ?? null,
+        modelo_contrato: minhaEmpresaData.modelo_contrato ?? null,
       });
     }
   }, [minhaEmpresaData]);
@@ -680,6 +685,10 @@ const Configuracoes = () => {
             <TabsTrigger value="empresas" className="gap-2">
               <Building2 className="h-4 w-4" />
               Empresas
+            </TabsTrigger>
+            <TabsTrigger value="modelo-contrato" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Modelo de Contrato
             </TabsTrigger>
           </TabsList>
 
@@ -1382,6 +1391,83 @@ const Configuracoes = () => {
               </DialogContent>
             </Dialog>
           </TabsContent>
+
+          {/* MODELO DE CONTRATO */}
+          <TabsContent value="modelo-contrato" className="space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold">Modelo de Contrato</h2>
+              <p className="text-sm text-muted-foreground mt-1">
+                Personalize o modelo HTML do contrato gerado pelo sistema. Use os placeholders <code className="bg-muted px-1 rounded text-xs">{"{{variavel}}"}</code> para inserir dados dinâmicos.
+                Quando vazio, o sistema usa o modelo padrão.
+              </p>
+            </div>
+
+            {/* Variáveis disponíveis */}
+            <div className="border rounded-lg p-4 bg-muted/30 space-y-3">
+              <p className="text-sm font-semibold">Variáveis disponíveis</p>
+              {[
+                { grupo: "Empresa", vars: ["empresa.nome_fantasia","empresa.razao_social","empresa.cnpj","empresa.ie","empresa.endereco","empresa.bairro","empresa.cidade","empresa.estado","empresa.telefone","empresa.email","empresa.site"] },
+                { grupo: "Cliente", vars: ["cliente.nome","cliente.cpf","cliente.rg","cliente.endereco","cliente.bairro","cliente.cidade","cliente.estado","cliente.cep","cliente.fone","cliente.profissao","cliente.estado_civil","cliente.conjuge"] },
+                { grupo: "Lote", vars: ["lote.numero","lote.quadra","lote.area","lote.frente","lote.fundo","lote.direito","lote.esquerdo"] },
+                { grupo: "Loteamento", vars: ["loteamento.nome","loteamento.cidade","loteamento.estado","loteamento.prop_nome","loteamento.prop_fone","loteamento.cnpj"] },
+                { grupo: "Venda", vars: ["venda.data","venda.valor_entrada","venda.valor_parcela","venda.parcelas","venda.valor_total","venda.primeiro_vencimento","venda.local_pagamento","venda.telefone_contato"] },
+              ].map(({ grupo, vars }) => (
+                <div key={grupo}>
+                  <p className="text-xs font-medium text-muted-foreground mb-1.5">{grupo}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {vars.map((v) => (
+                      <button
+                        key={v}
+                        type="button"
+                        className="font-mono text-xs bg-background border rounded px-2 py-0.5 hover:bg-primary hover:text-primary-foreground transition-colors cursor-pointer"
+                        onClick={() => {
+                          const placeholder = `{{${v}}}`;
+                          setMinhaEmpresa((prev) => ({
+                            ...prev,
+                            modelo_contrato: (prev.modelo_contrato ?? "") + placeholder,
+                          }));
+                        }}
+                      >
+                        {`{{${v}}}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Editor */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label>Conteúdo do contrato (HTML)</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="gap-2 text-muted-foreground"
+                  onClick={() => setMinhaEmpresa((prev) => ({ ...prev, modelo_contrato: MODELO_CONTRATO_PADRAO }))}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Restaurar padrão
+                </Button>
+              </div>
+              <Textarea
+                value={minhaEmpresa.modelo_contrato ?? MODELO_CONTRATO_PADRAO}
+                onChange={(e) => setMinhaEmpresa((prev) => ({ ...prev, modelo_contrato: e.target.value }))}
+                className="font-mono text-xs min-h-[400px] resize-y"
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <Button
+                onClick={() => salvarMinhaEmpresaMutation.mutate()}
+                disabled={salvarMinhaEmpresaMutation.isPending}
+              >
+                {salvarMinhaEmpresaMutation.isPending ? "Salvando..." : "Salvar modelo"}
+              </Button>
+            </div>
+          </TabsContent>
+
         </Tabs>
       </div>
 
