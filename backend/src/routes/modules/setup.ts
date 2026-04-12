@@ -134,8 +134,11 @@ setupRouter.get("/planos-disponiveis", async (_req, res) => {
     INTERMEDIARIO: process.env.HUB_BILLING_PLAN_INTERMEDIARIO || "",
   };
 
-  const fallbackPlanos = PLANOS_DISPONIVEIS.filter((plan) => Boolean(planMap[plan.code]));
   const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+  // Quando Hub não está configurado, mostra todos os planos disponíveis sem filtro
+  const fallbackPlanos = productId
+    ? PLANOS_DISPONIVEIS.filter((plan) => Boolean(planMap[plan.code]))
+    : PLANOS_DISPONIVEIS;
 
   const trialDays = await getTrialDaysFromHub(productId);
   const responseWithFallback = () => res.json({ planos: fallbackPlanos, trialDays });
@@ -200,10 +203,12 @@ setupRouter.get("/planos-disponiveis", async (_req, res) => {
     if (planos.length > 0) {
       return res.json({ planos, trialDays });
     }
-    return responseWithFallback();
+    // Hub não retornou planos ativos — usa fallback (ou todos os planos se fallback vazio)
+    return res.json({ planos: fallbackPlanos.length > 0 ? fallbackPlanos : PLANOS_DISPONIVEIS, trialDays });
   } catch (err) {
     console.warn("[Setup] Falha ao buscar planos no Hub:", err instanceof Error ? err.message : err);
-    return responseWithFallback();
+    // Em caso de falha na API do Hub, usa fallback (ou todos os planos se fallback vazio)
+    return res.json({ planos: fallbackPlanos.length > 0 ? fallbackPlanos : PLANOS_DISPONIVEIS, trialDays });
   }
 });
 
