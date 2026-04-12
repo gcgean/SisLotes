@@ -460,13 +460,13 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
           const newAccessStatus = typeof updatedStatus.accessStatus === "string" ? updatedStatus.accessStatus : null;
           const newCanAccess    = typeof updatedStatus.canAccess    === "boolean" ? updatedStatus.canAccess   : canAccess;
 
-          if (newTrialEndAt || newLicenseEndAt) {
+          if (newTrialEndAt || newLicenseEndAt || newAccessStatus) {
             trialEndAt   = newTrialEndAt   ?? trialEndAt;
             licenseEndAt = newLicenseEndAt ?? licenseEndAt;
             daysLeft     = newDaysLeft     ?? daysLeft;
             accessStatus = newAccessStatus ?? accessStatus;
             canAccess    = newCanAccess;
-            console.log(`[Setup] Subscription Hub criada para ${planCode}: expiresAt=${trialEndAt || licenseEndAt}, daysLeft=${daysLeft}`);
+            console.log(`[Setup] Subscription Hub criada para ${planCode}: status=${accessStatus}, expiresAt=${trialEndAt || licenseEndAt}, daysLeft=${daysLeft}`);
           }
         } catch (subErr) {
           // Non-fatal: o fallback local de trial será usado

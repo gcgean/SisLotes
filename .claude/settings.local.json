@@ -70,7 +70,16 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjI0LCJsb2dpbiI6ImdlYW50ZXN0ZSIsInVzZXJfbWFzdGVyIjp0cnVlLCJpZF9lbXByZXNhIjo0OCwiaWF0IjoxNzc0ODQwNTE1LCJleHAiOjE3NzQ4NjkzMTV9.4zmaM3UTwI5exhObc0-BbRmv1oN7dBNSi21h8R3f7ss\")",
       "Bash(curl -s \"http://localhost:3334/api/hub-billing/license-status\" -H \"Authorization: Bearer $TOKEN\")",
       "Bash(curl -s -X POST \"http://localhost:3334/api/hub-billing/planos/subscription/checkout\" -H \"Content-Type: application/json\" -H \"Authorization: Bearer $TOKEN\" -d \"{\"\"planCode\"\":\"\"BASICO\"\",\"\"paymentMethod\"\":\"\"pix\"\"}\")",
-      "Bash(node -e ':*)"
+      "Bash(node -e ':*)",
+      "Bash(findstr \":3334 :4175 :4177\")",
+      "Bash(set PGPASSWORD=sislote)",
+      "Bash(psql -h localhost -p 5433 -U sislote -d sislote -c \"SELECT id_empresa, nome_fantasia, cnpj, plano, hub_license_status, hub_expires_at::text, hub_customer_id FROM empresa WHERE regexp_replace\\(COALESCE\\(cnpj, ''\\), '[^0-9]', '', 'g'\\) = '48756385072';\")",
+      "Bash(curl -s -X GET \"http://localhost:3334/api/setup/status\")",
+      "Bash(tasklist /fi \"pid eq 38768\" /v)",
+      "Bash(wmic process:*)",
+      "Bash(curl -s \"http://localhost:3334/api/setup/status\")",
+      "Bash(curl -s -X POST \"http://localhost:3334/api/setup/planos-disponiveis\" -H \"Content-Type: application/json\")",
+      "Bash(curl -s \"http://localhost:3334/api/setup/planos-disponiveis\")"
     ]
   }
 }
