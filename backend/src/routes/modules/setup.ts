@@ -128,6 +128,7 @@ function selectHubPlanForCode(args: {
 }
 
 setupRouter.get("/planos-disponiveis", async (_req, res) => {
+  const isProduction = (process.env.NODE_ENV || "development").toLowerCase() === "production";
   const planMap: Record<string, string> = {
     TESTE: process.env.HUB_BILLING_PLAN_TESTE || "",
     BASICO: process.env.HUB_BILLING_PLAN_BASICO || "",
@@ -142,7 +143,14 @@ setupRouter.get("/planos-disponiveis", async (_req, res) => {
 
   const trialDays = await getTrialDaysFromHub(productId);
   const responseWithFallback = () => res.json({ planos: fallbackPlanos, trialDays });
-  if (!productId) return responseWithFallback();
+  if (!productId) {
+    if (isProduction) {
+      return res.status(500).json({
+        error: "Integração Hub incompleta em produção: HUB_BILLING_PRODUCT_ID não configurado.",
+      });
+    }
+    return responseWithFallback();
+  }
 
   try {
     const plansFromHub = await HubBillingService.getProductPlans(productId);
@@ -203,10 +211,20 @@ setupRouter.get("/planos-disponiveis", async (_req, res) => {
     if (planos.length > 0) {
       return res.json({ planos, trialDays });
     }
+    if (isProduction) {
+      return res.status(502).json({
+        error: "Hub Billing não retornou planos ativos para o produto configurado.",
+      });
+    }
     // Hub não retornou planos ativos — usa fallback (ou todos os planos se fallback vazio)
     return res.json({ planos: fallbackPlanos.length > 0 ? fallbackPlanos : PLANOS_DISPONIVEIS, trialDays });
   } catch (err) {
     console.warn("[Setup] Falha ao buscar planos no Hub:", err instanceof Error ? err.message : err);
+    if (isProduction) {
+      return res.status(502).json({
+        error: "Falha ao consultar planos no Hub Billing.",
+      });
+    }
     // Em caso de falha na API do Hub, usa fallback (ou todos os planos se fallback vazio)
     return res.json({ planos: fallbackPlanos.length > 0 ? fallbackPlanos : PLANOS_DISPONIVEIS, trialDays });
   }
