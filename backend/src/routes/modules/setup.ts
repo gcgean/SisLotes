@@ -375,6 +375,26 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
     banner?: string | null;
   } = {};
 
+  // ── 7b. Sem Hub: atribui plano e trial localmente
+  if (!HubBillingService.isConfigured() && parseResult.data.planCode) {
+    const planCode = parseResult.data.planCode.toUpperCase();
+    const trialDays = getTrialDaysConfigured();
+    const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
+
+    empresaSalva.plano = planCode;
+    empresaSalva.data_vencimento = expiresAt.toISOString().slice(0, 10);
+    await AppDataSource.getRepository(Empresa).save(empresaSalva);
+
+    hubInfo = {
+      planCode,
+      expiresAt: expiresAt.toISOString(),
+      trialDays,
+      canAccess: true,
+      accessStatus: "trial",
+      daysLeft: trialDays,
+    };
+  }
+
   if (HubBillingService.isConfigured() && parseResult.data.planCode) {
     const planCode = parseResult.data.planCode.toUpperCase();
     const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || "";
