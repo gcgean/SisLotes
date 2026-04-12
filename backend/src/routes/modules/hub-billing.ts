@@ -569,7 +569,18 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     }
   }
 
-  const daysLeft = syncResult?.daysLeft ?? HubBillingService.getStoredDaysLeft(empresa);
+  // Calcular daysLeft com fallback em cascata: Hub sync → features salvas → hub_expires_at → data_vencimento
+  const daysLeft = syncResult?.daysLeft ?? HubBillingService.getStoredDaysLeft(empresa) ?? (() => {
+    const expiry = empresa.hub_expires_at
+      ?? (empresa.data_vencimento ? new Date(empresa.data_vencimento + "T23:59:59") : null);
+    if (!expiry) return null;
+    const msLeft = expiry.getTime() - Date.now();
+    return msLeft > 0 ? Math.ceil(msLeft / (1000 * 60 * 60 * 24)) : 0;
+  })();
+
+  // hub_expires_at com fallback para data_vencimento
+  const effectiveHubExpiresAt = empresa.hub_expires_at
+    ?? (empresa.data_vencimento ? new Date(empresa.data_vencimento + "T23:59:59") : null);
 
   return res.json({
     id_empresa: empresa.id_empresa,
@@ -579,7 +590,7 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     hub_product_code: empresa.hub_product_code,
     hub_license_status: empresa.hub_license_status,
     hub_license_reason: empresa.hub_license_reason,
-    hub_expires_at: empresa.hub_expires_at,
+    hub_expires_at: effectiveHubExpiresAt,
     hub_features: getEffectiveFeatures(empresa.plano, empresa.hub_features ?? {}),
     hub_last_sync: empresa.hub_last_sync,
     hub_configured: HubBillingService.isConfigured(),

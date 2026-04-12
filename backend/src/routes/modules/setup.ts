@@ -382,6 +382,7 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
     const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
 
     empresaSalva.plano = planCode;
+    empresaSalva.hub_expires_at = expiresAt;
     empresaSalva.data_vencimento = expiresAt.toISOString().slice(0, 10);
     await AppDataSource.getRepository(Empresa).save(empresaSalva);
 

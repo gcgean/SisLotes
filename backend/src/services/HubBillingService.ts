@@ -241,12 +241,24 @@ export class HubBillingService {
 
   static async syncEmpresaLicense(empresa: Empresa) {
     if (!this.isConfigured()) {
+      const storedDaysLeft = this.getStoredDaysLeft(empresa);
+      // Fallback: calcular dias restantes a partir de hub_expires_at ou data_vencimento
+      const effectiveDaysLeft = storedDaysLeft ?? (() => {
+        const expiry = empresa.hub_expires_at
+          ?? (empresa.data_vencimento ? new Date(empresa.data_vencimento + "T23:59:59") : null);
+        if (!expiry) return null;
+        const msLeft = expiry.getTime() - Date.now();
+        return msLeft > 0 ? Math.ceil(msLeft / (1000 * 60 * 60 * 24)) : 0;
+      })();
+      const effectiveExpiresAt = empresa.hub_expires_at?.toISOString()
+        ?? (empresa.data_vencimento ? new Date(empresa.data_vencimento + "T23:59:59").toISOString() : null);
       return {
         synced: false,
         allowed: empresa.ativo,
         reason: "hub_not_configured",
         features: empresa.hub_features ?? {},
-        daysLeft: this.getStoredDaysLeft(empresa),
+        daysLeft: effectiveDaysLeft,
+        expiresAt: effectiveExpiresAt,
       };
     }
 
