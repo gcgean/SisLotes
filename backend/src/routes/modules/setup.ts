@@ -418,23 +418,63 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
       });
 
       const customerId = typeof resolved.customerId === "string" ? resolved.customerId : null;
-      const accessStatus = typeof resolved.accessStatus === "string" ? resolved.accessStatus : null;
-      const canAccess = Boolean(resolved.canAccess);
-      const trialEndAt = typeof resolved.trialEndAt === "string" ? resolved.trialEndAt : null;
-      const licenseEndAt = typeof resolved.licenseEndAt === "string" ? resolved.licenseEndAt : null;
-      const daysLeft = typeof resolved.daysLeft === "number" ? resolved.daysLeft : null;
+      let accessStatus = typeof resolved.accessStatus === "string" ? resolved.accessStatus : null;
+      let canAccess = Boolean(resolved.canAccess);
+      let trialEndAt = typeof resolved.trialEndAt === "string" ? resolved.trialEndAt : null;
+      let licenseEndAt = typeof resolved.licenseEndAt === "string" ? resolved.licenseEndAt : null;
+      let daysLeft = typeof resolved.daysLeft === "number" ? resolved.daysLeft : null;
       const banner = typeof resolved.banner === "string" ? resolved.banner : null;
       const features =
         resolved.features && typeof resolved.features === "object" && !Array.isArray(resolved.features)
           ? (resolved.features as Record<string, unknown>)
           : null;
-      const hubExpiresAt = trialEndAt || licenseEndAt || null;
 
       if (!customerId) {
         return res.status(502).json({
           error: "Não foi possível mapear o cliente no Hub Billing durante o cadastro.",
         });
       }
+
+      // ── Criar subscription no Hub para ativar o trial do plano selecionado
+      const hubPlanMap: Record<string, { planId: string; amountCents: number }> = {
+        TESTE:        { planId: process.env.HUB_BILLING_PLAN_TESTE || "",        amountCents: 100  },
+        BASICO:       { planId: process.env.HUB_BILLING_PLAN_BASICO || "",       amountCents: 4990 },
+        INTERMEDIARIO:{ planId: process.env.HUB_BILLING_PLAN_INTERMEDIARIO || "", amountCents: 9990 },
+      };
+      const selectedPlan = hubPlanMap[planCode];
+
+      if (selectedPlan?.planId) {
+        try {
+          await HubBillingService.createSubscription({
+            customerId,
+            productId: hubProductId,
+            planId: selectedPlan.planId,
+            contractedAmount: selectedPlan.amountCents,
+          });
+
+          // Buscar status atualizado com datas de trial após criar a subscription
+          const updatedStatus = await HubBillingService.getAccessStatus(customerId, hubProductId);
+          const newTrialEndAt   = typeof updatedStatus.trialEndAt   === "string" ? updatedStatus.trialEndAt   : null;
+          const newLicenseEndAt = typeof updatedStatus.licenseEndAt === "string" ? updatedStatus.licenseEndAt : null;
+          const newDaysLeft     = typeof updatedStatus.daysLeft     === "number" ? updatedStatus.daysLeft     : null;
+          const newAccessStatus = typeof updatedStatus.accessStatus === "string" ? updatedStatus.accessStatus : null;
+          const newCanAccess    = typeof updatedStatus.canAccess    === "boolean" ? updatedStatus.canAccess   : canAccess;
+
+          if (newTrialEndAt || newLicenseEndAt) {
+            trialEndAt   = newTrialEndAt   ?? trialEndAt;
+            licenseEndAt = newLicenseEndAt ?? licenseEndAt;
+            daysLeft     = newDaysLeft     ?? daysLeft;
+            accessStatus = newAccessStatus ?? accessStatus;
+            canAccess    = newCanAccess;
+            console.log(`[Setup] Subscription Hub criada para ${planCode}: expiresAt=${trialEndAt || licenseEndAt}, daysLeft=${daysLeft}`);
+          }
+        } catch (subErr) {
+          // Non-fatal: o fallback local de trial será usado
+          console.warn("[Setup] Falha ao criar subscription no Hub (non-fatal):", subErr instanceof Error ? subErr.message : subErr);
+        }
+      }
+
+      const hubExpiresAt = trialEndAt || licenseEndAt || null;
 
       empresaSalva.hub_customer_id = customerId;
       empresaSalva.hub_product_code = hubProductId;
@@ -468,12 +508,14 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
 
       hubInfo = {
         planCode: empresaSalva.plano ?? planCode,
-        expiresAt: hubExpiresAt,
+        expiresAt: empresaSalva.hub_expires_at?.toISOString() ?? hubExpiresAt,
         trialDays: hubTrialDays,
         customerId,
         accessStatus,
         canAccess,
-        daysLeft,
+        daysLeft: daysLeft ?? (empresaSalva.hub_expires_at
+          ? Math.ceil((empresaSalva.hub_expires_at.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+          : hubTrialDays),
         banner,
       };
     } catch (err) {
