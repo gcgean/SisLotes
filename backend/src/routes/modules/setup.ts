@@ -452,6 +452,17 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
         }
       }
 
+      // Fallback: Hub não retornou data de trial — definir trial localmente
+      if (!empresaSalva.hub_expires_at) {
+        const trialExpiresAt = new Date(Date.now() + hubTrialDays * 24 * 60 * 60 * 1000);
+        empresaSalva.hub_expires_at = trialExpiresAt;
+        empresaSalva.data_vencimento = trialExpiresAt.toISOString().slice(0, 10);
+        if (!hubInfo.expiresAt) {
+          hubInfo.expiresAt = trialExpiresAt.toISOString();
+          hubInfo.daysLeft = hubTrialDays;
+        }
+      }
+
       await AppDataSource.getRepository(Empresa).save(empresaSalva);
 
       hubInfo = {

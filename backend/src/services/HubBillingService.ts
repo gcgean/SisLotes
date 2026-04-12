@@ -300,6 +300,23 @@ export class HubBillingService {
       }
     }
 
+    // Fallback: quando Hub não retorna datas de trial/licença mas a empresa
+    // já tem hub_expires_at (definido localmente no cadastro), usar esse valor
+    const effectiveExpiresAt = access.expiresAt ?? (empresa.hub_expires_at ? empresa.hub_expires_at.toISOString() : null);
+    const effectiveDaysLeft = access.daysLeft ?? (() => {
+      if (!effectiveExpiresAt) return null;
+      const msLeft = new Date(effectiveExpiresAt).getTime() - Date.now();
+      return msLeft > 0 ? Math.ceil(msLeft / (1000 * 60 * 60 * 24)) : 0;
+    })();
+
+    // Reescreve hub_features com daysLeft/expiresAt efetivos
+    empresa.hub_features = this.attachHubMeta(access.features, {
+      daysLeft: effectiveDaysLeft,
+      expiresAt: effectiveExpiresAt,
+      accessStatus: access.accessStatus ?? null,
+      syncedAt: new Date().toISOString(),
+    });
+
     const featurePlan = access.features?.plan ?? (access as unknown as Record<string, unknown>).planCode;
     if (typeof featurePlan === "string" && featurePlan.trim()) {
       empresa.plano = featurePlan.trim();
@@ -314,8 +331,8 @@ export class HubBillingService {
       allowed: access.allowed,
       reason: access.reason || access.accessStatus,
       features: access.features ?? {},
-      expiresAt: access.expiresAt ?? null,
-      daysLeft: access.daysLeft ?? null,
+      expiresAt: effectiveExpiresAt,
+      daysLeft: effectiveDaysLeft,
       banner: access.banner ?? null,
       accessStatus: access.accessStatus ?? null,
     };
