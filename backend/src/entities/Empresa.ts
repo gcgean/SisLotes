@@ -51,6 +51,10 @@ export class Empresa {
   @Column({ type: "boolean", default: true })
   ativo!: boolean;
 
+  /** Quando true, a empresa não participa do controle de planos/licença do Hub Billing */
+  @Column({ type: "boolean", name: "ignorar_controle_planos", default: false })
+  ignorar_controle_planos!: boolean;
+
   /** Plano contratado (ex: "básico", "profissional", "enterprise") */
   @Column({ type: "varchar", length: 50, nullable: true })
   plano?: string | null;

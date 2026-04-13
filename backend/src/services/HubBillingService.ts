@@ -82,6 +82,10 @@ let cachedAdminTokenUntil = 0;
 export class HubBillingService {
   private static readonly HUB_FEATURE_META_KEY = "__hubMeta";
 
+  static isPlanControlDisabled(empresa: Empresa | null | undefined) {
+    return Boolean(empresa?.ignorar_controle_planos);
+  }
+
   static isConfigured() {
     return hasHubConfig();
   }
@@ -102,6 +106,7 @@ export class HubBillingService {
   }
 
   static isLicenseDenied(empresa: Empresa | null | undefined) {
+    if (this.isPlanControlDisabled(empresa)) return false;
     const status = (empresa?.hub_license_status || "").toLowerCase();
     return NEGATIVE_LICENSE_REASONS.has(status);
   }
@@ -240,6 +245,17 @@ export class HubBillingService {
   }
 
   static async syncEmpresaLicense(empresa: Empresa) {
+    if (this.isPlanControlDisabled(empresa)) {
+      return {
+        synced: false,
+        allowed: true,
+        reason: "plan_control_disabled",
+        features: empresa.hub_features ?? {},
+        daysLeft: null,
+        expiresAt: null,
+      };
+    }
+
     if (!this.isConfigured()) {
       const storedDaysLeft = this.getStoredDaysLeft(empresa);
       // Fallback: calcular dias restantes a partir de hub_expires_at ou data_vencimento

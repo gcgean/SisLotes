@@ -560,8 +560,10 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     return res.status(404).json({ error: "Empresa não encontrada" });
   }
 
+  const planControlDisabled = HubBillingService.isPlanControlDisabled(empresa);
+
   let syncResult: Awaited<ReturnType<typeof HubBillingService.syncEmpresaLicense>> | null = null;
-  if (HubBillingService.isConfigured() && empresa.hub_customer_id) {
+  if (!planControlDisabled && HubBillingService.isConfigured() && empresa.hub_customer_id) {
     try {
       syncResult = await HubBillingService.syncEmpresaLicense(empresa);
     } catch (err) {
@@ -593,7 +595,8 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     hub_expires_at: effectiveHubExpiresAt,
     hub_features: getEffectiveFeatures(empresa.plano, empresa.hub_features ?? {}),
     hub_last_sync: empresa.hub_last_sync,
-    hub_configured: HubBillingService.isConfigured(),
+    hub_configured: planControlDisabled ? false : HubBillingService.isConfigured(),
+    plan_control_disabled: planControlDisabled,
     days_left: daysLeft,
     banner: syncResult?.banner ?? null,
     access_status: syncResult?.accessStatus ?? empresa.hub_license_status ?? null,
@@ -610,6 +613,15 @@ hubBillingRouter.post("/sync-license", requireAuth, async (req: AuthRequest, res
   const empresa = await repo.findOne({ where: { id_empresa: idEmpresa } });
   if (!empresa) {
     return res.status(404).json({ error: "Empresa não encontrada" });
+  }
+
+  if (HubBillingService.isPlanControlDisabled(empresa)) {
+    return res.json({
+      synced: false,
+      allowed: true,
+      reason: "plan_control_disabled",
+      message: "Controle de planos/licença desativado para esta empresa.",
+    });
   }
 
   try {

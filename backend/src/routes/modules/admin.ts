@@ -78,6 +78,7 @@ const empresaSchema = z.object({
   hub_license_reason: z.string().max(80).optional().nullable(),
   hub_expires_at: z.string().optional().nullable(),
   hub_features: z.record(z.unknown()).optional().nullable(),
+  ignorar_controle_planos: z.boolean().optional(),
 });
 
 adminRouter.post("/empresas", async (req, res) => {
@@ -138,6 +139,26 @@ adminRouter.patch("/empresas/:id/toggle-ativo", async (req, res) => {
     return res.json({ id_empresa: empresa.id_empresa, ativo: empresa.ativo });
   } catch (error) {
     return res.status(500).json({ error: "Erro ao alterar status da empresa" });
+  }
+});
+
+// ─── PATCH /admin/empresas/:id/toggle-controle-planos ────────────────────────
+adminRouter.patch("/empresas/:id/toggle-controle-planos", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const empresaRepo = AppDataSource.getRepository(Empresa);
+    const empresa = await empresaRepo.findOne({ where: { id_empresa: id } });
+    if (!empresa) return res.status(404).json({ error: "Empresa não encontrada" });
+
+    empresa.ignorar_controle_planos = !empresa.ignorar_controle_planos;
+    await empresaRepo.save(empresa);
+
+    return res.json({
+      id_empresa: empresa.id_empresa,
+      ignorar_controle_planos: empresa.ignorar_controle_planos,
+    });
+  } catch (error) {
+    return res.status(500).json({ error: "Erro ao alterar controle de planos da empresa" });
   }
 });
 

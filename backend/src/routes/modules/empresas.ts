@@ -33,6 +33,7 @@ const empresaBodySchema = z.object({
   hub_license_reason: z.string().max(80).optional().nullable(),
   hub_expires_at: z.string().optional().nullable(),
   hub_features: z.record(z.unknown()).optional().nullable(),
+  ignorar_controle_planos: z.boolean().optional(),
 });
 
 // ─── Listar todas (master only) ───────────────────────────────────────────────

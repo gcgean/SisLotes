@@ -44,6 +44,7 @@ import {
   CheckCircle,
   XCircle,
   ShieldAlert,
+  ShieldOff,
 } from "lucide-react";
 import { formatCpfCnpj } from "@/lib/cpfCnpj";
 import { format, parseISO } from "date-fns";
@@ -74,6 +75,7 @@ interface Empresa {
   hub_license_status?: string | null;
   hub_license_reason?: string | null;
   hub_expires_at?: string | null;
+  ignorar_controle_planos?: boolean;
   total_usuarios?: number;
   created_at: string;
 }
@@ -127,6 +129,7 @@ const emptyForm = {
   hub_license_status: "",
   hub_license_reason: "",
   hub_expires_at: "",
+  ignorar_controle_planos: false,
 };
 
 export default function Admin() {
@@ -177,6 +180,22 @@ export default function Admin() {
       toast({ title: "Status atualizado com sucesso" });
     },
     onError: () => toast({ title: "Erro ao alterar status", variant: "destructive" }),
+  });
+
+  const togglePlanControlMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/admin/empresas/${id}/toggle-controle-planos`, {
+        method: "PATCH",
+        headers,
+      });
+      if (!r.ok) throw new Error("Erro ao alterar controle de planos");
+      return r.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-empresas"] });
+      toast({ title: "Controle de planos atualizado" });
+    },
+    onError: () => toast({ title: "Erro ao alterar controle de planos", variant: "destructive" }),
   });
 
   const saveMutation = useMutation({
@@ -244,6 +263,7 @@ export default function Admin() {
       hub_license_status: e.hub_license_status ?? "",
       hub_license_reason: e.hub_license_reason ?? "",
       hub_expires_at: e.hub_expires_at ? e.hub_expires_at.slice(0, 10) : "",
+      ignorar_controle_planos: Boolean(e.ignorar_controle_planos),
     });
     setDialogOpen(true);
   }
@@ -354,19 +374,20 @@ export default function Admin() {
                 <th className="px-4 py-3 text-left font-semibold">Último Acesso</th>
                 <th className="px-4 py-3 text-left font-semibold">Usuários</th>
                 <th className="px-4 py-3 text-left font-semibold">Status</th>
+                <th className="px-4 py-3 text-left font-semibold">Controle Planos</th>
                 <th className="px-4 py-3 text-left font-semibold">Ações</th>
               </tr>
             </thead>
             <tbody>
               {isLoading ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                     Carregando…
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">
+                  <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">
                     Nenhuma empresa encontrada.
                   </td>
                 </tr>
@@ -418,7 +439,31 @@ export default function Admin() {
                       )}
                     </td>
                     <td className="px-4 py-3">
+                      {emp.ignorar_controle_planos ? (
+                        <Badge variant="secondary">Desativado</Badge>
+                      ) : (
+                        <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200">Ativo</Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <div className="flex items-center gap-1">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
+                          title={
+                            emp.ignorar_controle_planos
+                              ? "Ativar controle de planos/licença para esta empresa"
+                              : "Desativar controle de planos/licença para esta empresa"
+                          }
+                          onClick={() => togglePlanControlMutation.mutate(emp.id_empresa)}
+                        >
+                          <ShieldOff
+                            className={`h-4 w-4 ${
+                              emp.ignorar_controle_planos ? "text-amber-600" : "text-emerald-600"
+                            }`}
+                          />
+                        </Button>
                         <Button
                           size="icon"
                           variant="ghost"
@@ -605,6 +650,21 @@ export default function Admin() {
                   <SelectContent>
                     <SelectItem value="true">Ativa</SelectItem>
                     <SelectItem value="false">Inativa</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Controle de Planos (Hub)</Label>
+                <Select
+                  value={form.ignorar_controle_planos ? "desativado" : "ativo"}
+                  onValueChange={(v) => setForm((f) => ({ ...f, ignorar_controle_planos: v === "desativado" }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ativo">Ativo (empresa participa do controle)</SelectItem>
+                    <SelectItem value="desativado">Desativado (ignorar controle para empresa)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

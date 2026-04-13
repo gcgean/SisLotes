@@ -48,7 +48,9 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
         return res.status(403).json({ error: "Empresa inativa. Acesso bloqueado." });
       }
 
-      if (HubBillingService.isConfigured() && empresa.hub_customer_id) {
+      const ignorePlanControl = HubBillingService.isPlanControlDisabled(empresa);
+
+      if (!ignorePlanControl && HubBillingService.isConfigured() && empresa.hub_customer_id) {
         try {
           await HubBillingService.syncEmpresaLicense(empresa);
         } catch (hubError) {
@@ -56,7 +58,7 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
         }
       }
 
-      if (HubBillingService.isLicenseDenied(empresa)) {
+      if (!ignorePlanControl && HubBillingService.isLicenseDenied(empresa)) {
         return res.status(403).json({
           error: HubBillingService.getLicenseMessage(empresa),
           reason: empresa.hub_license_reason || empresa.hub_license_status,
@@ -126,6 +128,9 @@ export function requireFeature(feature: string) {
     });
     if (!empresa) {
       return res.status(403).json({ error: "Empresa não encontrada" });
+    }
+    if (HubBillingService.isPlanControlDisabled(empresa)) {
+      return next();
     }
     const configured = Boolean(process.env.HUB_BILLING_BASE_URL && process.env.HUB_BILLING_API_KEY);
     if (!configured) {
