@@ -76,8 +76,9 @@ interface PlanoDisponivel {
   code: string;
   title: string;
   amount: number;
-  description: string;
+  description: string | null;
   isTrial?: boolean;
+  planId?: string;
 }
 
 interface PlanosResponse {
@@ -657,7 +658,9 @@ const PrimeiroAcesso = () => {
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground">{plano.description}</p>
+                        {plano.description ? (
+                          <p className="text-xs text-muted-foreground">{plano.description}</p>
+                        ) : null}
                       </div>
                       <div className="text-right shrink-0 ml-3">
                         {plano.isTrial ? (

@@ -84,6 +84,25 @@ const PLANOS_DISPONIVEIS = [
   },
 ];
 
+type HubPlanItem = Record<string, unknown> & {
+  id?: string;
+  code?: string;
+  name?: string;
+  description?: string | null;
+  amount?: number | string;
+  isActive?: boolean;
+  status?: string;
+};
+
+type PlanoDisponivelResponse = {
+  code: string;
+  title: string;
+  amount: number;
+  description: string | null;
+  isTrial?: boolean;
+  planId?: string;
+};
+
 function getTrialDaysConfigured() {
   const raw = Number(process.env.HUB_BILLING_TRIAL_DAYS ?? "");
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 14;
@@ -111,35 +130,100 @@ async function getTrialDaysFromHub(productId: string) {
   return fallback;
 }
 
-function selectHubPlanForCode(args: {
-  expectedCode: string;
-  mappedId?: string;
-  byCode: Record<string, Record<string, unknown>>;
-  byId: Record<string, Record<string, unknown>>;
-}) {
-  const byCodePlan = args.byCode[args.expectedCode] ?? null;
-  if (byCodePlan) return byCodePlan;
+function isHubPlanActive(plan: HubPlanItem) {
+  const status = typeof plan.status === "string" ? plan.status.toLowerCase() : "";
+  if (typeof plan.isActive === "boolean") return plan.isActive;
+  if (status) return status === "active";
+  return false;
+}
 
-  if (!args.mappedId) return null;
-  const mapped = args.byId[args.mappedId] ?? null;
-  if (!mapped) return null;
-  const mappedCode = typeof mapped.code === "string" ? mapped.code.toUpperCase() : "";
-  return mappedCode === args.expectedCode ? mapped : null;
+function toReaisFromHubAmount(amountRaw: unknown) {
+  const parsed =
+    typeof amountRaw === "number"
+      ? amountRaw
+      : typeof amountRaw === "string" && amountRaw.trim() && !Number.isNaN(Number(amountRaw))
+        ? Number(amountRaw)
+        : null;
+  if (parsed == null || !Number.isFinite(parsed)) return null;
+  if (Number.isInteger(parsed) && Math.abs(parsed) >= 100) {
+    return parsed / 100;
+  }
+  return parsed;
+}
+
+function toCentsFromHubAmount(amountRaw: unknown) {
+  const parsed =
+    typeof amountRaw === "number"
+      ? amountRaw
+      : typeof amountRaw === "string" && amountRaw.trim() && !Number.isNaN(Number(amountRaw))
+        ? Number(amountRaw)
+        : null;
+  if (parsed == null || !Number.isFinite(parsed)) return null;
+  if (Number.isInteger(parsed) && Math.abs(parsed) >= 100) {
+    return Math.round(parsed);
+  }
+  return Math.round(parsed * 100);
+}
+
+function isTrialCandidate(plan: HubPlanItem) {
+  const code = typeof plan.code === "string" ? plan.code.toUpperCase() : "";
+  const name = typeof plan.name === "string" ? plan.name.toUpperCase() : "";
+  const explicitTrialId = (process.env.HUB_BILLING_PLAN_TESTE || "").trim();
+  const byEnv = explicitTrialId && typeof plan.id === "string" ? plan.id === explicitTrialId : false;
+  return byEnv || code.includes("TESTE") || code.includes("TRIAL") || name.includes("TESTE") || name.includes("TRIAL");
+}
+
+function normalizeHubPlans(plansFromHub: HubPlanItem[], trialDays: number): PlanoDisponivelResponse[] {
+  const activePlans = plansFromHub.filter((plan) => isHubPlanActive(plan));
+  if (activePlans.length === 0) return [];
+
+  const normalized = activePlans
+    .map<PlanoDisponivelResponse | null>((plan) => {
+      const id = typeof plan.id === "string" && plan.id.trim() ? plan.id.trim() : null;
+      const code =
+        typeof plan.code === "string" && plan.code.trim()
+          ? plan.code.trim()
+          : id;
+      if (!code) return null;
+
+      const title =
+        typeof plan.name === "string" && plan.name.trim()
+          ? plan.name.trim()
+          : code;
+      const amount = toReaisFromHubAmount(plan.amount);
+      const description =
+        typeof plan.description === "string" && plan.description.trim()
+          ? plan.description.trim()
+          : null;
+
+      return {
+        code,
+        title,
+        amount: Number.isFinite(amount ?? NaN) ? Number(amount) : 0,
+        description,
+        isTrial: trialDays > 0 && isTrialCandidate(plan),
+        planId: id ?? undefined,
+      };
+    })
+    .filter((plan): plan is PlanoDisponivelResponse => Boolean(plan));
+
+  const hasTrialPlan = normalized.some((plan) => plan.isTrial);
+  if (!hasTrialPlan && trialDays > 0 && normalized.length > 0) {
+    normalized.sort((a, b) => a.amount - b.amount);
+    normalized[0] = { ...normalized[0], isTrial: true };
+  }
+
+  return normalized.sort((a, b) => {
+    if (Boolean(b.isTrial) !== Boolean(a.isTrial)) return (b.isTrial ? 1 : 0) - (a.isTrial ? 1 : 0);
+    return a.amount - b.amount;
+  });
 }
 
 setupRouter.get("/planos-disponiveis", async (_req, res) => {
   const isProduction = (process.env.NODE_ENV || "development").toLowerCase() === "production";
-  const planMap: Record<string, string> = {
-    TESTE: process.env.HUB_BILLING_PLAN_TESTE || "",
-    BASICO: process.env.HUB_BILLING_PLAN_BASICO || "",
-    INTERMEDIARIO: process.env.HUB_BILLING_PLAN_INTERMEDIARIO || "",
-  };
 
   const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
-  // Quando Hub não está configurado, mostra todos os planos disponíveis sem filtro
-  const fallbackPlanos = productId
-    ? PLANOS_DISPONIVEIS.filter((plan) => Boolean(planMap[plan.code]))
-    : PLANOS_DISPONIVEIS;
+  const fallbackPlanos = PLANOS_DISPONIVEIS;
 
   const trialDays = await getTrialDaysFromHub(productId);
   const responseWithFallback = () => res.json({ planos: fallbackPlanos, trialDays });
@@ -153,60 +237,8 @@ setupRouter.get("/planos-disponiveis", async (_req, res) => {
   }
 
   try {
-    const plansFromHub = await HubBillingService.getProductPlans(productId);
-    const byCode = plansFromHub.reduce<Record<string, Record<string, unknown>>>((acc, item) => {
-      const code = typeof item.code === "string" ? item.code.toUpperCase() : "";
-      if (code) acc[code] = item;
-      return acc;
-    }, {});
-    const byId = plansFromHub.reduce<Record<string, Record<string, unknown>>>((acc, item) => {
-      const id = typeof item.id === "string" ? item.id : "";
-      if (id) acc[id] = item;
-      return acc;
-    }, {});
-
-    const planos = PLANOS_DISPONIVEIS.map((plan) => {
-      const mappedId = planMap[plan.code];
-      const hubPlan = selectHubPlanForCode({
-        expectedCode: plan.code,
-        mappedId,
-        byCode,
-        byId,
-      });
-      if (!hubPlan) return null;
-
-      const hubStatus = typeof hubPlan.status === "string" ? hubPlan.status.toLowerCase() : "";
-      const active =
-        typeof hubPlan.isActive === "boolean"
-          ? hubPlan.isActive
-          : hubStatus
-          ? hubStatus === "active"
-          : false;
-      if (!active) return null;
-
-      const name = typeof hubPlan.name === "string" && hubPlan.name.trim() ? hubPlan.name : plan.title;
-      const hubDescription =
-        typeof hubPlan.description === "string" && hubPlan.description.trim()
-          ? hubPlan.description
-          : null;
-      const amountRaw =
-        typeof hubPlan.amount === "number"
-          ? hubPlan.amount
-          : typeof hubPlan.amount === "string" && hubPlan.amount.trim() && !Number.isNaN(Number(hubPlan.amount))
-          ? Number(hubPlan.amount)
-          : plan.amount;
-      const amount =
-        Number.isInteger(amountRaw) && Math.abs(amountRaw) >= 100
-          ? amountRaw / 100
-          : Number(amountRaw);
-
-      return {
-        ...plan,
-        title: name,
-        description: hubDescription || `Plano ${name}`,
-        amount: Number.isFinite(amount) ? amount : plan.amount,
-      };
-    }).filter(Boolean);
+    const plansFromHub = (await HubBillingService.getProductPlans(productId)) as HubPlanItem[];
+    const planos = normalizeHubPlans(plansFromHub, trialDays);
 
     if (planos.length > 0) {
       return res.json({ planos, trialDays });
@@ -415,7 +447,8 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
   }
 
   if (HubBillingService.isConfigured() && parseResult.data.planCode) {
-    const planCode = parseResult.data.planCode.toUpperCase();
+    const planCode = parseResult.data.planCode.trim();
+    const planCodeUpper = planCode.toUpperCase();
     const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || "";
     const hubTrialDays = await getTrialDaysFromHub(hubProductId);
 
@@ -453,21 +486,22 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
         });
       }
 
-      // ── Criar subscription no Hub para ativar o trial do plano selecionado
-      const hubPlanMap: Record<string, { planId: string; amountCents: number }> = {
-        TESTE:        { planId: process.env.HUB_BILLING_PLAN_TESTE || "",        amountCents: 100  },
-        BASICO:       { planId: process.env.HUB_BILLING_PLAN_BASICO || "",       amountCents: 4990 },
-        INTERMEDIARIO:{ planId: process.env.HUB_BILLING_PLAN_INTERMEDIARIO || "", amountCents: 9990 },
-      };
-      const selectedPlan = hubPlanMap[planCode];
+      // ── Criar subscription no Hub para ativar trial/plano escolhido dinamicamente
+      const hubPlans = (await HubBillingService.getProductPlans(hubProductId)) as HubPlanItem[];
+      const activePlans = hubPlans.filter((plan) => isHubPlanActive(plan));
+      const selectedPlan =
+        activePlans.find((plan) => typeof plan.id === "string" && plan.id === planCode) ||
+        activePlans.find((plan) => typeof plan.code === "string" && plan.code.toUpperCase() === planCodeUpper) ||
+        null;
 
-      if (selectedPlan?.planId) {
+      if (selectedPlan && typeof selectedPlan.id === "string" && selectedPlan.id.trim()) {
+        const amountCents = toCentsFromHubAmount(selectedPlan.amount) ?? 0;
         try {
           await HubBillingService.createSubscription({
             customerId,
             productId: hubProductId,
-            planId: selectedPlan.planId,
-            contractedAmount: selectedPlan.amountCents,
+            planId: selectedPlan.id,
+            contractedAmount: amountCents,
           });
 
           // Buscar status atualizado com datas de trial após criar a subscription
@@ -490,6 +524,8 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
           // Non-fatal: o fallback local de trial será usado
           console.warn("[Setup] Falha ao criar subscription no Hub (non-fatal):", subErr instanceof Error ? subErr.message : subErr);
         }
+      } else {
+        console.warn(`[Setup] Plano selecionado não encontrado entre planos ativos do Hub: ${planCode}`);
       }
 
       const hubExpiresAt = trialEndAt || licenseEndAt || null;
@@ -499,7 +535,7 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
       empresaSalva.hub_license_status = accessStatus;
       empresaSalva.hub_license_reason = canAccess ? null : accessStatus;
       empresaSalva.hub_features = features;
-      empresaSalva.plano = (typeof resolved.planCode === "string" ? resolved.planCode : planCode) || planCode;
+      empresaSalva.plano = (typeof resolved.planCode === "string" ? resolved.planCode : planCodeUpper) || planCodeUpper;
       empresaSalva.hub_last_sync = new Date();
       empresaSalva.hub_cache_until = new Date(Date.now() + (canAccess ? 60_000 : 10_000));
 
