@@ -86,6 +86,41 @@ function getHubPlanMap(): Record<string, { planId: string; amountCents: number }
   };
 }
 
+function isTrialLicenseStatus(empresa: Empresa) {
+  const status = (empresa.hub_license_status || "").toLowerCase();
+  const reason = (empresa.hub_license_reason || "").toLowerCase();
+  return status === "trial" || status === "trialing" || reason === "trial_active";
+}
+
+async function resolveHubPlanDynamicByCode(planCode: string, productId: string) {
+  if (!productId) return null;
+  try {
+    const plans = await HubBillingService.getProductPlans(productId);
+    const normalizedCode = planCode.toUpperCase();
+    const found = plans.find((item) => {
+      const code = pickString(item, ["code"]);
+      if (!code) return false;
+      return code.toUpperCase() === normalizedCode;
+    });
+    if (!found) return null;
+    const planId = pickString(found, ["id", "planId"]);
+    const amountRaw = pickNumber(found, ["amount", "value", "amountCents"]);
+    const amount =
+      amountRaw == null
+        ? null
+        : Number.isInteger(amountRaw) && Math.abs(amountRaw) >= 100
+          ? amountRaw / 100
+          : amountRaw;
+    return {
+      planId: planId || null,
+      amount: amount != null && Number.isFinite(amount) ? Number(amount) : null,
+    };
+  } catch (err) {
+    console.warn("[Hub] Falha ao resolver plano dinâmico por código:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
 hubBillingRouter.get("/planos-disponiveis", requireAuth, async (_req: AuthRequest, res) => {
   const map = getHubPlanMap();
   const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
@@ -337,13 +372,16 @@ async function createPlanCheckoutForEmpresa(params: {
 }) {
   const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || params.empresa.hub_product_code || "";
   const hubPlan = getHubPlanMap()[params.planCode.toUpperCase()];
+  const dynamicHubPlan = !hubPlan?.planId
+    ? await resolveHubPlanDynamicByCode(params.planCode, hubProductId)
+    : null;
   const amountCents = Math.round(params.amount * 100);
 
   const orderPayload = {
     customerId: params.empresa.hub_customer_id,
     // Payload mínimo aceito no /orders pela API nova
     productId: hubProductId || undefined,
-    planId: hubPlan?.planId || undefined,
+    planId: hubPlan?.planId || dynamicHubPlan?.planId || undefined,
     amount: amountCents,
     ...(params.orderPayload ?? {}),
   };
@@ -1032,11 +1070,13 @@ hubBillingRouter.post("/planos/alterar", requireAuth, async (req: AuthRequest, r
   });
 
   if (targetPlan === currentPlan) {
-    // Exceção: no trial do plano TESTE, permite gerar cobrança no plano atual
+    // Durante trial, permite gerar cobrança no plano atual
     // para o cliente converter imediatamente sem trocar de card.
-    if (currentPlan === "TESTE") {
+    if (isTrialLicenseStatus(empresa)) {
       try {
-        const fullAmount = PLAN_PRICES[targetPlan] ?? 1;
+        const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || empresa.hub_product_code || "";
+        const dynamicPlan = await resolveHubPlanDynamicByCode(targetPlan, hubProductId);
+        const fullAmount = dynamicPlan?.amount ?? PLAN_PRICES[targetPlan] ?? 1;
         const created = await createPlanCheckoutForEmpresa({
           empresa,
           chargeRepo,

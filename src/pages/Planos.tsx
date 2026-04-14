@@ -42,6 +42,7 @@ interface PlanoCatalogo {
   title: string;
   amount: number;
   active?: boolean;
+  planId?: string | null;
 }
 
 function fmtDate(date?: string | null) {
@@ -440,6 +441,11 @@ const Planos = () => {
 
   const planoAtual = useMemo(() => licenca?.plano || "não definido", [licenca]);
   const planoAtualUpper = useMemo(() => (licenca?.plano || "").toUpperCase(), [licenca?.plano]);
+  const isCurrentLicenseTrial = useMemo(() => {
+    const status = (licenca?.hub_license_status || "").toLowerCase();
+    const reason = (licenca?.hub_license_reason || "").toLowerCase();
+    return status === "trial" || status === "trialing" || reason === "trial_active";
+  }, [licenca?.hub_license_reason, licenca?.hub_license_status]);
   const planoAtualLabel = useMemo(() => {
     if (!planoAtualUpper) return planoAtual;
     const match = (planosDisponiveis ?? []).find((p) => p.code.toUpperCase() === planoAtualUpper);
@@ -615,13 +621,27 @@ const Planos = () => {
                   }
                   disabled={subscriptionMutation.isPending || checkoutMutation.isPending || changePlanMutation.isPending}
                   onClick={() => {
+                    const isCurrentPlan = planoAtualUpper === plano.code;
+                    if (isCurrentPlan && isCurrentLicenseTrial) {
+                      checkoutMutation.mutate({
+                        planCode: plano.code,
+                        amount: plano.amount,
+                        paymentMethod: metodo,
+                        orderPayload: plano.planId ? { planId: plano.planId } : undefined,
+                      });
+                      return;
+                    }
                     subscriptionMutation.mutate({
                       planCode: plano.code,
                       paymentMethod: metodo,
                     });
                   }}
                 >
-                  {subscriptionMutation.isPending ? "Processando..." : "Pagamento"}
+                  {subscriptionMutation.isPending || checkoutMutation.isPending
+                    ? "Processando..."
+                    : (planoAtualUpper === plano.code && isCurrentLicenseTrial)
+                      ? "Pagar e ativar agora"
+                      : "Pagamento"}
                 </Button>
               </CardContent>
             </Card>
