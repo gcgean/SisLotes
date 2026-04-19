@@ -5,8 +5,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MapPin, Phone, User, UserPlus } from "lucide-react";
-import { formatCpfCnpj } from "@/lib/cpfCnpj";
+import { AlertCircle, MapPin, Phone, User, UserPlus } from "lucide-react";
+import { formatCpfCnpj, isValidCpfCnpj } from "@/lib/cpfCnpj";
+import { cn } from "@/lib/utils";
 
 export type ClienteTipo = "f" | "j";
 export type NovoClienteTab = "dados" | "endereco" | "contato";
@@ -30,6 +31,8 @@ export interface NovoClienteFormValues {
   fone_res: string;
   fone_com: string;
 }
+
+type FormErrors = Partial<Record<keyof NovoClienteFormValues, string>>;
 
 const defaultNovoClienteValues: NovoClienteFormValues = {
   tipo: "f",
@@ -60,6 +63,54 @@ const ESTADO_CIVIL_LIST = [
   "União estável",
 ];
 
+// Mapeamento de campo → aba
+const FIELD_TAB: Record<string, NovoClienteTab> = {
+  nome: "dados", cpf: "dados", cnpj: "dados", rg: "dados",
+  razao_social: "dados", estado_civil: "dados", conjuge: "dados", profissao: "dados",
+  endereco: "endereco", bairro: "endereco", cidade: "endereco",
+  estado: "endereco", cep: "endereco", complemento: "endereco",
+  fone_res: "contato", fone_com: "contato",
+};
+
+// Mapeamento de campo → id do input
+const FIELD_INPUT_ID: Record<string, string> = {
+  nome: "nc_nome", cpf: "nc_cpf", cnpj: "nc_cnpj", rg: "nc_rg",
+  razao_social: "nc_razao", conjuge: "nc_conjuge", profissao: "nc_profissao",
+  endereco: "nc_endereco", bairro: "nc_bairro", cidade: "nc_cidade",
+  estado: "nc_estado", cep: "nc_cep", complemento: "nc_complemento",
+  fone_res: "nc_fone_res", fone_com: "nc_fone_com",
+};
+
+function validate(form: NovoClienteFormValues): FormErrors {
+  const errors: FormErrors = {};
+
+  if (!form.nome.trim()) {
+    errors.nome = "Nome é obrigatório";
+  }
+
+  if (form.tipo === "f") {
+    if (!form.cpf.trim()) {
+      errors.cpf = "CPF é obrigatório para pessoa física";
+    } else if (!isValidCpfCnpj(form.cpf)) {
+      errors.cpf = "CPF inválido";
+    }
+  }
+
+  if (form.tipo === "j") {
+    if (!form.cnpj.trim()) {
+      errors.cnpj = "CNPJ é obrigatório para pessoa jurídica";
+    } else if (!isValidCpfCnpj(form.cnpj)) {
+      errors.cnpj = "CNPJ inválido";
+    }
+  }
+
+  return errors;
+}
+
+function hasTabError(errors: FormErrors, tab: NovoClienteTab): boolean {
+  return Object.keys(errors).some((field) => FIELD_TAB[field] === tab);
+}
+
 interface NovoClienteDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -81,18 +132,45 @@ export function NovoClienteDialog({
 }: NovoClienteDialogProps) {
   const [tab, setTab] = useState<NovoClienteTab>("dados");
   const [form, setForm] = useState<NovoClienteFormValues>(defaultNovoClienteValues);
+  const [errors, setErrors] = useState<FormErrors>({});
 
   useEffect(() => {
     if (open) {
       setTab("dados");
       setForm(defaultNovoClienteValues);
+      setErrors({});
     }
   }, [open]);
 
-  const isValid = form.nome.trim().length > 0;
+  function clearError(field: keyof NovoClienteFormValues) {
+    if (errors[field]) {
+      setErrors((prev) => { const next = { ...prev }; delete next[field]; return next; });
+    }
+  }
 
   async function handleSubmit() {
-    if (!isValid || isSubmitting) return;
+    if (isSubmitting) return;
+
+    const validationErrors = validate(form);
+    setErrors(validationErrors);
+
+    if (Object.keys(validationErrors).length > 0) {
+      // Navega para a primeira aba com erro
+      const firstField = Object.keys(validationErrors)[0] as keyof NovoClienteFormValues;
+      const targetTab = FIELD_TAB[firstField] ?? "dados";
+      const targetId = FIELD_INPUT_ID[firstField];
+
+      setTab(targetTab);
+
+      // Foca o campo após a aba renderizar
+      if (targetId) {
+        setTimeout(() => {
+          document.getElementById(targetId)?.focus();
+        }, 60);
+      }
+      return;
+    }
+
     await onSubmit({
       ...form,
       nome: form.nome.trim(),
@@ -114,6 +192,8 @@ export function NovoClienteDialog({
     });
   }
 
+  const errorInput = "border-destructive focus-visible:ring-destructive";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl">
@@ -130,7 +210,10 @@ export function NovoClienteDialog({
             <Label htmlFor="novo_cliente_tipo">Tipo de cliente</Label>
             <Select
               value={form.tipo}
-              onValueChange={(value) => setForm((prev) => ({ ...prev, tipo: value as ClienteTipo }))}
+              onValueChange={(value) => {
+                setForm((prev) => ({ ...prev, tipo: value as ClienteTipo }));
+                setErrors({});
+              }}
             >
               <SelectTrigger id="novo_cliente_tipo">
                 <SelectValue />
@@ -147,54 +230,85 @@ export function NovoClienteDialog({
               <TabsTrigger value="dados" className="gap-1.5">
                 <User className="h-3.5 w-3.5" />
                 {form.tipo === "j" ? "Dados da Empresa" : "Dados Pessoais"}
+                {hasTabError(errors, "dados") && (
+                  <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                )}
               </TabsTrigger>
               <TabsTrigger value="endereco" className="gap-1.5">
                 <MapPin className="h-3.5 w-3.5" />
                 Endereço
+                {hasTabError(errors, "endereco") && (
+                  <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                )}
               </TabsTrigger>
               <TabsTrigger value="contato" className="gap-1.5">
                 <Phone className="h-3.5 w-3.5" />
                 Contato
+                {hasTabError(errors, "contato") && (
+                  <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                )}
               </TabsTrigger>
             </TabsList>
 
             <TabsContent value="dados" className="pt-4 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="nc_nome">{form.tipo === "j" ? "Nome do responsável *" : "Nome completo *"}</Label>
+              {/* Nome */}
+              <div className="space-y-1">
+                <Label htmlFor="nc_nome">
+                  {form.tipo === "j" ? "Nome do responsável" : "Nome completo"}
+                  <span className="text-destructive ml-1">*</span>
+                </Label>
                 <Input
                   id="nc_nome"
                   value={form.nome}
-                  onChange={(e) => setForm((prev) => ({ ...prev, nome: e.target.value }))}
+                  onChange={(e) => { setForm((prev) => ({ ...prev, nome: e.target.value })); clearError("nome"); }}
                   placeholder="Digite o nome completo"
                   autoFocus
+                  className={cn(errors.nome && errorInput)}
+                  aria-invalid={!!errors.nome}
                 />
+                {errors.nome && (
+                  <p className="text-xs text-destructive flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> {errors.nome}
+                  </p>
+                )}
               </div>
 
               {form.tipo === "f" ? (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="nc_cpf">CPF</Label>
+                    {/* CPF */}
+                    <div className="space-y-1">
+                      <Label htmlFor="nc_cpf">
+                        CPF <span className="text-destructive">*</span>
+                      </Label>
                       <Input
                         id="nc_cpf"
                         value={form.cpf}
-                        onChange={(e) => setForm((prev) => ({ ...prev, cpf: formatCpfCnpj(e.target.value) }))}
+                        onChange={(e) => { setForm((prev) => ({ ...prev, cpf: formatCpfCnpj(e.target.value) })); clearError("cpf"); }}
                         placeholder="000.000.000-00"
+                        className={cn(errors.cpf && errorInput)}
+                        aria-invalid={!!errors.cpf}
                       />
+                      {errors.cpf && (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> {errors.cpf}
+                        </p>
+                      )}
                     </div>
-                    <div className="space-y-2">
+                    {/* RG */}
+                    <div className="space-y-1">
                       <Label htmlFor="nc_rg">RG</Label>
                       <Input
                         id="nc_rg"
                         value={form.rg}
-                        onChange={(e) => setForm((prev) => ({ ...prev, rg: e.target.value }))}
+                        onChange={(e) => { setForm((prev) => ({ ...prev, rg: e.target.value })); clearError("rg"); }}
                         placeholder="0000000"
                       />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="nc_estado_civil">Estado civil</Label>
                       <Select
                         value={form.estado_civil || "nao-informado"}
@@ -218,7 +332,7 @@ export function NovoClienteDialog({
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
+                    <div className="space-y-1">
                       <Label htmlFor="nc_conjuge">Cônjuge / Companheiro(a)</Label>
                       <Input
                         id="nc_conjuge"
@@ -229,7 +343,7 @@ export function NovoClienteDialog({
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-1">
                     <Label htmlFor="nc_profissao">Profissão</Label>
                     <Input
                       id="nc_profissao"
@@ -242,16 +356,27 @@ export function NovoClienteDialog({
               ) : (
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="nc_cnpj">CNPJ</Label>
+                    {/* CNPJ */}
+                    <div className="space-y-1">
+                      <Label htmlFor="nc_cnpj">
+                        CNPJ <span className="text-destructive">*</span>
+                      </Label>
                       <Input
                         id="nc_cnpj"
                         value={form.cnpj}
-                        onChange={(e) => setForm((prev) => ({ ...prev, cnpj: formatCpfCnpj(e.target.value) }))}
+                        onChange={(e) => { setForm((prev) => ({ ...prev, cnpj: formatCpfCnpj(e.target.value) })); clearError("cnpj"); }}
                         placeholder="00.000.000/0000-00"
+                        className={cn(errors.cnpj && errorInput)}
+                        aria-invalid={!!errors.cnpj}
                       />
+                      {errors.cnpj && (
+                        <p className="text-xs text-destructive flex items-center gap-1">
+                          <AlertCircle className="h-3 w-3" /> {errors.cnpj}
+                        </p>
+                      )}
                     </div>
-                    <div className="space-y-2">
+                    {/* Razão social */}
+                    <div className="space-y-1">
                       <Label htmlFor="nc_razao">Razão social</Label>
                       <Input
                         id="nc_razao"
@@ -266,7 +391,7 @@ export function NovoClienteDialog({
             </TabsContent>
 
             <TabsContent value="endereco" className="pt-4 space-y-4">
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label htmlFor="nc_endereco">Endereço</Label>
                 <Input
                   id="nc_endereco"
@@ -276,7 +401,7 @@ export function NovoClienteDialog({
                 />
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="nc_bairro">Bairro</Label>
                   <Input
                     id="nc_bairro"
@@ -285,7 +410,7 @@ export function NovoClienteDialog({
                     placeholder="Bairro"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="nc_complemento">Complemento</Label>
                   <Input
                     id="nc_complemento"
@@ -296,7 +421,7 @@ export function NovoClienteDialog({
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2 md:col-span-2">
+                <div className="space-y-1 md:col-span-2">
                   <Label htmlFor="nc_cidade">Cidade</Label>
                   <Input
                     id="nc_cidade"
@@ -305,7 +430,7 @@ export function NovoClienteDialog({
                     placeholder="Cidade"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="nc_estado">UF</Label>
                   <Input
                     id="nc_estado"
@@ -316,7 +441,7 @@ export function NovoClienteDialog({
                   />
                 </div>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <Label htmlFor="nc_cep">CEP</Label>
                 <Input
                   id="nc_cep"
@@ -330,7 +455,7 @@ export function NovoClienteDialog({
 
             <TabsContent value="contato" className="pt-4 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="nc_fone_res">Telefone residencial</Label>
                   <Input
                     id="nc_fone_res"
@@ -339,7 +464,7 @@ export function NovoClienteDialog({
                     placeholder="(00) 0000-0000"
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   <Label htmlFor="nc_fone_com">
                     {form.tipo === "j" ? "Telefone comercial / Celular" : "Telefone comercial"}
                   </Label>
@@ -359,7 +484,7 @@ export function NovoClienteDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={!isValid || isSubmitting}>
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
             {isSubmitting ? "Salvando..." : submitLabel}
           </Button>
         </DialogFooter>
