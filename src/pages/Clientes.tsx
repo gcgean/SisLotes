@@ -332,11 +332,16 @@ const Clientes = () => {
       toast({ title: "Cliente cadastrado com sucesso" });
     },
     onError: (error) => {
-      toast({
-        title: "Erro ao cadastrar cliente",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
-        variant: "destructive",
-      });
+      const msg = error instanceof Error ? error.message : "Erro desconhecido";
+      // Erros de campo (CPF, CNPJ) são exibidos inline pelo NovoClienteDialog — não duplica o toast
+      const isFieldError = /cpf|cnpj|nome/i.test(msg);
+      if (!isFieldError) {
+        toast({
+          title: "Erro ao cadastrar cliente",
+          description: msg,
+          variant: "destructive",
+        });
+      }
     },
   });
 

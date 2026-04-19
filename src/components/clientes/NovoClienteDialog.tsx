@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertCircle, MapPin, Phone, User, UserPlus } from "lucide-react";
 import { formatCpfCnpj, isValidCpfCnpj } from "@/lib/cpfCnpj";
 import { cn } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
 
 export type ClienteTipo = "f" | "j";
 export type NovoClienteTab = "dados" | "endereco" | "contato";
@@ -148,6 +149,13 @@ export function NovoClienteDialog({
     }
   }
 
+  function focusField(field: keyof NovoClienteFormValues) {
+    const targetTab = FIELD_TAB[field] ?? "dados";
+    const targetId = FIELD_INPUT_ID[field];
+    setTab(targetTab);
+    if (targetId) setTimeout(() => document.getElementById(targetId)?.focus(), 60);
+  }
+
   async function handleSubmit() {
     if (isSubmitting) return;
 
@@ -155,41 +163,50 @@ export function NovoClienteDialog({
     setErrors(validationErrors);
 
     if (Object.keys(validationErrors).length > 0) {
-      // Navega para a primeira aba com erro
       const firstField = Object.keys(validationErrors)[0] as keyof NovoClienteFormValues;
-      const targetTab = FIELD_TAB[firstField] ?? "dados";
-      const targetId = FIELD_INPUT_ID[firstField];
-
-      setTab(targetTab);
-
-      // Foca o campo após a aba renderizar
-      if (targetId) {
-        setTimeout(() => {
-          document.getElementById(targetId)?.focus();
-        }, 60);
-      }
+      focusField(firstField);
       return;
     }
 
-    await onSubmit({
-      ...form,
-      nome: form.nome.trim(),
-      razao_social: form.razao_social.trim(),
-      cpf: form.cpf.trim(),
-      cnpj: form.cnpj.trim(),
-      rg: form.rg.trim(),
-      estado_civil: form.estado_civil.trim(),
-      conjuge: form.conjuge.trim(),
-      profissao: form.profissao.trim(),
-      endereco: form.endereco.trim(),
-      bairro: form.bairro.trim(),
-      cidade: form.cidade.trim(),
-      estado: form.estado.trim(),
-      cep: form.cep.trim(),
-      complemento: form.complemento.trim(),
-      fone_res: form.fone_res.trim(),
-      fone_com: form.fone_com.trim(),
-    });
+    try {
+      await onSubmit({
+        ...form,
+        nome: form.nome.trim(),
+        razao_social: form.razao_social.trim(),
+        cpf: form.cpf.trim(),
+        cnpj: form.cnpj.trim(),
+        rg: form.rg.trim(),
+        estado_civil: form.estado_civil.trim(),
+        conjuge: form.conjuge.trim(),
+        profissao: form.profissao.trim(),
+        endereco: form.endereco.trim(),
+        bairro: form.bairro.trim(),
+        cidade: form.cidade.trim(),
+        estado: form.estado.trim(),
+        cep: form.cep.trim(),
+        complemento: form.complemento.trim(),
+        fone_res: form.fone_res.trim(),
+        fone_com: form.fone_com.trim(),
+      });
+    } catch (error) {
+      // Captura erros retornados pelo backend e exibe inline no campo correto
+      const msg = error instanceof Error ? error.message : String(error);
+      const msgLower = msg.toLowerCase();
+
+      if (msgLower.includes("cpf")) {
+        setErrors({ cpf: msg });
+        focusField("cpf");
+      } else if (msgLower.includes("cnpj")) {
+        setErrors({ cnpj: msg });
+        focusField("cnpj");
+      } else if (msgLower.includes("nome")) {
+        setErrors({ nome: msg });
+        focusField("nome");
+      } else {
+        // Erro genérico sem campo identificado — mostra toast
+        toast({ title: "Erro ao cadastrar cliente", description: msg, variant: "destructive" });
+      }
+    }
   }
 
   const errorInput = "border-destructive focus-visible:ring-destructive";

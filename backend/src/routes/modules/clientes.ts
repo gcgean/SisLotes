@@ -169,15 +169,16 @@ clientesRouter.post("/", requireAuth, requirePermission("clientes_cadastrar"), a
     if (typeof error === "object" && error && "message" in error && typeof (error as { message?: unknown }).message === "string") {
       const message = (error as { message: string }).message;
 
-      if (message.includes("clientes_cpf_key")) {
+      if (message.includes("idx_clientes_cpf") || message.includes("clientes_cpf")) {
         return res.status(400).json({ error: "CPF já cadastrado" });
       }
 
-      if (message.includes("clientes_cnpj_key")) {
+      if (message.includes("idx_clientes_cnpj") || message.includes("clientes_cnpj")) {
         return res.status(400).json({ error: "CNPJ já cadastrado" });
       }
     }
 
+    console.error("Erro ao salvar cliente (POST):", error);
     return res.status(500).json({ error: "Erro ao salvar cliente" });
   }
 });
@@ -224,15 +225,16 @@ clientesRouter.put("/:id", requireAuth, requirePermission("clientes_alterar"), a
     if (typeof error === "object" && error && "message" in error && typeof (error as { message?: unknown }).message === "string") {
       const message = (error as { message: string }).message;
 
-      if (message.includes("clientes_cpf_key")) {
+      if (message.includes("idx_clientes_cpf") || message.includes("clientes_cpf")) {
         return res.status(400).json({ error: "CPF já cadastrado" });
       }
 
-      if (message.includes("clientes_cnpj_key")) {
+      if (message.includes("idx_clientes_cnpj") || message.includes("clientes_cnpj")) {
         return res.status(400).json({ error: "CNPJ já cadastrado" });
       }
     }
 
+    console.error("Erro ao salvar cliente (PUT):", error);
     return res.status(500).json({ error: "Erro ao salvar cliente" });
   }
 });
