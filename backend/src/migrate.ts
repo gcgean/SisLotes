@@ -17,7 +17,7 @@ async function migrate() {
 
   // Conexão PostgreSQL (Destino)
   const pgClient = new Client({
-    host: process.env.PG_MIG_HOST ?? "localhost",
+    host: process.env.PG_MIG_HOST ?? "127.0.0.1",
     port: Number(process.env.PG_MIG_PORT ?? 5433),
     user: process.env.PG_MIG_USER ?? "sislote",
     password: process.env.PG_MIG_PASSWORD ?? "sislote",
