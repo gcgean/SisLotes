@@ -345,9 +345,13 @@ export class HubBillingService {
       syncedAt: new Date().toISOString(),
     });
 
+    // Só atualiza empresa.plano com valores canônicos (TESTE/BASICO/INTERMEDIARIO).
+    // Nomes do Hub (ex: "PLANO PRO") são ignorados para não quebrar o feature matrix local.
+    const CANONICAL_PLANS = new Set(["TESTE", "BASICO", "INTERMEDIARIO"]);
     const featurePlan = access.features?.plan ?? (access as unknown as Record<string, unknown>).planCode;
-    if (typeof featurePlan === "string" && featurePlan.trim()) {
-      empresa.plano = featurePlan.trim();
+    if (typeof featurePlan === "string") {
+      const upper = featurePlan.trim().toUpperCase();
+      if (CANONICAL_PLANS.has(upper)) empresa.plano = upper;
     }
 
     empresa.hub_features = getEffectiveFeatures(empresa.plano, empresa.hub_features);

@@ -49,6 +49,9 @@ function normalizePlan(plan?: string | null): LicensePlanCode | null {
   if (normalized === "TESTE" || normalized === "BASICO" || normalized === "INTERMEDIARIO") {
     return normalized;
   }
+  // Planos desconhecidos (ex: nomes vindos do Hub como "PLANO PRO") recebem features do TESTE
+  // para não bloquear módulos em produção durante o período trial
+  if (normalized) return "TESTE";
   return null;
 }
 

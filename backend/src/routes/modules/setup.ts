@@ -535,7 +535,8 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
       empresaSalva.hub_license_status = accessStatus;
       empresaSalva.hub_license_reason = canAccess ? null : accessStatus;
       empresaSalva.hub_features = features;
-      empresaSalva.plano = (typeof resolved.planCode === "string" ? resolved.planCode : planCodeUpper) || planCodeUpper;
+      // Sempre preservar o código local (TESTE/BASICO/INTERMEDIARIO) — não usar o nome do Hub
+      empresaSalva.plano = planCodeUpper;
       empresaSalva.hub_last_sync = new Date();
       empresaSalva.hub_cache_until = new Date(Date.now() + (canAccess ? 60_000 : 10_000));
 
