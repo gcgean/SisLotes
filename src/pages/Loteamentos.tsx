@@ -569,14 +569,14 @@ const Loteamentos = () => {
                 </div>
               </div>
 
-              <DialogFooter className="pt-1 pb-1">
+              <div className="flex justify-end gap-2 py-1">
                 <Button variant="outline" type="button" onClick={() => setDialogAberto(false)}>
                   Cancelar
                 </Button>
                 <Button type="submit" disabled={criarLoteamentoMutation.isPending || editarLoteamentoMutation.isPending}>
                   {modoDialog === "novo" ? "Cadastrar" : "Atualizar"}
                 </Button>
-              </DialogFooter>
+              </div>
 
               <div className="space-y-4 border p-4 rounded-md">
                 <h3 className="font-medium text-sm text-muted-foreground">Dados do Proprietário</h3>
