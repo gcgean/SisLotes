@@ -191,7 +191,7 @@ const Vendas = () => {
   const [valorParcelaVenda, setValorParcelaVenda] = useState("");
 
   // ── success after create
-  const [vendaCriada, setVendaCriada] = useState<{ id_venda: number; pagamentos: Pagamento[] } | null>(null);
+  const [vendaCriada, setVendaCriada] = useState<VendaDetalhe | null>(null);
   const [vendaCriadaCliente, setVendaCriadaCliente] = useState<{ id: number; nome: string } | null>(null);
   const [dialogSucessoAberto, setDialogSucessoAberto] = useState(false);
 
@@ -757,19 +757,106 @@ const Vendas = () => {
 
   function imprimirCarne() {
     if (!vendaCriada) return;
-    const win = window.open("", "", "width=800,height=600");
+    const win = window.open("", "", "width=900,height=700");
     if (!win) {
       toast({ title: "Bloqueador de pop-ups ativado", variant: "destructive" });
       return;
     }
 
-    const nomeEmpresa = "IMOBILIÁRIA LEIDE";
-    const telefone = "(88) 98765-4321";
-    const cidade = "Limoeiro do Norte - CE";
+    const nomeEmpresa = empresaConfig?.nome_fantasia || "EMPRESA";
+    const telefone = empresaConfig?.telefone || "";
+    const enderecoEmpresa = [
+      empresaConfig?.endereco,
+      empresaConfig?.bairro,
+      [empresaConfig?.cidade, empresaConfig?.estado].filter(Boolean).join(" - "),
+    ].filter(Boolean).join(", ");
+    const cnpjEmpresa = empresaConfig?.cnpj || "";
 
     const clienteNome = vendaCriada.cliente?.nome || "indefinido";
-    const loteInfo = vendaCriada.lote ? `Quadra ${vendaCriada.lote.quadra}, Lote ${vendaCriada.lote.lote}` : "indefinido";
+    const quadraNum = vendaCriada.lote?.quadra ?? "";
+    const loteNum = vendaCriada.lote?.lote ?? "";
     const loteamentoNome = vendaCriada.lote?.loteamento?.nome || "indefinido";
+    const loteamentoCidade = [
+      vendaCriada.lote?.loteamento?.cidade,
+      vendaCriada.lote?.loteamento?.estado,
+    ].filter(Boolean).join(" - ");
+
+    const jurosPct = Number(vendaCriada.porcentagem) || 1;
+    const instrucoes = `Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.`;
+
+    const parcelas = [...(vendaCriada.pagamentos ?? [])].sort((a, b) => a.numero_parcela - b.numero_parcela);
+    const totalParcelas = parcelas.length;
+
+    function buildCarne(p: typeof parcelas[0], via: string): string {
+      const docNum = `${String(vendaCriada!.id_venda).padStart(6, "0")}${String(p.numero_parcela).padStart(2, "0")}`;
+      return `
+        <div class="carne">
+          <div class="header">
+            <div class="empresa-nome">${nomeEmpresa}</div>
+            ${cnpjEmpresa ? `<div class="empresa-sub">CNPJ: ${cnpjEmpresa}</div>` : ""}
+            ${enderecoEmpresa ? `<div class="empresa-sub">${enderecoEmpresa}${telefone ? ` · Tel: ${telefone}` : ""}</div>` : ""}
+            <div class="via-label">${via}</div>
+          </div>
+
+          <div class="field-row">
+            <div class="field full">
+              <span class="flabel">CLIENTE</span>
+              <span class="fvalue">${clienteNome}</span>
+            </div>
+          </div>
+
+          <div class="field-row grid3">
+            <div class="field">
+              <span class="flabel">LOTE</span>
+              <span class="fvalue">${loteNum} — ${loteamentoNome}</span>
+            </div>
+            <div class="field">
+              <span class="flabel">QUADRA</span>
+              <span class="fvalue">${quadraNum}</span>
+            </div>
+            <div class="field">
+              <span class="flabel">PARCELA</span>
+              <span class="fvalue bold">${String(p.numero_parcela).padStart(2, "0")} / ${String(totalParcelas).padStart(2, "0")}</span>
+            </div>
+          </div>
+
+          <div class="field-row grid3">
+            <div class="field">
+              <span class="flabel">DOCUMENTO</span>
+              <span class="fvalue">${docNum}</span>
+            </div>
+            <div class="field">
+              <span class="flabel">VENCIMENTO</span>
+              <span class="fvalue">${fmtDate(p.vencimento)}</span>
+            </div>
+            <div class="field">
+              <span class="flabel">VALOR</span>
+              <span class="fvalue bold">${fmtCurrency(p.valor)}</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field full">
+              <span class="flabel">ENDEREÇO DO LOTEAMENTO</span>
+              <span class="fvalue">${loteamentoCidade || loteamentoNome}</span>
+            </div>
+          </div>
+
+          <div class="instrucoes">${instrucoes}</div>
+
+          <div class="calc-section">
+            <div class="calc-row"><span class="calc-label">(+) Juros</span><span class="calc-line"></span></div>
+            <div class="calc-row"><span class="calc-label">(+) Multa</span><span class="calc-line"></span></div>
+            <div class="calc-row total-row"><span class="calc-label bold">(=) Valor Cobrado</span><span class="calc-line"></span></div>
+          </div>
+
+          <div class="barcode-area">
+            <div class="barcode">*${docNum}*</div>
+            <div class="barcode-num">${docNum}</div>
+          </div>
+        </div>
+      `;
+    }
 
     const html = `
       <!DOCTYPE html>
@@ -777,109 +864,50 @@ const Vendas = () => {
       <head>
         <meta charset="UTF-8">
         <title>Carnê - Venda #${vendaCriada.id_venda}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 5px; }
-          .carnes-container { display: flex; flex-direction: column; gap: 3px; }
-          .carne { border: 1px solid #333; padding: 8px; background: white; font-size: 9px; page-break-inside: avoid; }
-
-          /* Header */
-          .header { border-bottom: 1px solid #333; margin-bottom: 5px; padding-bottom: 3px; text-align: center; }
-          .header-empresa { font-size: 10px; font-weight: bold; }
-          .header-info { font-size: 7px; color: #333; }
-
-          /* Campos */
-          .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
-          .row-full { grid-column: 1 / -1; }
-          .field { display: flex; flex-direction: column; }
-          .field-label { font-weight: bold; font-size: 7px; color: #555; }
-          .field-value { font-size: 8px; margin-top: 1px; }
-
-          /* Divider */
-          .divider { border-bottom: 1px solid #ccc; margin: 4px 0; }
-
-          /* Código de barras */
-          .barcode { text-align: center; margin: 4px 0; font-family: 'Courier New', monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px; }
-
-          /* Assinatura */
-          .signature { margin-top: 6px; text-align: center; }
-          .sig-line { border-top: 1px solid #000; margin-top: 2px; width: 100%; height: 15px; }
-          .sig-label { font-size: 7px; margin-top: 1px; }
-
-          @media print {
-            body { padding: 0; background: white; }
-            .carne { page-break-inside: avoid; margin: 0; }
-          }
+          body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 8px; }
+          .row-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; page-break-inside: avoid; }
+          .carne { border: 1px dashed #555; padding: 7px 8px; background: white; font-size: 8px; }
+          .header { border-bottom: 1.5px solid #222; margin-bottom: 5px; padding-bottom: 4px; text-align: center; }
+          .empresa-nome { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+          .empresa-sub { font-size: 7px; color: #444; margin-top: 1px; }
+          .via-label { font-size: 7px; font-style: italic; color: #666; margin-top: 3px; }
+          .field-row { display: flex; gap: 4px; margin-bottom: 4px; }
+          .field-row.grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 4px; margin-bottom: 4px; }
+          .field { display: flex; flex-direction: column; min-width: 0; }
+          .field.full { flex: 1; }
+          .flabel { font-weight: bold; font-size: 6.5px; color: #555; text-transform: uppercase; margin-bottom: 1px; }
+          .fvalue { font-size: 8px; border-bottom: 1px solid #aaa; padding-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .fvalue.bold { font-weight: bold; font-size: 9px; }
+          .instrucoes { font-size: 6.5px; color: #555; border: 0.5px solid #ccc; padding: 3px 5px; margin: 4px 0; line-height: 1.4; }
+          .calc-section { margin: 4px 0; }
+          .calc-row { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 3px; }
+          .calc-label { font-size: 7px; white-space: nowrap; min-width: 90px; }
+          .calc-label.bold { font-weight: bold; }
+          .calc-line { flex: 1; border-bottom: 1px solid #333; height: 10px; }
+          .total-row .calc-line { border-bottom: 2px solid #000; }
+          .barcode-area { text-align: center; margin-top: 5px; border-top: 1px solid #ddd; padding-top: 4px; }
+          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; line-height: 1; }
+          .barcode-num { font-size: 7px; letter-spacing: 2px; margin-top: 1px; font-family: 'Courier New', monospace; }
+          @media print { body { padding: 4px; } .row-pair { page-break-inside: avoid; } }
         </style>
       </head>
       <body>
-        <div class="carnes-container">
-          ${(vendaCriada.pagamentos ?? [])
-            .sort((a, b) => a.numero_parcela - b.numero_parcela)
-            .map((p) => `
-              <div class="carne">
-                <div class="header">
-                  <div class="header-empresa">${nomeEmpresa}</div>
-                  <div class="header-info">${cidade} • Fone: ${telefone}</div>
-                  <div class="header-info" style="margin-top: 2px;">CARNÊ DE COBRANÇA</div>
-                </div>
-
-                <div class="row">
-                  <div class="field">
-                    <span class="field-label">Parcela</span>
-                    <span class="field-value">${String(p.numero_parcela).padStart(2, "0")}</span>
-                  </div>
-                  <div class="field">
-                    <span class="field-label">Vencimento</span>
-                    <span class="field-value">${fmtDate(p.vencimento)}</span>
-                  </div>
-                </div>
-
-                <div class="row row-full">
-                  <div class="field">
-                    <span class="field-label">Valor</span>
-                    <span class="field-value" style="font-weight: bold; font-size: 9px;">${fmtCurrency(p.valor)}</span>
-                  </div>
-                </div>
-
-                <div class="row row-full">
-                  <div class="field">
-                    <span class="field-label">Cliente</span>
-                    <span class="field-value">${clienteNome}</span>
-                  </div>
-                </div>
-
-                <div class="row row-full">
-                  <div class="field">
-                    <span class="field-label">Lote</span>
-                    <span class="field-value">${loteInfo} · ${loteamentoNome}</span>
-                  </div>
-                </div>
-
-                <div class="divider"></div>
-
-                <div class="row">
-                  <div class="field">
-                    <span class="field-label">Data Pgto</span>
-                    <span class="field-value">___/___/_____</span>
-                  </div>
-                  <div class="field">
-                    <span class="field-label">Valor Pago</span>
-                    <span class="field-value">____________</span>
-                  </div>
-                </div>
-
-                <div class="signature">
-                  <span class="field-label">Assinatura</span>
-                  <div class="sig-line"></div>
-                </div>
-
-                <div class="barcode">█▀█ ${String(p.numero_parcela).padStart(2, "0")}${vendaCriada.id_venda} █▀█</div>
-              </div>
-            `).join("")}
-        </div>
+        ${parcelas.map((p) => `
+          <div class="row-pair">
+            ${buildCarne(p, "1ª Via — Cliente")}
+            ${buildCarne(p, "2ª Via — Empresa")}
+          </div>
+        `).join("")}
         <script>
-          setTimeout(() => { window.print(); }, 100);
+          if (document.fonts) {
+            document.fonts.ready.then(() => setTimeout(() => window.print(), 150));
+          } else {
+            setTimeout(() => window.print(), 600);
+          }
         </script>
       </body>
       </html>
@@ -890,7 +918,7 @@ const Vendas = () => {
 
   function imprimirCarneDetalhe() {
     if (!vendaDetalhe || !vendaDetalheInfo) return;
-    const win = window.open("", "", "width=800,height=600");
+    const win = window.open("", "", "width=900,height=700");
     if (!win) {
       toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
       return;
@@ -898,13 +926,97 @@ const Vendas = () => {
 
     const nomeEmpresa = empresaConfig?.nome_fantasia || "EMPRESA";
     const telefone = empresaConfig?.telefone || "";
-    const cidade = [empresaConfig?.cidade, empresaConfig?.estado].filter(Boolean).join(" - ");
+    const enderecoEmpresa = [
+      empresaConfig?.endereco,
+      empresaConfig?.bairro,
+      [empresaConfig?.cidade, empresaConfig?.estado].filter(Boolean).join(" - "),
+    ].filter(Boolean).join(", ");
+    const cnpjEmpresa = empresaConfig?.cnpj || "";
 
     const clienteNome = vendaDetalheInfo.cliente;
-    const loteInfo = vendaDetalheInfo.lote;
     const loteamentoNome = vendaDetalheInfo.loteamento;
+    const quadraNum = vendaDetalhe.lote?.quadra ?? "";
+    const loteNum = vendaDetalhe.lote?.lote ?? "";
+    const totalParcelas = vendaDetalhe.pagamentos.length;
+
+    const jurosPct = Number(vendaDetalheInfo.porcentagem) || 1;
+    const instrucoes = `Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.`;
 
     const parcelas = [...vendaDetalhe.pagamentos].sort((a, b) => a.numero_parcela - b.numero_parcela);
+
+    function buildCarne(p: typeof parcelas[0], via: string): string {
+      const docNum = `${String(vendaDetalheInfo!.id_venda).padStart(6, "0")}${String(p.numero_parcela).padStart(2, "0")}`;
+      const isPago = p.situacao === "pago";
+      return `
+        <div class="carne${isPago ? " pago" : ""}">
+          <div class="header">
+            <div class="empresa-nome">${nomeEmpresa}</div>
+            ${cnpjEmpresa ? `<div class="empresa-sub">CNPJ: ${cnpjEmpresa}</div>` : ""}
+            ${enderecoEmpresa ? `<div class="empresa-sub">${enderecoEmpresa}${telefone ? ` · Tel: ${telefone}` : ""}</div>` : ""}
+            <div class="via-label">${via}</div>
+          </div>
+
+          ${isPago ? `<div class="pago-overlay">PAGO</div>` : ""}
+
+          <div class="field-row">
+            <div class="field full">
+              <span class="flabel">CLIENTE</span>
+              <span class="fvalue">${clienteNome}</span>
+            </div>
+          </div>
+
+          <div class="field-row grid3">
+            <div class="field">
+              <span class="flabel">LOTE</span>
+              <span class="fvalue">${loteNum} — ${loteamentoNome}</span>
+            </div>
+            <div class="field">
+              <span class="flabel">QUADRA</span>
+              <span class="fvalue">${quadraNum}</span>
+            </div>
+            <div class="field">
+              <span class="flabel">PARCELA</span>
+              <span class="fvalue bold">${String(p.numero_parcela).padStart(2, "0")} / ${String(totalParcelas).padStart(2, "0")}</span>
+            </div>
+          </div>
+
+          <div class="field-row grid3">
+            <div class="field">
+              <span class="flabel">DOCUMENTO</span>
+              <span class="fvalue">${docNum}</span>
+            </div>
+            <div class="field">
+              <span class="flabel">VENCIMENTO</span>
+              <span class="fvalue">${fmtDate(p.vencimento)}</span>
+            </div>
+            <div class="field">
+              <span class="flabel">VALOR</span>
+              <span class="fvalue bold">${fmtCurrency(p.valor)}</span>
+            </div>
+          </div>
+
+          <div class="field-row">
+            <div class="field full">
+              <span class="flabel">ENDEREÇO DO LOTEAMENTO</span>
+              <span class="fvalue">${vendaDetalhe!.lote?.loteamento?.cidade ? [vendaDetalhe!.lote!.loteamento!.cidade, vendaDetalhe!.lote!.loteamento!.estado].filter(Boolean).join(" - ") : loteamentoNome}</span>
+            </div>
+          </div>
+
+          <div class="instrucoes">${instrucoes}</div>
+
+          <div class="calc-section">
+            <div class="calc-row"><span class="calc-label">(+) Juros</span><span class="calc-line"></span></div>
+            <div class="calc-row"><span class="calc-label">(+) Multa</span><span class="calc-line"></span></div>
+            <div class="calc-row total-row"><span class="calc-label bold">(=) Valor Cobrado</span><span class="calc-line"></span></div>
+          </div>
+
+          <div class="barcode-area">
+            <div class="barcode">*${docNum}*</div>
+            <div class="barcode-num">${docNum}</div>
+          </div>
+        </div>
+      `;
+    }
 
     const html = `
       <!DOCTYPE html>
@@ -912,97 +1024,104 @@ const Vendas = () => {
       <head>
         <meta charset="UTF-8">
         <title>Carnê - Venda #${vendaDetalheInfo.id_venda}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 5px; }
-          .carnes-container { display: flex; flex-direction: column; gap: 3px; }
-          .carne { border: 1px solid #333; padding: 8px; background: white; font-size: 9px; page-break-inside: avoid; }
-          .header { border-bottom: 1px solid #333; margin-bottom: 5px; padding-bottom: 3px; text-align: center; }
-          .header-empresa { font-size: 10px; font-weight: bold; }
-          .header-info { font-size: 7px; color: #333; }
-          .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
-          .row-full { display: block; margin-bottom: 4px; }
-          .field { display: flex; flex-direction: column; }
-          .field-label { font-weight: bold; font-size: 7px; color: #555; text-transform: uppercase; }
-          .field-value { font-size: 8px; margin-top: 1px; }
-          .divider { border-bottom: 1px solid #ccc; margin: 4px 0; }
-          .barcode { text-align: center; margin: 4px 0; font-family: 'Courier New', monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px; }
-          .signature { margin-top: 6px; text-align: center; }
-          .sig-line { border-top: 1px solid #000; margin-top: 2px; width: 100%; height: 15px; }
-          .sig-label { font-size: 7px; margin-top: 1px; }
-          .pago-stamp { color: #16a34a; border: 2px solid #16a34a; display: inline-block; padding: 1px 6px; font-weight: bold; font-size: 10px; transform: rotate(-15deg); margin-top: 4px; }
-          @media print { body { padding: 0; background: white; } .carne { page-break-inside: avoid; margin: 0; } }
+          body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 8px; }
+
+          .row-pair {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 8px;
+            page-break-inside: avoid;
+          }
+
+          .carne {
+            border: 1px dashed #555;
+            padding: 7px 8px;
+            background: white;
+            font-size: 8px;
+            position: relative;
+            overflow: hidden;
+          }
+
+          /* Header */
+          .header { border-bottom: 1.5px solid #222; margin-bottom: 5px; padding-bottom: 4px; text-align: center; }
+          .empresa-nome { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+          .empresa-sub { font-size: 7px; color: #444; margin-top: 1px; }
+          .via-label { font-size: 7px; font-style: italic; color: #666; margin-top: 3px; }
+
+          /* PAGO overlay */
+          .pago.carne { opacity: 0.85; }
+          .pago-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-30deg);
+            font-size: 32px;
+            font-weight: bold;
+            color: rgba(22,163,74,0.25);
+            border: 4px solid rgba(22,163,74,0.25);
+            padding: 4px 10px;
+            pointer-events: none;
+            white-space: nowrap;
+          }
+
+          /* Fields */
+          .field-row { display: flex; gap: 4px; margin-bottom: 4px; }
+          .field-row.grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 4px; margin-bottom: 4px; }
+          .field { display: flex; flex-direction: column; min-width: 0; }
+          .field.full { flex: 1; }
+          .flabel { font-weight: bold; font-size: 6.5px; color: #555; text-transform: uppercase; margin-bottom: 1px; }
+          .fvalue { font-size: 8px; border-bottom: 1px solid #aaa; padding-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .fvalue.bold { font-weight: bold; font-size: 9px; }
+
+          /* Instruções */
+          .instrucoes {
+            font-size: 6.5px;
+            color: #555;
+            border: 0.5px solid #ccc;
+            padding: 3px 5px;
+            margin: 4px 0;
+            line-height: 1.4;
+          }
+
+          /* Cálculo */
+          .calc-section { margin: 4px 0; }
+          .calc-row { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 3px; }
+          .calc-label { font-size: 7px; white-space: nowrap; min-width: 90px; }
+          .calc-label.bold { font-weight: bold; }
+          .calc-line { flex: 1; border-bottom: 1px solid #333; height: 10px; }
+          .total-row .calc-line { border-bottom: 2px solid #000; }
+
+          /* Barcode */
+          .barcode-area { text-align: center; margin-top: 5px; border-top: 1px solid #ddd; padding-top: 4px; }
+          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; line-height: 1; letter-spacing: 0; }
+          .barcode-num { font-size: 7px; letter-spacing: 2px; margin-top: 1px; font-family: 'Courier New', monospace; }
+
+          @media print {
+            body { padding: 4px; }
+            .row-pair { page-break-inside: avoid; }
+          }
         </style>
       </head>
       <body>
-        <div class="carnes-container">
-          ${parcelas.map((p) => `
-            <div class="carne">
-              <div class="header">
-                <div class="header-empresa">${nomeEmpresa}</div>
-                ${cidade ? `<div class="header-info">${cidade}${telefone ? ` • Fone: ${telefone}` : ""}</div>` : ""}
-                <div class="header-info" style="margin-top: 2px;">CARNÊ DE COBRANÇA</div>
-              </div>
-
-              <div class="row">
-                <div class="field">
-                  <span class="field-label">Parcela</span>
-                  <span class="field-value">${String(p.numero_parcela).padStart(2, "0")} / ${String(parcelas.length).padStart(2, "0")}</span>
-                </div>
-                <div class="field">
-                  <span class="field-label">Vencimento</span>
-                  <span class="field-value">${fmtDate(p.vencimento)}</span>
-                </div>
-              </div>
-
-              <div class="row">
-                <div class="field">
-                  <span class="field-label">Valor</span>
-                  <span class="field-value" style="font-weight: bold; font-size: 9px;">${fmtCurrency(p.valor)}</span>
-                </div>
-                <div class="field">
-                  <span class="field-label">Situação</span>
-                  <span class="field-value">${p.situacao === "pago" ? '<span class="pago-stamp">PAGO</span>' : "Em aberto"}</span>
-                </div>
-              </div>
-
-              <div class="row-full">
-                <div class="field">
-                  <span class="field-label">Cliente</span>
-                  <span class="field-value">${clienteNome}</span>
-                </div>
-              </div>
-
-              <div class="row-full">
-                <div class="field">
-                  <span class="field-label">Lote / Loteamento</span>
-                  <span class="field-value">${loteInfo} · ${loteamentoNome}</span>
-                </div>
-              </div>
-
-              <div class="divider"></div>
-
-              <div class="row">
-                <div class="field">
-                  <span class="field-label">Data Pgto</span>
-                  <span class="field-value">${p.pago_data ? fmtDate(p.pago_data) : "___/___/_____"}</span>
-                </div>
-                <div class="field">
-                  <span class="field-label">Valor Pago</span>
-                  <span class="field-value">${p.valor_pago ? fmtCurrency(p.valor_pago) : "____________"}</span>
-                </div>
-              </div>
-
-              <div class="signature">
-                <span class="sig-label">Assinatura</span>
-                <div class="sig-line"></div>
-              </div>
-
-              <div class="barcode">█▀█ ${String(p.numero_parcela).padStart(2, "0")}${vendaDetalheInfo.id_venda} █▀█</div>
-            </div>
-          `).join("")}
-        </div>
-        <script>setTimeout(() => { window.print(); }, 100);</script>
+        ${parcelas.map((p) => `
+          <div class="row-pair">
+            ${buildCarne(p, "1ª Via — Cliente")}
+            ${buildCarne(p, "2ª Via — Empresa")}
+          </div>
+        `).join("")}
+        <script>
+          // Aguarda a fonte de barcode carregar antes de imprimir
+          if (document.fonts) {
+            document.fonts.ready.then(() => setTimeout(() => window.print(), 150));
+          } else {
+            setTimeout(() => window.print(), 600);
+          }
+        </script>
       </body>
       </html>
     `;
