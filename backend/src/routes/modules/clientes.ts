@@ -7,6 +7,35 @@ import { AuthRequest, requireAuth, requirePermission } from "../../middleware/au
 
 export const clientesRouter = Router();
 
+// ─── CPF/CNPJ validation helpers ─────────────────────────────────────────────
+function allDigitsEqual(d: string) { return /^(\d)\1+$/.test(d); }
+
+function isValidCpf(raw: string) {
+  const d = raw.replace(/\D/g, "");
+  if (d.length !== 11 || allDigitsEqual(d)) return false;
+  const n = d.split("").map(Number);
+  let s = 0; for (let i = 0; i < 9; i++) s += n[i] * (10 - i);
+  let mod = s % 11; const d1 = mod < 2 ? 0 : 11 - mod;
+  if (n[9] !== d1) return false;
+  s = 0; for (let i = 0; i < 10; i++) s += n[i] * (11 - i);
+  mod = s % 11; const d2 = mod < 2 ? 0 : 11 - mod;
+  return n[10] === d2;
+}
+
+function isValidCnpj(raw: string) {
+  const d = raw.replace(/\D/g, "");
+  if (d.length !== 14 || allDigitsEqual(d)) return false;
+  const n = d.split("").map(Number);
+  const w1 = [5,4,3,2,9,8,7,6,5,4,3,2], w2 = [6,5,4,3,2,9,8,7,6,5,4,3,2];
+  let s = 0; for (let i = 0; i < 12; i++) s += n[i] * w1[i];
+  let mod = s % 11; const d1 = mod < 2 ? 0 : 11 - mod;
+  if (n[12] !== d1) return false;
+  s = 0; for (let i = 0; i < 13; i++) s += n[i] * w2[i];
+  mod = s % 11; const d2 = mod < 2 ? 0 : 11 - mod;
+  return n[13] === d2;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(1000).default(20),
@@ -14,12 +43,19 @@ const listQuerySchema = z.object({
   tipo: z.enum(["f", "j"]).optional(),
 });
 
-const clienteBodySchema = z.object({
+// Base object schema — can call .partial() on it
+const clienteBaseSchema = z.object({
   tipo: z.enum(["f", "j"]),
-  nome: z.string().min(1).max(200),
+  nome: z.string().min(1, "Nome é obrigatório").max(200),
   razao_social: z.string().max(200).optional(),
-  cpf: z.string().max(14).optional(),
-  cnpj: z.string().max(18).optional(),
+  cpf: z.string().max(14).optional().refine(
+    (v) => !v || v.trim() === "" || isValidCpf(v),
+    { message: "CPF inválido" }
+  ),
+  cnpj: z.string().max(18).optional().refine(
+    (v) => !v || v.trim() === "" || isValidCnpj(v),
+    { message: "CNPJ inválido" }
+  ),
   rg: z.string().max(20).optional(),
   estado_civil: z.string().max(30).optional(),
   conjuge: z.string().max(200).optional(),
@@ -33,6 +69,19 @@ const clienteBodySchema = z.object({
   fone_res: z.string().max(20).optional(),
   fone_com: z.string().max(20).optional(),
 });
+
+// For CREATE: add cross-field validation (CPF required for PF, CNPJ for PJ)
+const clienteBodySchema = clienteBaseSchema.superRefine((data, ctx) => {
+  if (data.tipo === "f" && !data.cpf?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CPF é obrigatório para pessoa física", path: ["cpf"] });
+  }
+  if (data.tipo === "j" && !data.cnpj?.trim()) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CNPJ é obrigatório para pessoa jurídica", path: ["cnpj"] });
+  }
+});
+
+// For UPDATE: partial — tipo/nome/cpf/cnpj all optional
+const clienteUpdateSchema = clienteBaseSchema.partial();
 
 clientesRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   const parseResult = listQuerySchema.safeParse(req.query);
@@ -136,7 +185,7 @@ clientesRouter.post("/", requireAuth, requirePermission("clientes_cadastrar"), a
 clientesRouter.put("/:id", requireAuth, requirePermission("clientes_alterar"), async (req: AuthRequest, res) => {
   const { id } = req.params;
 
-  const parseResult = clienteBodySchema.partial().safeParse(req.body);
+  const parseResult = clienteUpdateSchema.safeParse(req.body);
 
   if (!parseResult.success) {
     return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });

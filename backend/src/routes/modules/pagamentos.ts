@@ -146,6 +146,10 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
     return res.status(404).json({ error: "Pagamento não encontrado" });
   }
 
+  if (pagamento.situacao === "pago") {
+    return res.status(409).json({ error: "Este pagamento já foi baixado.", situacao: "pago", pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago });
+  }
+
   const vencimentoDate = new Date(pagamento.vencimento);
   const pagoDate = new Date(pago_data);
   const diffMs = pagoDate.getTime() - vencimentoDate.getTime();
