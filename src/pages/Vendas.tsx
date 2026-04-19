@@ -888,6 +888,128 @@ const Vendas = () => {
     win.document.close();
   }
 
+  function imprimirCarneDetalhe() {
+    if (!vendaDetalhe || !vendaDetalheInfo) return;
+    const win = window.open("", "", "width=800,height=600");
+    if (!win) {
+      toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
+      return;
+    }
+
+    const nomeEmpresa = empresaConfig?.nome_fantasia || "EMPRESA";
+    const telefone = empresaConfig?.telefone || "";
+    const cidade = [empresaConfig?.cidade, empresaConfig?.estado].filter(Boolean).join(" - ");
+
+    const clienteNome = vendaDetalheInfo.cliente;
+    const loteInfo = vendaDetalheInfo.lote;
+    const loteamentoNome = vendaDetalheInfo.loteamento;
+
+    const parcelas = [...vendaDetalhe.pagamentos].sort((a, b) => a.numero_parcela - b.numero_parcela);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Carnê - Venda #${vendaDetalheInfo.id_venda}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 5px; }
+          .carnes-container { display: flex; flex-direction: column; gap: 3px; }
+          .carne { border: 1px solid #333; padding: 8px; background: white; font-size: 9px; page-break-inside: avoid; }
+          .header { border-bottom: 1px solid #333; margin-bottom: 5px; padding-bottom: 3px; text-align: center; }
+          .header-empresa { font-size: 10px; font-weight: bold; }
+          .header-info { font-size: 7px; color: #333; }
+          .row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 4px; }
+          .row-full { display: block; margin-bottom: 4px; }
+          .field { display: flex; flex-direction: column; }
+          .field-label { font-weight: bold; font-size: 7px; color: #555; text-transform: uppercase; }
+          .field-value { font-size: 8px; margin-top: 1px; }
+          .divider { border-bottom: 1px solid #ccc; margin: 4px 0; }
+          .barcode { text-align: center; margin: 4px 0; font-family: 'Courier New', monospace; font-weight: bold; font-size: 14px; letter-spacing: 2px; }
+          .signature { margin-top: 6px; text-align: center; }
+          .sig-line { border-top: 1px solid #000; margin-top: 2px; width: 100%; height: 15px; }
+          .sig-label { font-size: 7px; margin-top: 1px; }
+          .pago-stamp { color: #16a34a; border: 2px solid #16a34a; display: inline-block; padding: 1px 6px; font-weight: bold; font-size: 10px; transform: rotate(-15deg); margin-top: 4px; }
+          @media print { body { padding: 0; background: white; } .carne { page-break-inside: avoid; margin: 0; } }
+        </style>
+      </head>
+      <body>
+        <div class="carnes-container">
+          ${parcelas.map((p) => `
+            <div class="carne">
+              <div class="header">
+                <div class="header-empresa">${nomeEmpresa}</div>
+                ${cidade ? `<div class="header-info">${cidade}${telefone ? ` • Fone: ${telefone}` : ""}</div>` : ""}
+                <div class="header-info" style="margin-top: 2px;">CARNÊ DE COBRANÇA</div>
+              </div>
+
+              <div class="row">
+                <div class="field">
+                  <span class="field-label">Parcela</span>
+                  <span class="field-value">${String(p.numero_parcela).padStart(2, "0")} / ${String(parcelas.length).padStart(2, "0")}</span>
+                </div>
+                <div class="field">
+                  <span class="field-label">Vencimento</span>
+                  <span class="field-value">${fmtDate(p.vencimento)}</span>
+                </div>
+              </div>
+
+              <div class="row">
+                <div class="field">
+                  <span class="field-label">Valor</span>
+                  <span class="field-value" style="font-weight: bold; font-size: 9px;">${fmtCurrency(p.valor)}</span>
+                </div>
+                <div class="field">
+                  <span class="field-label">Situação</span>
+                  <span class="field-value">${p.situacao === "pago" ? '<span class="pago-stamp">PAGO</span>' : "Em aberto"}</span>
+                </div>
+              </div>
+
+              <div class="row-full">
+                <div class="field">
+                  <span class="field-label">Cliente</span>
+                  <span class="field-value">${clienteNome}</span>
+                </div>
+              </div>
+
+              <div class="row-full">
+                <div class="field">
+                  <span class="field-label">Lote / Loteamento</span>
+                  <span class="field-value">${loteInfo} · ${loteamentoNome}</span>
+                </div>
+              </div>
+
+              <div class="divider"></div>
+
+              <div class="row">
+                <div class="field">
+                  <span class="field-label">Data Pgto</span>
+                  <span class="field-value">${p.pago_data ? fmtDate(p.pago_data) : "___/___/_____"}</span>
+                </div>
+                <div class="field">
+                  <span class="field-label">Valor Pago</span>
+                  <span class="field-value">${p.valor_pago ? fmtCurrency(p.valor_pago) : "____________"}</span>
+                </div>
+              </div>
+
+              <div class="signature">
+                <span class="sig-label">Assinatura</span>
+                <div class="sig-line"></div>
+              </div>
+
+              <div class="barcode">█▀█ ${String(p.numero_parcela).padStart(2, "0")}${vendaDetalheInfo.id_venda} █▀█</div>
+            </div>
+          `).join("")}
+        </div>
+        <script>setTimeout(() => { window.print(); }, 100);</script>
+      </body>
+      </html>
+    `;
+    win.document.write(html);
+    win.document.close();
+  }
+
   function abrirDetalhe(venda: VendaListItem) {
     setVendaDetalheInfo(venda);
     setVendaDetalhe(null);
@@ -1622,6 +1744,15 @@ const Vendas = () => {
           </div>
 
           <DialogFooter className="border-t border-border pt-3">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={imprimirCarneDetalhe}
+              disabled={!vendaDetalhe}
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir Carnê
+            </Button>
             <Button variant="outline" onClick={() => setDialogDetalheAberto(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
