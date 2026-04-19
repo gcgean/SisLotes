@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, Shield, Building2, Upload, X, FileText, RotateCcw } from "lucide-react";
+import { Plus, Edit, Trash2, Shield, Building2, Upload, X, FileText, RotateCcw, AlertCircle } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -159,6 +159,7 @@ const Configuracoes = () => {
   const [confirmarExclusaoUsuario, setConfirmarExclusaoUsuario] = useState<Usuario | null>(null);
   const [confirmarExclusaoConta, setConfirmarExclusaoConta] = useState<Conta | null>(null);
   const [minhaEmpresa, setMinhaEmpresa] = useState<MinhaEmpresaData>(MINHA_EMPRESA_EMPTY);
+  const [empresaErros, setEmpresaErros] = useState<{ nome_fantasia?: string }>({});
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   const queryClient = useQueryClient();
@@ -609,6 +610,16 @@ const Configuracoes = () => {
     },
   });
 
+  function handleSalvarEmpresa() {
+    if (!minhaEmpresa.nome_fantasia.trim()) {
+      setEmpresaErros({ nome_fantasia: "Nome fantasia é obrigatório" });
+      document.getElementById("cfg_nome_fantasia")?.focus();
+      return;
+    }
+    setEmpresaErros({});
+    salvarMinhaEmpresaMutation.mutate();
+  }
+
   function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -747,13 +758,23 @@ const Configuracoes = () => {
 
                 {/* Identificação */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Nome fantasia *</Label>
+                  <div className="space-y-1">
+                    <Label>Nome fantasia <span className="text-destructive">*</span></Label>
                     <Input
+                      id="cfg_nome_fantasia"
                       value={minhaEmpresa.nome_fantasia}
-                      onChange={(e) => setEmpresaField("nome_fantasia", e.target.value)}
+                      onChange={(e) => {
+                        setMinhaEmpresa((prev) => ({ ...prev, nome_fantasia: e.target.value }));
+                        if (empresaErros.nome_fantasia) setEmpresaErros({});
+                      }}
                       placeholder="IMOBILIÁRIA EXEMPLO"
+                      aria-invalid={!!empresaErros.nome_fantasia}
                     />
+                    {empresaErros.nome_fantasia && (
+                      <p className="text-xs text-destructive flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" /> {empresaErros.nome_fantasia}
+                      </p>
+                    )}
                   </div>
                   <div className="space-y-2">
                     <Label>Razão social</Label>
@@ -872,8 +893,8 @@ const Configuracoes = () => {
 
                 <div className="flex justify-end pt-2">
                   <Button
-                    onClick={() => salvarMinhaEmpresaMutation.mutate()}
-                    disabled={salvarMinhaEmpresaMutation.isPending || !minhaEmpresa.nome_fantasia}
+                    onClick={handleSalvarEmpresa}
+                    disabled={salvarMinhaEmpresaMutation.isPending}
                   >
                     {salvarMinhaEmpresaMutation.isPending ? "Salvando..." : "Salvar empresa"}
                   </Button>

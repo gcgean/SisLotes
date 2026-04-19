@@ -49,7 +49,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Plus, Search, Edit, Trash2, Eye, User, MapPin, Phone,
   CreditCard, ShoppingCart, FileText, FileCheck, Receipt,
-  FileSignature, ArrowRightLeft, Grid3X3,
+  FileSignature, ArrowRightLeft, Grid3X3, AlertCircle,
 } from "lucide-react";
 import {
   Dialog,
@@ -72,7 +72,7 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
-import { formatCpfCnpj } from "@/lib/cpfCnpj";
+import { formatCpfCnpj, isValidCpfCnpj } from "@/lib/cpfCnpj";
 import { NovoClienteDialog, NovoClienteFormValues as NovoClienteDialogValues } from "@/components/clientes/NovoClienteDialog";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -153,6 +153,21 @@ const clienteFormSchema = z.object({
   complemento: z.string().optional(),
   fone_res: z.string().optional(),
   fone_com: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.tipo === "f") {
+    if (!data.cpf?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CPF é obrigatório para pessoa física", path: ["cpf"] });
+    } else if (!isValidCpfCnpj(data.cpf)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CPF inválido", path: ["cpf"] });
+    }
+  }
+  if (data.tipo === "j") {
+    if (!data.cnpj?.trim()) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CNPJ é obrigatório para pessoa jurídica", path: ["cnpj"] });
+    } else if (!isValidCpfCnpj(data.cnpj)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CNPJ inválido", path: ["cnpj"] });
+    }
+  }
 });
 
 type ClienteFormValues = z.infer<typeof clienteFormSchema>;
@@ -422,6 +437,22 @@ const Clientes = () => {
     }
   }
 
+  const CAMPO_PARA_ABA: Partial<Record<keyof ClienteFormValues, string>> = {
+    nome: "dados", cpf: "dados", cnpj: "dados", rg: "dados",
+    razao_social: "dados", tipo: "dados", estado_civil: "dados",
+    conjuge: "dados", profissao: "dados",
+    endereco: "endereco", bairro: "endereco", cidade: "endereco",
+    estado: "endereco", cep: "endereco", complemento: "endereco",
+    fone_res: "contato", fone_com: "contato",
+  };
+
+  function onInvalid(errors: Partial<Record<keyof ClienteFormValues, unknown>>) {
+    const primeiroCampo = Object.keys(errors)[0] as keyof ClienteFormValues | undefined;
+    if (primeiroCampo) {
+      setDialogTab(CAMPO_PARA_ABA[primeiroCampo] ?? "dados");
+    }
+  }
+
   function onSubmit(values: ClienteFormValues) {
     if (modo === "edit" && clienteSelecionado) {
       atualizarClienteMutation.mutate({ id: clienteSelecionado.id_cliente, values });
@@ -622,7 +653,7 @@ const Clientes = () => {
               </div>
             ) : (
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-4">
 
                   {/* Seletor de tipo sempre visível no topo */}
                   <FormField
@@ -657,14 +688,23 @@ const Clientes = () => {
                       <TabsTrigger value="dados" className="gap-1.5">
                         <User className="h-3.5 w-3.5" />
                         {tipoWatch === "j" ? "Dados da Empresa" : "Dados Pessoais"}
+                        {(form.formState.errors.nome || form.formState.errors.cpf || form.formState.errors.cnpj || form.formState.errors.razao_social) && (
+                          <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                        )}
                       </TabsTrigger>
                       <TabsTrigger value="endereco" className="gap-1.5">
                         <MapPin className="h-3.5 w-3.5" />
                         Endereço
+                        {(form.formState.errors.endereco || form.formState.errors.cidade || form.formState.errors.estado || form.formState.errors.cep) && (
+                          <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                        )}
                       </TabsTrigger>
                       <TabsTrigger value="contato" className="gap-1.5">
                         <Phone className="h-3.5 w-3.5" />
                         Contato
+                        {(form.formState.errors.fone_res || form.formState.errors.fone_com) && (
+                          <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                        )}
                       </TabsTrigger>
                     </TabsList>
 
@@ -710,12 +750,12 @@ const Clientes = () => {
                               name="cnpj"
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>CPF / CNPJ</FormLabel>
+                                  <FormLabel>CNPJ <span className="text-destructive">*</span></FormLabel>
                                   <FormControl>
                                     <Input
                                       {...field}
                                       disabled={isView}
-                                      placeholder="000.000.000-00 ou 00.000.000/0000-00"
+                                      placeholder="00.000.000/0000-00"
                                       onChange={(e) => field.onChange(formatCpfCnpj(e.target.value))}
                                     />
                                   </FormControl>
@@ -775,7 +815,7 @@ const Clientes = () => {
                               name="cpf"
                               render={({ field }) => (
                                 <FormItem>
-                                  <FormLabel>CPF</FormLabel>
+                                  <FormLabel>CPF <span className="text-destructive">*</span></FormLabel>
                                   <FormControl>
                                     <Input
                                       {...field}
