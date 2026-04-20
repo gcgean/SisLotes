@@ -117,7 +117,10 @@
       "Bash(curl -s -X PUT http://localhost:3334/api/clientes/1265 -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjY2LCJsb2dpbiI6ImFkbWluX3ZhbCIsInVzZXJfbWFzdGVyIjp0cnVlLCJpZF9lbXByZXNhIjo4OCwiaWF0IjoxNzc2NjA1MzQxLCJleHAiOjE3NzY2MzQxNDF9.H8dAqbueBH_ZStYItaH-s2ZnqdA80JDCuH1pku-5tsc' -H 'Content-Type: application/json' -d '{\"nome\":\"Maria da Silva Santos\",\"cidade\":\"Campinas\"}')",
       "Bash(curl -s -X PUT http://localhost:3334/api/clientes/1265 -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjY2LCJsb2dpbiI6ImFkbWluX3ZhbCIsInVzZXJfbWFzdGVyIjp0cnVlLCJpZF9lbXByZXNhIjo4OCwiaWF0IjoxNzc2NjA1MzQxLCJleHAiOjE3NzY2MzQxNDF9.H8dAqbueBH_ZStYItaH-s2ZnqdA80JDCuH1pku-5tsc' -H 'Content-Type: application/json' -d '{\"nome\":\"Maria Santos\",\"cidade\":\"Campinas\"}')",
       "Bash(python3 -c \"import sys,json; items=json.load\\(sys.stdin\\); pagas=[p for p in items if p['situacao']=='pago']; print\\(f' Pagas: {len\\(pagas\\)} | Abertas: {len\\(items\\)-len\\(pagas\\)}'\\)\")",
-      "Bash(python3 -c \" import sys,json d=json.load\\(sys.stdin\\) if isinstance\\(d, list\\): print\\(f'Total: {len\\(d\\)}'\\) for l in d: print\\(f' id={l[\\\\\"id_loteamento\\\\\"]} nome={l[\\\\\"nome\\\\\"]}'\\) elif isinstance\\(d, dict\\): items = d.get\\('data', []\\) print\\(f'Total: {d.get\\(\\\\\"total\\\\\", len\\(items\\)\\)}'\\) for l in items: print\\(f' id={l[\\\\\"id_loteamento\\\\\"]} nome={l[\\\\\"nome\\\\\"]}'\\) \" echo \"\" echo \"-- Excluir clientes com dados inválidos dos testes --\")"
+      "Bash(python3 -c \" import sys,json d=json.load\\(sys.stdin\\) if isinstance\\(d, list\\): print\\(f'Total: {len\\(d\\)}'\\) for l in d: print\\(f' id={l[\\\\\"id_loteamento\\\\\"]} nome={l[\\\\\"nome\\\\\"]}'\\) elif isinstance\\(d, dict\\): items = d.get\\('data', []\\) print\\(f'Total: {d.get\\(\\\\\"total\\\\\", len\\(items\\)\\)}'\\) for l in items: print\\(f' id={l[\\\\\"id_loteamento\\\\\"]} nome={l[\\\\\"nome\\\\\"]}'\\) \" echo \"\" echo \"-- Excluir clientes com dados inválidos dos testes --\")",
+      "Bash(rsync -az --delete dist/ root@srv:/srv/sites/sislote/app/dist/)",
+      "Bash(scp -r dist/* root@srv:/srv/sites/sislote/app/dist/)",
+      "Bash(ssh root@179.191.113.212 \"ls /srv/sites/sislote/app/dist/\")"
     ]
   }
 }
