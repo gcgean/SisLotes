@@ -120,7 +120,10 @@
       "Bash(python3 -c \" import sys,json d=json.load\\(sys.stdin\\) if isinstance\\(d, list\\): print\\(f'Total: {len\\(d\\)}'\\) for l in d: print\\(f' id={l[\\\\\"id_loteamento\\\\\"]} nome={l[\\\\\"nome\\\\\"]}'\\) elif isinstance\\(d, dict\\): items = d.get\\('data', []\\) print\\(f'Total: {d.get\\(\\\\\"total\\\\\", len\\(items\\)\\)}'\\) for l in items: print\\(f' id={l[\\\\\"id_loteamento\\\\\"]} nome={l[\\\\\"nome\\\\\"]}'\\) \" echo \"\" echo \"-- Excluir clientes com dados inválidos dos testes --\")",
       "Bash(rsync -az --delete dist/ root@srv:/srv/sites/sislote/app/dist/)",
       "Bash(scp -r dist/* root@srv:/srv/sites/sislote/app/dist/)",
-      "Bash(ssh root@179.191.113.212 \"ls /srv/sites/sislote/app/dist/\")"
+      "Bash(ssh root@179.191.113.212 \"ls /srv/sites/sislote/app/dist/\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ]
   }
 }
