@@ -44,12 +44,14 @@ const PLAN_PRICES: Record<string, number> = {
   TESTE: 1,
   BASICO: 49.9,
   INTERMEDIARIO: 99.9,
+  "PLANO PRO": 99.9,
 };
 
 const PLAN_CATALOG = [
   { code: "TESTE", title: "Plano Teste", amount: 1, description: "Experimente gratuitamente por 14 dias." },
   { code: "BASICO", title: "Básico", amount: 49.9, description: "Recursos essenciais para sua operação." },
   { code: "INTERMEDIARIO", title: "Intermediário", amount: 99.9, description: "Recursos avançados e suporte prioritário." },
+  { code: "PLANO PRO", title: "Plano Pro", amount: 99.9, description: "Plano completo com todos os recursos." },
 ];
 
 function selectHubPlanForCode(args: {
@@ -81,6 +83,10 @@ function getHubPlanMap(): Record<string, { planId: string; amountCents: number }
     },
     INTERMEDIARIO: {
       planId: process.env.HUB_BILLING_PLAN_INTERMEDIARIO || "",
+      amountCents: 9990,
+    },
+    "PLANO PRO": {
+      planId: process.env.HUB_BILLING_PLAN_PRO || "",
       amountCents: 9990,
     },
   };

@@ -142,6 +142,7 @@ const PLANOS = [
   { code: "TESTE", title: "Plano Teste", amount: 1 },
   { code: "BASICO", title: "Básico", amount: 49.9 },
   { code: "INTERMEDIARIO", title: "Intermediário", amount: 99.9 },
+  { code: "PLANO PRO", title: "Plano Pro", amount: 99.9 },
 ];
 
 const Planos = () => {
@@ -456,7 +457,18 @@ const Planos = () => {
       ...p,
       code: p.code.toUpperCase(),
     }));
-    return source.filter((p) => p.active !== false || p.code === planoAtualUpper);
+    const filtered = source.filter((p) => p.active !== false || p.code === planoAtualUpper);
+    // Garante que o plano atual sempre apareça, mesmo que não esteja no catálogo da API
+    if (planoAtualUpper && !filtered.some((p) => p.code === planoAtualUpper)) {
+      const fallback = PLANOS.find((p) => p.code.toUpperCase() === planoAtualUpper);
+      filtered.unshift({
+        code: planoAtualUpper,
+        title: fallback?.title || planoAtualUpper,
+        amount: fallback?.amount ?? 99.9,
+        active: true,
+      });
+    }
+    return filtered;
   }, [planosDisponiveis, planoAtualUpper]);
 
   useEffect(() => {
@@ -556,8 +568,6 @@ const Planos = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="pix">PIX</SelectItem>
-              <SelectItem value="boleto">Boleto</SelectItem>
-              <SelectItem value="cartao">Cartão de Crédito</SelectItem>
             </SelectContent>
           </Select>
         </div>
