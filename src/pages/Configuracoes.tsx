@@ -591,7 +591,11 @@ const Configuracoes = () => {
     mutationFn: async () => {
       const body = {
         ...minhaEmpresa,
-        salario_minimo: minhaEmpresa.salario_minimo ? Number(minhaEmpresa.salario_minimo) : null,
+        salario_minimo: (() => {
+          const raw = String(minhaEmpresa.salario_minimo ?? "").trim().replace(",", ".");
+          const parsed = parseFloat(raw);
+          return !isNaN(parsed) ? parsed : null;
+        })(),
       };
       const r = await fetch("/api/empresas/minha", {
         method: "PUT",
