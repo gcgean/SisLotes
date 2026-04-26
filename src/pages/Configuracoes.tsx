@@ -924,7 +924,7 @@ const Configuracoes = () => {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border bg-muted/50">
-                      <th className="text-left px-5 py-3 font-medium text-muted-foreground">Apelido</th>
+                      <th className="text-left px-5 py-3 font-medium text-muted-foreground">Identificação</th>
                       <th className="text-left px-5 py-3 font-medium text-muted-foreground">Titular</th>
                       <th className="text-left px-5 py-3 font-medium text-muted-foreground">Agência</th>
                       <th className="text-left px-5 py-3 font-medium text-muted-foreground">Conta</th>
@@ -975,7 +975,7 @@ const Configuracoes = () => {
                     {modoConta === "create" ? "Nova conta bancária" : "Editar conta bancária"}
                   </DialogTitle>
                   <DialogDescription>
-                    Informe os dados da conta bancária utilizada para recebimentos.
+                    Dados da conta bancária utilizada para recebimento de clientes.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -989,10 +989,11 @@ const Configuracoes = () => {
                       name="apelido"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Apelido</FormLabel>
+                          <FormLabel>Nome de identificação</FormLabel>
                           <FormControl>
-                            <Input {...field} />
+                            <Input placeholder="Ex: Bradesco Principal, Conta Empresarial..." {...field} />
                           </FormControl>
+                          <p className="text-xs text-muted-foreground">Um nome para identificar esta conta no sistema.</p>
                           <FormMessage />
                         </FormItem>
                       )}
@@ -1002,9 +1003,9 @@ const Configuracoes = () => {
                       name="titular"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Titular</FormLabel>
+                          <FormLabel>Nome do titular</FormLabel>
                           <FormControl>
-                            <Input {...field} />
+                            <Input placeholder="Nome completo conforme cadastro no banco" {...field} />
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -1018,7 +1019,7 @@ const Configuracoes = () => {
                           <FormItem>
                             <FormLabel>Agência</FormLabel>
                             <FormControl>
-                              <Input {...field} />
+                              <Input placeholder="Ex: 1234" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1029,9 +1030,9 @@ const Configuracoes = () => {
                         name="conta"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Conta</FormLabel>
+                            <FormLabel>Conta com dígito</FormLabel>
                             <FormControl>
-                              <Input {...field} />
+                              <Input placeholder="Ex: 00012345-6" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1042,10 +1043,11 @@ const Configuracoes = () => {
                         name="convenio"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Convênio (opcional)</FormLabel>
+                            <FormLabel>Convênio / Cedente</FormLabel>
                             <FormControl>
-                              <Input {...field} />
+                              <Input placeholder="Ex: 123456 (opcional)" {...field} />
                             </FormControl>
+                            <p className="text-xs text-muted-foreground">Código fornecido pelo banco para emissão de boletos.</p>
                             <FormMessage />
                           </FormItem>
                         )}
@@ -1059,7 +1061,7 @@ const Configuracoes = () => {
                           criarContaMutation.isPending || atualizarContaMutation.isPending
                         }
                       >
-                        {modoConta === "create" ? "Criar conta" : "Salvar alterações"}
+                        {modoConta === "create" ? "Cadastrar conta" : "Salvar alterações"}
                       </Button>
                     </DialogFooter>
                   </form>
