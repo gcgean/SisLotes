@@ -145,7 +145,7 @@ const PLANOS = [
 ];
 
 const Planos = () => {
-  const metodo: MetodoPagamento = "pix";
+  const [metodo, setMetodo] = useState<MetodoPagamento>("pix");
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedPayment, setSelectedPayment] = useState<{
     chargeId: string;
@@ -550,12 +550,14 @@ const Planos = () => {
 
         <div className="flex items-center gap-3">
           <span className="text-sm text-muted-foreground">Forma de pagamento:</span>
-          <Select value={metodo} disabled>
+          <Select value={metodo} onValueChange={(v) => setMetodo(v as MetodoPagamento)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="pix">PIX</SelectItem>
+              <SelectItem value="boleto">Boleto</SelectItem>
+              <SelectItem value="cartao">Cartão de Crédito</SelectItem>
             </SelectContent>
           </Select>
         </div>
