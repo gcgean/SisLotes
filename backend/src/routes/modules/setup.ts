@@ -478,7 +478,13 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
       let daysLeft = typeof resolved.daysLeft === "number" ? resolved.daysLeft : null;
       const banner = typeof resolved.banner === "string" ? resolved.banner : null;
       const quantityRaw = (resolved as Record<string, unknown>).quantity;
-      let quantity = typeof quantityRaw === "number" && Number.isFinite(quantityRaw) ? quantityRaw : null;
+      const quantityParsed =
+        typeof quantityRaw === "number" && Number.isFinite(quantityRaw)
+          ? quantityRaw
+          : typeof quantityRaw === "string" && quantityRaw.trim() && !Number.isNaN(Number(quantityRaw))
+            ? Number(quantityRaw)
+            : null;
+      let quantity = quantityParsed != null && Number.isFinite(quantityParsed) ? quantityParsed : null;
       const planNameRaw = (resolved as Record<string, unknown>).planName;
       let planName = typeof planNameRaw === "string" ? planNameRaw : null;
       const planCodeRaw = (resolved as Record<string, unknown>).planCode;
@@ -520,7 +526,13 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
           const newAccessStatus = typeof updatedStatus.accessStatus === "string" ? updatedStatus.accessStatus : null;
           const newCanAccess    = typeof updatedStatus.canAccess    === "boolean" ? updatedStatus.canAccess   : canAccess;
           const newQuantityRaw  = (updatedStatus as { quantity?: unknown }).quantity;
-          quantity = typeof newQuantityRaw === "number" && Number.isFinite(newQuantityRaw) ? newQuantityRaw : quantity;
+          const newQuantityParsed =
+            typeof newQuantityRaw === "number" && Number.isFinite(newQuantityRaw)
+              ? newQuantityRaw
+              : typeof newQuantityRaw === "string" && newQuantityRaw.trim() && !Number.isNaN(Number(newQuantityRaw))
+                ? Number(newQuantityRaw)
+                : null;
+          quantity = newQuantityParsed != null && Number.isFinite(newQuantityParsed) ? newQuantityParsed : quantity;
           const newPlanNameRaw  = (updatedStatus as { planName?: unknown }).planName;
           planName = typeof newPlanNameRaw === "string" ? newPlanNameRaw : planName;
           const newPlanCodeRaw  = (updatedStatus as { planCode?: unknown }).planCode;

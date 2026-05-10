@@ -427,7 +427,13 @@ export class HubBillingService {
       const bannerRaw = (statusData as { banner?: unknown }).banner;
       const banner = typeof bannerRaw === "string" ? bannerRaw : null;
       const quantityRaw = (statusData as { quantity?: unknown }).quantity;
-      const quantity = typeof quantityRaw === "number" && Number.isFinite(quantityRaw) ? quantityRaw : null;
+      const quantityParsed =
+        typeof quantityRaw === "number" && Number.isFinite(quantityRaw)
+          ? quantityRaw
+          : typeof quantityRaw === "string" && quantityRaw.trim() && !Number.isNaN(Number(quantityRaw))
+            ? Number(quantityRaw)
+            : null;
+      const quantity = quantityParsed != null && Number.isFinite(quantityParsed) ? quantityParsed : null;
       const planCodeRaw = (statusData as { planCode?: unknown }).planCode;
       const planCode = typeof planCodeRaw === "string" ? planCodeRaw : null;
       const planNameRaw = (statusData as { planName?: unknown }).planName;

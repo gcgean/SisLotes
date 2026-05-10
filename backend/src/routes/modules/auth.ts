@@ -35,7 +35,13 @@ async function resolveHubOnLoginIfNeeded(args: { empresa: Empresa; user: Usuario
   });
 
   const quantityRaw = (resolved as Record<string, unknown>).quantity;
-  const quantity = typeof quantityRaw === "number" && Number.isFinite(quantityRaw) ? quantityRaw : null;
+  const quantityParsed =
+    typeof quantityRaw === "number" && Number.isFinite(quantityRaw)
+      ? quantityRaw
+      : typeof quantityRaw === "string" && quantityRaw.trim() && !Number.isNaN(Number(quantityRaw))
+        ? Number(quantityRaw)
+        : null;
+  const quantity = quantityParsed != null && Number.isFinite(quantityParsed) ? quantityParsed : null;
   const planCodeRaw = (resolved as Record<string, unknown>).planCode;
   const planCode = typeof planCodeRaw === "string" ? planCodeRaw : null;
   const planNameRaw = (resolved as Record<string, unknown>).planName;
