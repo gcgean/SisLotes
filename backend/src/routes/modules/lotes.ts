@@ -118,9 +118,13 @@ lotesRouter.get("/limit-status", requireAuth, async (req: AuthRequest, res) => {
   const quantidadePermitida = !planControlDisabled && hubConfigured ? HubBillingService.getStoredQuantity(empresa) : null;
   const quantidadeUsada = await AppDataSource.getRepository(Lote).count({ where: { id_empresa: idEmpresa } });
 
-  const limiteAtingido = quantidadePermitida != null && Number.isFinite(quantidadePermitida)
-    ? quantidadeUsada >= quantidadePermitida
-    : false;
+  const quantityMissing = !planControlDisabled && hubConfigured && (quantidadePermitida == null || !Number.isFinite(quantidadePermitida));
+
+  const limiteAtingido = quantityMissing
+    ? true
+    : quantidadePermitida != null && Number.isFinite(quantidadePermitida)
+      ? quantidadeUsada >= quantidadePermitida
+      : false;
 
   let nextPlan: Record<string, unknown> | null = null;
   if (limiteAtingido && hubConfigured) {
@@ -166,6 +170,10 @@ lotesRouter.get("/limit-status", requireAuth, async (req: AuthRequest, res) => {
     quantidadeUsada,
     limiteAtingido,
     necessitaUpgrade: limiteAtingido,
+    code: quantityMissing ? "lotes_quantity_missing" : null,
+    error: quantityMissing
+      ? "Não foi possível validar o limite de lotes do seu plano. Verifique se o campo quantity está configurado no plano da plataforma de pagamentos."
+      : null,
     planControlDisabled,
     hubConfigured,
     nextPlan,
@@ -342,8 +350,24 @@ lotesRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
 
       const quantity = HubBillingService.getStoredQuantity(empresa);
       if (quantity === null || !Number.isFinite(quantity)) {
+        const meta =
+          empresa.hub_features && typeof empresa.hub_features === "object" && !Array.isArray(empresa.hub_features)
+            ? (empresa.hub_features as Record<string, unknown>).__hubMeta
+            : null;
+        const planName =
+          meta && typeof meta === "object" && !Array.isArray(meta) && typeof (meta as Record<string, unknown>).planName === "string"
+            ? String((meta as Record<string, unknown>).planName)
+            : null;
+        const planCode =
+          meta && typeof meta === "object" && !Array.isArray(meta) && typeof (meta as Record<string, unknown>).planCode === "string"
+            ? String((meta as Record<string, unknown>).planCode)
+            : null;
         return res.status(403).json({
-          error: "Não foi possível validar o limite de lotes do seu plano. Contate o suporte.",
+          error:
+            "Não foi possível validar o limite de lotes do seu plano. Verifique se o campo quantity está configurado no plano da plataforma de pagamentos.",
+          code: "lotes_quantity_missing",
+          planName,
+          planCode,
         });
       }
 

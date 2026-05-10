@@ -45,6 +45,8 @@ type LotesLimitStatus = {
   quantidadeUsada: number;
   limiteAtingido: boolean;
   necessitaUpgrade: boolean;
+  code?: string | null;
+  error?: string | null;
   planControlDisabled: boolean;
   hubConfigured: boolean;
   nextPlan?: { name: string | null; quantity: number | null } | null;
@@ -356,7 +358,7 @@ const Lotes = () => {
     },
     onError: (error) => {
       const code = (error as unknown as { code?: string | null }).code;
-      if (code === "lotes_limit_reached" || code === "lotes_limit_zero") {
+      if (code === "lotes_limit_reached" || code === "lotes_limit_zero" || code === "lotes_quantity_missing") {
         toast({
           title: "Limite do plano",
           description: error instanceof Error ? error.message : "Limite atingido",
@@ -532,13 +534,14 @@ const Lotes = () => {
     const limitReached =
       lotesLimitStatus?.hubConfigured &&
       !lotesLimitStatus?.planControlDisabled &&
-      lotesLimitStatus?.quantidadePermitida != null &&
-      lotesLimitStatus.quantidadeUsada >= lotesLimitStatus.quantidadePermitida;
+      ((lotesLimitStatus?.quantidadePermitida != null &&
+        lotesLimitStatus.quantidadeUsada >= lotesLimitStatus.quantidadePermitida) ||
+        lotesLimitStatus?.code === "lotes_quantity_missing");
 
     if (limitReached) {
       toast({
         title: "Limite do plano",
-        description: "Você atingiu o limite de lotes do seu plano atual. Para cadastrar novos lotes, escolha um plano superior.",
+        description: lotesLimitStatus?.error || "Você atingiu o limite de lotes do seu plano atual. Para cadastrar novos lotes, escolha um plano superior.",
         variant: "destructive",
         action: (
           <ToastAction altText="Ver planos" onClick={() => navigate("/planos")}>
@@ -650,7 +653,7 @@ const Lotes = () => {
 
         {lotesLimitStatus?.hubConfigured &&
         !lotesLimitStatus?.planControlDisabled &&
-        lotesLimitStatus?.quantidadePermitida != null ? (
+        (lotesLimitStatus?.quantidadePermitida != null || lotesLimitStatus?.code === "lotes_quantity_missing") ? (
           <div
             className={
               "rounded-md border p-3 flex items-center justify-between " +
@@ -662,7 +665,9 @@ const Lotes = () => {
                 Limite de lotes{lotesLimitStatus.plano ? ` (${lotesLimitStatus.plano})` : ""}
               </div>
               <div className="text-muted-foreground">
-                Você está usando {lotesLimitStatus.quantidadeUsada} de {lotesLimitStatus.quantidadePermitida} lotes.
+                {lotesLimitStatus.code === "lotes_quantity_missing"
+                  ? (lotesLimitStatus.error || "Não foi possível validar o limite de lotes do seu plano.")
+                  : `Você está usando ${lotesLimitStatus.quantidadeUsada} de ${lotesLimitStatus.quantidadePermitida} lotes.`}
               </div>
             </div>
             <Button
