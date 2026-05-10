@@ -23,12 +23,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ToastAction } from "@/components/ui/toast";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Search, Plus, Eye, Edit, Trash2, User, Phone, MapPin, ShoppingCart } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { formatDateBR } from "@/lib/date-br";
 
 type LoteStatus = "disponivel" | "vendido";
 
@@ -36,6 +38,17 @@ interface Loteamento {
   id_loteamento: number;
   nome: string;
 }
+
+type LotesLimitStatus = {
+  plano: string | null;
+  quantidadePermitida: number | null;
+  quantidadeUsada: number;
+  limiteAtingido: boolean;
+  necessitaUpgrade: boolean;
+  planControlDisabled: boolean;
+  hubConfigured: boolean;
+  nextPlan?: { name: string | null; quantity: number | null } | null;
+};
 
 interface Lote {
   id_lote: number;
@@ -277,6 +290,26 @@ const Lotes = () => {
   const loteamentosCarregados = loteamentosData !== undefined;
   const loteamentosMap = new Map(loteamentos.map((l) => [l.id_loteamento, l]));
 
+  const { data: lotesLimitStatus } = useQuery<LotesLimitStatus>({
+    queryKey: ["lotes", "limit-status"],
+    queryFn: async () => {
+      const response = await fetch("/api/lotes/limit-status", { headers: getAuthHeaders() });
+      if (!response.ok) {
+        let data: unknown;
+        try { data = await response.json(); } catch { data = null; }
+        const msg =
+          typeof data === "object" && data !== null && "error" in data &&
+          typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "Erro ao carregar limite de lotes";
+        throw new Error(msg);
+      }
+      return response.json();
+    },
+    staleTime: 30_000,
+    retry: 1,
+  });
+
   const criarLoteMutation = useMutation({
     mutationFn: async (values: LoteFormValues) => {
       const duplicate = lotes.find((l) =>
@@ -298,12 +331,19 @@ const Lotes = () => {
       try { data = await response.json(); } catch { data = null; }
 
       if (!response.ok) {
+        const code =
+          typeof data === "object" && data !== null && "code" in data &&
+          typeof (data as { code?: unknown }).code === "string"
+            ? (data as { code: string }).code
+            : null;
         const msg =
           typeof data === "object" && data !== null && "error" in data &&
           typeof (data as { error?: unknown }).error === "string"
             ? (data as { error: string }).error
             : "Erro ao criar lote";
-        throw new Error(msg);
+        const err = new Error(msg);
+        (err as unknown as { code?: string | null }).code = code;
+        throw err;
       }
 
       return data as Lote;
@@ -315,6 +355,20 @@ const Lotes = () => {
       toast({ title: "Lote criado com sucesso" });
     },
     onError: (error) => {
+      const code = (error as unknown as { code?: string | null }).code;
+      if (code === "lotes_limit_reached" || code === "lotes_limit_zero") {
+        toast({
+          title: "Limite do plano",
+          description: error instanceof Error ? error.message : "Limite atingido",
+          variant: "destructive",
+          action: (
+            <ToastAction altText="Ver planos" onClick={() => navigate("/planos")}>
+              Ver planos
+            </ToastAction>
+          ),
+        });
+        return;
+      }
       toast({
         title: "Erro ao criar lote",
         description: error instanceof Error ? error.message : "Erro ao criar lote",
@@ -475,6 +529,26 @@ const Lotes = () => {
   const paginated = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function abrirNovoLote() {
+    const limitReached =
+      lotesLimitStatus?.hubConfigured &&
+      !lotesLimitStatus?.planControlDisabled &&
+      lotesLimitStatus?.quantidadePermitida != null &&
+      lotesLimitStatus.quantidadeUsada >= lotesLimitStatus.quantidadePermitida;
+
+    if (limitReached) {
+      toast({
+        title: "Limite do plano",
+        description: "Você atingiu o limite de lotes do seu plano atual. Para cadastrar novos lotes, escolha um plano superior.",
+        variant: "destructive",
+        action: (
+          <ToastAction altText="Ver planos" onClick={() => navigate("/planos")}>
+            Ver planos
+          </ToastAction>
+        ),
+      });
+      return;
+    }
+
     if (loteamentosCarregados && loteamentos.length === 0) {
       toast({
         title: "Cadastre um loteamento primeiro",
@@ -573,6 +647,33 @@ const Lotes = () => {
             Novo Lote
           </Button>
         </div>
+
+        {lotesLimitStatus?.hubConfigured &&
+        !lotesLimitStatus?.planControlDisabled &&
+        lotesLimitStatus?.quantidadePermitida != null ? (
+          <div
+            className={
+              "rounded-md border p-3 flex items-center justify-between " +
+              (lotesLimitStatus.limiteAtingido ? "border-destructive/50 bg-destructive/5" : "")
+            }
+          >
+            <div className="text-sm">
+              <div className="font-medium">
+                Limite de lotes{lotesLimitStatus.plano ? ` (${lotesLimitStatus.plano})` : ""}
+              </div>
+              <div className="text-muted-foreground">
+                Você está usando {lotesLimitStatus.quantidadeUsada} de {lotesLimitStatus.quantidadePermitida} lotes.
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant={lotesLimitStatus.limiteAtingido ? "destructive" : "outline"}
+              onClick={() => navigate("/planos")}
+            >
+              Ver planos
+            </Button>
+          </div>
+        ) : null}
 
         {/* Filtros */}
         <div className="flex flex-col md:flex-row md:flex-wrap gap-3">
@@ -1136,7 +1237,7 @@ const Lotes = () => {
                       <div>
                         <p className="text-muted-foreground">Data venda</p>
                         <p className="font-medium">
-                          {new Date(loteClienteData.venda.data_venda).toLocaleDateString("pt-BR")}
+                          {formatDateBR(loteClienteData.venda.data_venda, loteClienteData.venda.data_venda)}
                         </p>
                       </div>
                       <div>

@@ -73,6 +73,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "@/hooks/use-toast";
 import { formatCpfCnpj, isValidCpfCnpj } from "@/lib/cpfCnpj";
+import { formatDateBR } from "@/lib/date-br";
 import { NovoClienteDialog, NovoClienteFormValues as NovoClienteDialogValues } from "@/components/clientes/NovoClienteDialog";
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -223,9 +224,7 @@ function getAuthHeaders() {
 }
 
 function formatDateBr(date: string) {
-  const d = new Date(date);
-  if (Number.isNaN(d.getTime())) return date;
-  return d.toLocaleDateString("pt-BR");
+  return formatDateBR(date, date);
 }
 
 async function fetchCliente(id: number): Promise<Cliente> {

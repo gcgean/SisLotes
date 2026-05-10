@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, MapPin, Grid3X3, User, ChevronRight, Edit, Search } from "lucide-react";
+import { Plus, MapPin, Grid3X3, User, ChevronRight, Edit, Search, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { formatCpfCnpj } from "@/lib/cpfCnpj";
 import {
@@ -31,6 +31,7 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Loteamento {
   id_loteamento: number;
@@ -115,6 +116,7 @@ const Loteamentos = () => {
 
   const [loteamentoSelecionado, setLoteamentoSelecionado] = useState<Loteamento | null>(null);
   const [dialogLotesAberto, setDialogLotesAberto] = useState(false);
+  const [dialogConfirmarExclusao, setDialogConfirmarExclusao] = useState<{aberto: boolean, loteamentoId: number | null}>({aberto: false, loteamentoId: null});
   const [filtroLotes, setFiltroLotes] = useState<"todos" | "disponivel" | "vendido">("todos");
   const [search, setSearch] = useState("");
 
@@ -231,6 +233,37 @@ const Loteamentos = () => {
         variant: "destructive",
       });
     },
+  });
+
+  const excluirLoteamentoMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/loteamentos/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!response.ok) {
+        let errorMsg = "Erro ao excluir loteamento";
+        try {
+          const data = await response.json();
+          if (data && data.error) errorMsg = data.error;
+        } catch {
+          // ignora falha no parse
+        }
+        throw new Error(errorMsg);
+      }
+      return true;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["loteamentos"] });
+      toast({ title: "Loteamento excluído com sucesso" });
+    },
+    onError: (error) => {
+      toast({
+        title: "Não foi possível excluir",
+        description: error instanceof Error ? error.message : "Erro desconhecido ao excluir",
+        variant: "destructive",
+      });
+    }
   });
 
   const loteamentosOriginais = data ?? [];
@@ -361,11 +394,23 @@ const Loteamentos = () => {
                 <Button 
                   variant="ghost" 
                   size="icon" 
-                  className="absolute top-3 right-3 h-8 w-8 text-muted-foreground hover:text-primary transition-colors"
+                  className="absolute top-3 right-12 h-8 w-8 text-muted-foreground hover:text-primary transition-colors"
                   onClick={(e) => abrirEditarLoteamento(lot, e)}
                   title="Editar Loteamento"
                 >
                   <Edit className="h-4 w-4" />
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="absolute top-3 right-3 h-8 w-8 text-muted-foreground hover:text-destructive transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setDialogConfirmarExclusao({ aberto: true, loteamentoId: lot.id_loteamento });
+                  }}
+                  title="Excluir Loteamento"
+                >
+                  <Trash2 className="h-4 w-4" />
                 </Button>
 
                 <div className="flex items-start justify-between pr-8">
@@ -534,175 +579,183 @@ const Loteamentos = () => {
 
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              
-              <div className="space-y-4 border p-4 rounded-md">
-                <h3 className="font-medium text-sm text-muted-foreground">Dados do Loteamento</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField control={form.control} name="nome" render={({ field }) => (
-                    <FormItem className="md:col-span-2">
-                      <FormLabel>Nome do Loteamento</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="endereco" render={({ field }) => (
-                    <FormItem className="md:col-span-2">
-                      <FormLabel>Endereço do Loteamento</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="cidade" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Cidade</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="estado" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estado</FormLabel>
-                      <FormControl><Input maxLength={2} {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
-              </div>
 
-              <div className="flex justify-end gap-2 py-1">
+              <Tabs defaultValue="loteamento" className="w-full">
+                <TabsList className="grid w-full grid-cols-2">
+                  <TabsTrigger value="loteamento">Loteamento</TabsTrigger>
+                  <TabsTrigger value="proprietario">Proprietário</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="loteamento" className="mt-4">
+                  <div className="space-y-4 border p-4 rounded-md">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="nome" render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Nome do Loteamento</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="endereco" render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Endereço do Loteamento</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="cidade" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Cidade</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="estado" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Estado</FormLabel>
+                          <FormControl><Input maxLength={2} {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="proprietario" className="mt-4">
+                  <div className="space-y-4 border p-4 rounded-md">
+                    <FormField control={form.control} name="tipo_pessoa" render={({ field }) => (
+                      <FormItem className="space-y-3">
+                        <FormControl>
+                          <RadioGroup
+                            onValueChange={field.onChange}
+                            defaultValue={field.value}
+                            className="flex flex-row space-x-4"
+                          >
+                            <FormItem className="flex items-center space-x-2 space-y-0">
+                              <FormControl>
+                                <RadioGroupItem value="f" />
+                              </FormControl>
+                              <FormLabel className="font-normal">
+                                Pessoa Física
+                              </FormLabel>
+                            </FormItem>
+                            <FormItem className="flex items-center space-x-2 space-y-0">
+                              <FormControl>
+                                <RadioGroupItem value="j" />
+                              </FormControl>
+                              <FormLabel className="font-normal">
+                                Pessoa Jurídica
+                              </FormLabel>
+                            </FormItem>
+                          </RadioGroup>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <FormField control={form.control} name="prop_nome" render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Nome do Proprietário</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="cnpj" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>CPF / CNPJ</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="000.000.000-00 ou 00.000.000/0001-00"
+                              onChange={(e) => field.onChange(formatCpfCnpj(e.target.value))}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="rg" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>RG</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="estado_civil" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Estado Civil</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="conjuge" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Cônjuge</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="profissao" render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Profissão</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="prop_endereco" render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Endereço</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="prop_cidade" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Cidade</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="prop_estado" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Estado</FormLabel>
+                          <FormControl><Input maxLength={2} {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="prop_bairro" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Bairro</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="prop_cep" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>CEP</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                      <FormField control={form.control} name="prop_fone" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Fone</FormLabel>
+                          <FormControl><Input {...field} /></FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
+
+              <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" type="button" onClick={() => setDialogAberto(false)}>
                   Cancelar
                 </Button>
                 <Button type="submit" disabled={criarLoteamentoMutation.isPending || editarLoteamentoMutation.isPending}>
                   {modoDialog === "novo" ? "Cadastrar" : "Atualizar"}
                 </Button>
-              </div>
-
-              <div className="space-y-4 border p-4 rounded-md">
-                <h3 className="font-medium text-sm text-muted-foreground">Dados do Proprietário</h3>
-                
-                <FormField control={form.control} name="tipo_pessoa" render={({ field }) => (
-                  <FormItem className="space-y-3">
-                    <FormControl>
-                      <RadioGroup
-                        onValueChange={field.onChange}
-                        defaultValue={field.value}
-                        className="flex flex-row space-x-4"
-                      >
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl>
-                            <RadioGroupItem value="f" />
-                          </FormControl>
-                          <FormLabel className="font-normal">
-                            Pessoa Física
-                          </FormLabel>
-                        </FormItem>
-                        <FormItem className="flex items-center space-x-2 space-y-0">
-                          <FormControl>
-                            <RadioGroupItem value="j" />
-                          </FormControl>
-                          <FormLabel className="font-normal">
-                            Pessoa Jurídica
-                          </FormLabel>
-                        </FormItem>
-                      </RadioGroup>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <FormField control={form.control} name="prop_nome" render={({ field }) => (
-                    <FormItem className="md:col-span-2">
-                      <FormLabel>Nome do Proprietário</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="cnpj" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>CPF / CNPJ</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          placeholder="000.000.000-00 ou 00.000.000/0001-00"
-                          onChange={(e) => field.onChange(formatCpfCnpj(e.target.value))}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="rg" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>RG</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="estado_civil" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estado Civil</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="conjuge" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Cônjuge</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="profissao" render={({ field }) => (
-                    <FormItem className="md:col-span-2">
-                      <FormLabel>Profissão</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="prop_endereco" render={({ field }) => (
-                    <FormItem className="md:col-span-2">
-                      <FormLabel>Endereço</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="prop_cidade" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Cidade</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="prop_estado" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Estado</FormLabel>
-                      <FormControl><Input maxLength={2} {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="prop_bairro" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Bairro</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="prop_cep" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>CEP</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={form.control} name="prop_fone" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Fone</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                </div>
               </div>
             </form>
           </Form>
@@ -729,6 +782,41 @@ const Loteamentos = () => {
               }}
             >
               Sim, cadastrar lotes
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* AlertDialog - Excluir loteamento */}
+      <AlertDialog 
+        open={dialogConfirmarExclusao.aberto} 
+        onOpenChange={(open) => { if (!open) setDialogConfirmarExclusao({ aberto: false, loteamentoId: null }); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir Loteamento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este loteamento?
+              <br />
+              <span className="font-medium text-destructive mt-2 block">
+                Esta ação só é permitida se não houver lotes vendidos ou com movimentação.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDialogConfirmarExclusao({ aberto: false, loteamentoId: null })}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => {
+                if (dialogConfirmarExclusao.loteamentoId) {
+                  excluirLoteamentoMutation.mutate(dialogConfirmarExclusao.loteamentoId);
+                }
+                setDialogConfirmarExclusao({ aberto: false, loteamentoId: null });
+              }}
+            >
+              Sim, Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

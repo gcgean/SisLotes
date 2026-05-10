@@ -47,8 +47,7 @@ import {
   ShieldOff,
 } from "lucide-react";
 import { formatCpfCnpj } from "@/lib/cpfCnpj";
-import { format, parseISO } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatDateBR, formatDateTimeBR } from "@/lib/date-br";
 import { Navigate } from "react-router-dom";
 
 interface Empresa {
@@ -91,20 +90,12 @@ const PLANOS = ["básico", "profissional", "enterprise", "personalizado"];
 
 function fmt(date?: string | null) {
   if (!date) return "—";
-  try {
-    return format(parseISO(date), "dd/MM/yyyy HH:mm", { locale: ptBR });
-  } catch {
-    return date;
-  }
+  return formatDateTimeBR(date, date);
 }
 
 function fmtDate(date?: string | null) {
   if (!date) return "—";
-  try {
-    return format(parseISO(date), "dd/MM/yyyy", { locale: ptBR });
-  } catch {
-    return date;
-  }
+  return formatDateBR(date, date);
 }
 
 const emptyForm = {

@@ -17,8 +17,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { formatCpfCnpj, isValidCpfCnpj } from "@/lib/cpfCnpj";
 import { useAuth } from "@/hooks/useAuth";
-import { format, parseISO } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatDateBR } from "@/lib/date-br";
 import {
   Building2,
   UserRound,
@@ -111,11 +110,7 @@ interface SetupResult {
 
 function fmtDate(date?: string | null) {
   if (!date) return null;
-  try {
-    return format(parseISO(date), "dd/MM/yyyy", { locale: ptBR });
-  } catch {
-    return date;
-  }
+  return formatDateBR(date, date);
 }
 
 // ─── Componente ────────────────────────────────────────────────────────────────

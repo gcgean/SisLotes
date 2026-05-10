@@ -32,6 +32,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { gerarReciboParcela } from "@/utils/reciboParcela";
+import { formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -96,31 +97,10 @@ interface Pagamento {
 const formatCurrency = (value: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value);
 
-const parseDateBR = (dateStr: string) => {
-  const [d, m, y] = dateStr.split("/").map(Number);
-  return new Date(y, m - 1, d);
-};
-
-const formatDateBR = (d: Date) =>
-  `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-
-const mapIsoToBr = (iso: string) => {
-  const [y, m, d] = iso.split("-");
-  if (!y || !m || !d) return iso;
-  return `${d}/${m}/${y}`;
-};
-
-const todayStr = () => formatDateBR(new Date());
-
-const toIsoFromBr = (dateStr: string) => {
-  if (!dateStr) return "";
-  const d = parseDateBR(dateStr);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-};
+const todayStr = () => formatDateBR(new Date(), "");
 
 const getDiasAtraso = (vencimentoStr: string) => {
-  const venc = parseDateBR(vencimentoStr);
+  const venc = parseBrDate(vencimentoStr);
   const hoje = new Date();
   hoje.setHours(0, 0, 0, 0);
   venc.setHours(0, 0, 0, 0);
@@ -253,11 +233,11 @@ const Pagamentos = () => {
             parcelas: p.venda?.parcelas ?? 0,
             tipo: p.tipo,
             situacao,
-            vencimento: mapIsoToBr(p.vencimento),
+            vencimento: formatDateBR(p.vencimento, p.vencimento),
             valor: Number(p.valor),
           };
         })
-        .sort((a, b) => parseDateBR(a.vencimento).getTime() - parseDateBR(b.vencimento).getTime());
+        .sort((a, b) => parseBrDate(a.vencimento).getTime() - parseBrDate(b.vencimento).getTime());
     },
     enabled: !!clienteSelecionado,
   });
@@ -288,14 +268,14 @@ const Pagamentos = () => {
           parcelas: p.venda?.parcelas ?? 0,
           tipo: p.tipo,
           situacao: "pago",
-          vencimento: mapIsoToBr(p.vencimento),
+          vencimento: formatDateBR(p.vencimento, p.vencimento),
           valor: Number(p.valor),
-          pago_data: p.pago_data ? mapIsoToBr(p.pago_data) : undefined,
+          pago_data: p.pago_data ? formatDateBR(p.pago_data, p.pago_data) : undefined,
           valor_pago: p.valor_pago != null ? Number(p.valor_pago) : undefined,
         }))
         .sort((a, b) => {
-          const da = a.pago_data ? parseDateBR(a.pago_data).getTime() : 0;
-          const db = b.pago_data ? parseDateBR(b.pago_data).getTime() : 0;
+          const da = a.pago_data ? parseBrDate(a.pago_data).getTime() : 0;
+          const db = b.pago_data ? parseBrDate(b.pago_data).getTime() : 0;
           return db - da;
         });
     },
@@ -374,7 +354,7 @@ const Pagamentos = () => {
   }
 
   async function handleConfirmarBaixa() {
-    const pagoIso = toIsoFromBr(baixaData);
+    const pagoIso = toIsoDateFromBR(baixaData);
     if (!pagoIso) {
       toast({ title: "Data inválida", variant: "destructive" });
       return;
@@ -415,7 +395,7 @@ const Pagamentos = () => {
   function handleReimprimirRecibo(pag: Pagamento) {
     const dias = pag.pago_data
       ? Math.max(0, Math.floor(
-          (parseDateBR(pag.pago_data).getTime() - parseDateBR(pag.vencimento).getTime()) / (1000 * 60 * 60 * 24)
+          (parseBrDate(pag.pago_data).getTime() - parseBrDate(pag.vencimento).getTime()) / (1000 * 60 * 60 * 24)
         ))
       : 0;
     const { multa, juros } = calcularEncargos(pag.valor, dias);

@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
 import { FileText, Printer, ChevronDown } from "lucide-react";
 import { MODELO_CONTRATO_PADRAO } from "@/utils/modeloContratoPadrao";
+import { formatDateBR } from "@/lib/date-br";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -91,9 +92,7 @@ function formatMoeda(v: number) {
 }
 
 function formatData(d: string) {
-  if (!d) return "";
-  const dt = new Date(d);
-  return dt.toLocaleDateString("pt-BR");
+  return formatDateBR(d, "");
 }
 
 function porExtenso(n: number): string {

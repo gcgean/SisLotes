@@ -204,6 +204,8 @@ loteamentosRouter.delete("/:id", requireAuth, requirePermission("loteamentos_exc
   const { id } = req.params;
 
   const repo = AppDataSource.getRepository(Loteamento);
+  const loteRepo = AppDataSource.getRepository(Lote);
+  const vendaRepo = AppDataSource.getRepository(Venda);
 
   const where: Record<string, unknown> = { id_loteamento: Number(id) };
 
@@ -215,6 +217,28 @@ loteamentosRouter.delete("/:id", requireAuth, requirePermission("loteamentos_exc
 
   if (!loteamento) {
     return res.status(404).json({ error: "Loteamento não encontrado" });
+  }
+
+  // Verifica se há lotes cadastrados
+  const hasLotes = await loteRepo.count({ where: { id_loteamento: loteamento.id_loteamento } });
+  if (hasLotes > 0) {
+    // Verifica se algum desses lotes tem venda
+    const lotesDoLoteamento = await loteRepo.find({ select: ["id_lote"], where: { id_loteamento: loteamento.id_loteamento } });
+    const idsLotes = lotesDoLoteamento.map(l => l.id_lote);
+    
+    if (idsLotes.length > 0) {
+      const hasVendas = await vendaRepo.createQueryBuilder("v")
+        .where("v.id_lote IN (:...ids)", { ids: idsLotes })
+        .andWhere("v.status != :cancelada", { cancelada: "cancelada" })
+        .getCount();
+
+      if (hasVendas > 0) {
+        return res.status(400).json({ error: "Não é possível excluir loteamento com lotes vendidos ou com movimentação." });
+      }
+    }
+    
+    // Se tem lotes, mas nenhuma venda ativa, apaga os lotes primeiro
+    await loteRepo.delete({ id_loteamento: loteamento.id_loteamento });
   }
 
   await repo.remove(loteamento);

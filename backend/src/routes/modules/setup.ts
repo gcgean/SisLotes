@@ -416,6 +416,8 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
   // Quando o Hub está configurado e há plano selecionado, o mapeamento é obrigatório.
   let hubInfo: {
     planCode?: string;
+    planName?: string | null;
+    quantity?: number | null;
     expiresAt?: string | null;
     trialDays?: number;
     customerId?: string | null;
@@ -475,6 +477,12 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
       let licenseEndAt = typeof resolved.licenseEndAt === "string" ? resolved.licenseEndAt : null;
       let daysLeft = typeof resolved.daysLeft === "number" ? resolved.daysLeft : null;
       const banner = typeof resolved.banner === "string" ? resolved.banner : null;
+      const quantityRaw = (resolved as Record<string, unknown>).quantity;
+      let quantity = typeof quantityRaw === "number" && Number.isFinite(quantityRaw) ? quantityRaw : null;
+      const planNameRaw = (resolved as Record<string, unknown>).planName;
+      let planName = typeof planNameRaw === "string" ? planNameRaw : null;
+      const planCodeRaw = (resolved as Record<string, unknown>).planCode;
+      let planCode = typeof planCodeRaw === "string" ? planCodeRaw : null;
       const features =
         resolved.features && typeof resolved.features === "object" && !Array.isArray(resolved.features)
           ? (resolved.features as Record<string, unknown>)
@@ -511,6 +519,12 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
           const newDaysLeft     = typeof updatedStatus.daysLeft     === "number" ? updatedStatus.daysLeft     : null;
           const newAccessStatus = typeof updatedStatus.accessStatus === "string" ? updatedStatus.accessStatus : null;
           const newCanAccess    = typeof updatedStatus.canAccess    === "boolean" ? updatedStatus.canAccess   : canAccess;
+          const newQuantityRaw  = (updatedStatus as { quantity?: unknown }).quantity;
+          quantity = typeof newQuantityRaw === "number" && Number.isFinite(newQuantityRaw) ? newQuantityRaw : quantity;
+          const newPlanNameRaw  = (updatedStatus as { planName?: unknown }).planName;
+          planName = typeof newPlanNameRaw === "string" ? newPlanNameRaw : planName;
+          const newPlanCodeRaw  = (updatedStatus as { planCode?: unknown }).planCode;
+          planCode = typeof newPlanCodeRaw === "string" ? newPlanCodeRaw : planCode;
 
           if (newTrialEndAt || newLicenseEndAt || newAccessStatus) {
             trialEndAt   = newTrialEndAt   ?? trialEndAt;
@@ -534,7 +548,15 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
       empresaSalva.hub_product_code = hubProductId;
       empresaSalva.hub_license_status = accessStatus;
       empresaSalva.hub_license_reason = canAccess ? null : accessStatus;
-      empresaSalva.hub_features = features;
+      empresaSalva.hub_features = HubBillingService.withHubMeta(features, {
+        daysLeft,
+        expiresAt: trialEndAt || licenseEndAt || null,
+        accessStatus,
+        quantity,
+        planCode,
+        planName,
+        syncedAt: new Date().toISOString(),
+      });
       // Sempre preservar o código local (TESTE/BASICO/INTERMEDIARIO) — não usar o nome do Hub
       empresaSalva.plano = planCodeUpper;
       empresaSalva.hub_last_sync = new Date();
@@ -568,6 +590,8 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
         customerId,
         accessStatus,
         canAccess,
+        quantity,
+        planName,
         daysLeft: daysLeft ?? (empresaSalva.hub_expires_at
           ? Math.ceil((empresaSalva.hub_expires_at.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
           : hubTrialDays),

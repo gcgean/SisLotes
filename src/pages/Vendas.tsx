@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { formatDateBR } from "@/lib/date-br";
 import {
   Dialog,
   DialogContent,
@@ -144,9 +145,7 @@ const fmtCurrency = (v: number | string) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(v));
 
 const fmtDate = (d: string) => {
-  if (!d) return "—";
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) return d;
-  try { return new Date(d + "T00:00:00").toLocaleDateString("pt-BR"); } catch { return d; }
+  return formatDateBR(d, "—");
 };
 
 const statusConfig: Record<VendaStatus, { label: string; variant: "default" | "secondary" | "destructive" }> = {

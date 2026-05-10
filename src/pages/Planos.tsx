@@ -8,8 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "@/hooks/use-toast";
-import { format, parseISO } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatDateBR, formatDateTimeBR } from "@/lib/date-br";
 import { useSearchParams } from "react-router-dom";
 
 function getAuthHeaders() {
@@ -47,11 +46,7 @@ interface PlanoCatalogo {
 
 function fmtDate(date?: string | null) {
   if (!date) return null;
-  try {
-    return format(parseISO(date), "dd/MM/yyyy", { locale: ptBR });
-  } catch {
-    return date;
-  }
+  return formatDateBR(date, date);
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -123,16 +118,6 @@ function extractPaymentData(raw: unknown) {
   };
 }
 
-interface TimelineEvent {
-  id_hub_event: number;
-  event_type: string;
-  event_source: "webhook" | "sync" | "system";
-  charge_id: string | null;
-  status: string | null;
-  amount: string | null;
-  created_at: string;
-}
-
 function isSuccessfulChargeStatus(status?: string | null) {
   const normalized = (status || "").toLowerCase();
   return normalized === "approved" || normalized === "paid";
@@ -190,20 +175,6 @@ const Planos = () => {
       );
       return hasPending ? 5000 : 15000;
     },
-  });
-
-  const { data: timeline = [] } = useQuery<TimelineEvent[]>({
-    queryKey: ["hub-billing", "timeline"],
-    queryFn: async () => {
-      const response = await fetch("/api/hub-billing/timeline?limit=80", {
-        headers: {
-          ...getAuthHeaders(),
-        },
-      });
-      if (!response.ok) throw new Error("Erro ao carregar timeline");
-      return response.json();
-    },
-    refetchInterval: 5000,
   });
 
   const { data: planosDisponiveis } = useQuery<PlanoCatalogo[]>({
@@ -407,7 +378,6 @@ const Planos = () => {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["hub-billing", "minhas-cobrancas"] });
-      queryClient.invalidateQueries({ queryKey: ["hub-billing", "timeline"] });
       queryClient.invalidateQueries({ queryKey: ["hub-billing", "license-status"] });
       const payment = extractPaymentData(data);
       if (payment.checkoutUrl || payment.pixCode || payment.pixQrCode) {
@@ -674,7 +644,7 @@ const Planos = () => {
                     <div>
                       <div className="font-medium">Charge: {row.charge_id || "-"}</div>
                       <div className="text-muted-foreground">
-                        {new Date(row.created_at).toLocaleString("pt-BR")}
+                        {formatDateTimeBR(row.created_at, row.created_at)}
                       </div>
                     </div>
                     <div className="text-right space-y-2">
@@ -806,39 +776,6 @@ const Planos = () => {
             </div>
           </DialogContent>
         </Dialog>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-sm">Timeline de eventos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {timeline.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum evento de cobrança registrado.</p>
-            ) : (
-              <div className="space-y-2">
-                {timeline.map((ev) => (
-                  <div key={ev.id_hub_event} className="border rounded-md p-3 text-sm flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{ev.event_type}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {new Date(ev.created_at).toLocaleString("pt-BR")} • origem {ev.event_source}
-                      </div>
-                      {ev.charge_id && (
-                        <div className="text-xs text-muted-foreground">Charge: {ev.charge_id}</div>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      {ev.amount && <div className="font-semibold">R$ {Number(ev.amount).toFixed(2)}</div>}
-                      <Badge variant={isSuccessfulChargeStatus(ev.status) ? "default" : "secondary"}>
-                        {ev.status || "n/a"}
-                      </Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
     </AppLayout>
   );

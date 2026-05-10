@@ -12,6 +12,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { formatLicenseRemainingTime } from "@/lib/license-time";
+import { formatDateBR } from "@/lib/date-br";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -333,7 +334,7 @@ const Dashboard = () => {
                     <p className="text-sm font-semibold">
                       {formatCurrency(sale.valor_total)}
                     </p>
-                    <p className="text-xs text-muted-foreground">{sale.data_venda}</p>
+                    <p className="text-xs text-muted-foreground">{formatDateBR(sale.data_venda, sale.data_venda)}</p>
                   </div>
                 </div>
               ))}

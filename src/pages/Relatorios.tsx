@@ -12,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Download, BarChart3, DollarSign, Users, Calendar, Printer } from "lucide-react";
 import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
+import { formatDateBR } from "@/lib/date-br";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -1060,7 +1061,7 @@ const Relatorios = () => {
                             <td className="px-5 py-3 font-medium">{row.cliente}</td>
                             <td className="px-5 py-3 text-muted-foreground">{row.lote}</td>
                             <td className="px-5 py-3 text-muted-foreground">{row.parcela}</td>
-                            <td className="px-5 py-3 text-muted-foreground">{row.vencimento}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{formatDateBR(row.vencimento, row.vencimento)}</td>
                             <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.valor)}</td>
                             <td className="px-5 py-3 text-right text-destructive font-medium">{row.diasAtraso}</td>
                             <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.multa)}</td>

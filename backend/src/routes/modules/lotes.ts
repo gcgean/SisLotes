@@ -5,7 +5,9 @@ import { Lote } from "../../entities/Lote";
 import { Venda } from "../../entities/Venda";
 import { Cliente } from "../../entities/Cliente";
 import { Loteamento } from "../../entities/Loteamento";
+import { Empresa } from "../../entities/Empresa";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { HubBillingService } from "../../services/HubBillingService";
 
 export const lotesRouter = Router();
 
@@ -79,6 +81,95 @@ lotesRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
   }));
 
   return res.json(result);
+});
+
+lotesRouter.get("/limit-status", requireAuth, async (req: AuthRequest, res) => {
+  const idEmpresa = req.user?.id_empresa ?? 1;
+  const empresa = await AppDataSource.getRepository(Empresa).findOne({ where: { id_empresa: idEmpresa } });
+  if (!empresa) {
+    return res.status(400).json({ error: "Empresa inválida" });
+  }
+
+  const planControlDisabled = HubBillingService.isPlanControlDisabled(empresa);
+  const hubConfigured = HubBillingService.isConfigured();
+
+  if (!planControlDisabled && hubConfigured) {
+    try {
+      await HubBillingService.syncEmpresaLicense(empresa);
+    } catch {
+      const cachedQuantity = HubBillingService.getStoredQuantity(empresa);
+      if (cachedQuantity === null) {
+        return res.status(503).json({
+          error: "Não foi possível validar o limite de lotes do seu plano no momento. Tente novamente.",
+        });
+      }
+    }
+  }
+
+  if (!planControlDisabled && HubBillingService.isLicenseDenied(empresa)) {
+    return res.status(403).json({
+      error: HubBillingService.getLicenseMessage(empresa),
+      reason: empresa.hub_license_reason || empresa.hub_license_status,
+      limiteAtingido: true,
+      necessitaUpgrade: true,
+    });
+  }
+
+  const quantidadePermitida = !planControlDisabled && hubConfigured ? HubBillingService.getStoredQuantity(empresa) : null;
+  const quantidadeUsada = await AppDataSource.getRepository(Lote).count({ where: { id_empresa: idEmpresa } });
+
+  const limiteAtingido = quantidadePermitida != null && Number.isFinite(quantidadePermitida)
+    ? quantidadeUsada >= quantidadePermitida
+    : false;
+
+  let nextPlan: Record<string, unknown> | null = null;
+  if (limiteAtingido && hubConfigured) {
+    const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+    if (productId && quantidadePermitida != null) {
+      try {
+        const plans = await HubBillingService.getProductPlans(productId);
+        const current = quantidadePermitida;
+        const candidates = (plans as Array<Record<string, unknown>>)
+          .map((p) => {
+            const q = (p as Record<string, unknown>).quantity;
+            const qNum = typeof q === "number" && Number.isFinite(q) ? q : null;
+            return { p, qNum };
+          })
+          .filter((x) => x.qNum !== null && (x.qNum as number) > current)
+          .sort((a, b) => (a.qNum as number) - (b.qNum as number));
+        const best = candidates[0]?.p;
+        if (best) {
+          nextPlan = {
+            planId: typeof best.id === "string" ? best.id : null,
+            code: typeof best.code === "string" ? best.code : null,
+            name: typeof best.name === "string" ? best.name : null,
+            amount: typeof best.amount === "number" ? best.amount : null,
+            quantity: typeof (best as Record<string, unknown>).quantity === "number" ? (best as Record<string, unknown>).quantity : null,
+          };
+        }
+      } catch {
+        nextPlan = null;
+      }
+    }
+  }
+
+  const meta = (empresa.hub_features && typeof empresa.hub_features === "object" && !Array.isArray(empresa.hub_features))
+    ? (empresa.hub_features as Record<string, unknown>).__hubMeta
+    : null;
+  const planName = meta && typeof meta === "object" && !Array.isArray(meta) && typeof (meta as Record<string, unknown>).planName === "string"
+    ? String((meta as Record<string, unknown>).planName)
+    : null;
+
+  return res.json({
+    plano: planName,
+    quantidadePermitida,
+    quantidadeUsada,
+    limiteAtingido,
+    necessitaUpgrade: limiteAtingido,
+    planControlDisabled,
+    hubConfigured,
+    nextPlan,
+  });
 });
 
 lotesRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
@@ -222,6 +313,92 @@ lotesRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
   }
 
   try {
+    const idEmpresa = req.user?.id_empresa ?? 1;
+
+    const empresaRepo = AppDataSource.getRepository(Empresa);
+    const empresa = await empresaRepo.findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+      return res.status(400).json({ error: "Empresa inválida" });
+    }
+
+    if (!HubBillingService.isPlanControlDisabled(empresa) && HubBillingService.isConfigured()) {
+      try {
+        await HubBillingService.syncEmpresaLicense(empresa);
+      } catch (err) {
+        const cachedQuantity = HubBillingService.getStoredQuantity(empresa);
+        if (cachedQuantity === null) {
+          return res.status(503).json({
+            error: "Não foi possível validar o limite de lotes do seu plano no momento. Tente novamente.",
+          });
+        }
+      }
+
+      if (HubBillingService.isLicenseDenied(empresa)) {
+        return res.status(403).json({
+          error: HubBillingService.getLicenseMessage(empresa),
+          reason: empresa.hub_license_reason || empresa.hub_license_status,
+        });
+      }
+
+      const quantity = HubBillingService.getStoredQuantity(empresa);
+      if (quantity === null || !Number.isFinite(quantity)) {
+        return res.status(403).json({
+          error: "Não foi possível validar o limite de lotes do seu plano. Contate o suporte.",
+        });
+      }
+
+      if (quantity <= 0) {
+        return res.status(403).json({
+          error: "Seu plano atual não permite cadastro de lotes. Para cadastrar novos lotes, escolha um plano superior.",
+          code: "lotes_limit_zero",
+          quantidadePermitida: quantity,
+        });
+      }
+
+      const loteRepo = AppDataSource.getRepository(Lote);
+      const quantidadeUsada = await loteRepo.count({ where: { id_empresa: idEmpresa } });
+      if (quantidadeUsada >= quantity) {
+        let nextPlan: Record<string, unknown> | null = null;
+        const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+        if (productId) {
+          try {
+            const plans = await HubBillingService.getProductPlans(productId);
+            const current = quantity;
+            const candidates = (plans as Array<Record<string, unknown>>)
+              .map((p) => {
+                const q = (p as Record<string, unknown>).quantity;
+                const qNum = typeof q === "number" && Number.isFinite(q) ? q : null;
+                return { p, qNum };
+              })
+              .filter((x) => x.qNum !== null && (x.qNum as number) > current)
+              .sort((a, b) => (a.qNum as number) - (b.qNum as number));
+            const best = candidates[0]?.p;
+            if (best) {
+              nextPlan = {
+                planId: typeof best.id === "string" ? best.id : null,
+                code: typeof best.code === "string" ? best.code : null,
+                name: typeof best.name === "string" ? best.name : null,
+                amount: typeof best.amount === "number" ? best.amount : null,
+                quantity: typeof (best as Record<string, unknown>).quantity === "number" ? (best as Record<string, unknown>).quantity : null,
+              };
+            }
+          } catch {
+            nextPlan = null;
+          }
+        }
+
+        return res.status(403).json({
+          error: "Você atingiu o limite de lotes do seu plano atual. Para cadastrar novos lotes, escolha um plano superior.",
+          code: "lotes_limit_reached",
+          quantidadePermitida: quantity,
+          quantidadeUsada,
+          limiteAtingido: true,
+          necessitaUpgrade: true,
+          nextPlan,
+        });
+      }
+    }
+
     const repo = AppDataSource.getRepository(Lote);
 
     const lote = repo.create({

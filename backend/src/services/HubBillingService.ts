@@ -7,6 +7,9 @@ export interface HubAccessResult {
   allowed: boolean;
   reason?: string;
   features?: Record<string, unknown>;
+  quantity?: number | null;
+  planCode?: string | null;
+  planName?: string | null;
   expiresAt?: string | null;
   daysLeft?: number | null;
   banner?: string | null;
@@ -23,6 +26,9 @@ type HubFeatureMeta = {
   expiresAt?: string | null;
   accessStatus?: string | null;
   syncedAt?: string | null;
+  quantity?: number | null;
+  planCode?: string | null;
+  planName?: string | null;
 };
 
 const NEGATIVE_LICENSE_REASONS = new Set([
@@ -99,7 +105,19 @@ export class HubBillingService {
     return typeof value === "number" && Number.isFinite(value) ? value : null;
   }
 
-  private static attachHubMeta(features: Record<string, unknown> | null | undefined, meta: HubFeatureMeta) {
+  static getStoredQuantity(empresa: Empresa | null | undefined) {
+    const features = empresa?.hub_features;
+    if (!features || typeof features !== "object" || Array.isArray(features)) return null;
+    const meta = (features as Record<string, unknown>)[this.HUB_FEATURE_META_KEY];
+    if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+      const direct = (features as Record<string, unknown>).quantity;
+      return typeof direct === "number" && Number.isFinite(direct) ? direct : null;
+    }
+    const value = (meta as Record<string, unknown>).quantity;
+    return typeof value === "number" && Number.isFinite(value) ? value : null;
+  }
+
+  static withHubMeta(features: Record<string, unknown> | null | undefined, meta: HubFeatureMeta) {
     const base = { ...(features ?? {}) };
     base[this.HUB_FEATURE_META_KEY] = meta;
     return base;
@@ -222,10 +240,17 @@ export class HubBillingService {
   }
 
   static async getProductPlans(productId: string) {
-    return this.requestAdmin<Array<Record<string, unknown>>>(
-      "GET",
-      `/products/${encodeURIComponent(productId)}/plans`,
-    );
+    try {
+      return await this.requestApiKey<Array<Record<string, unknown>>>(
+        "GET",
+        `/access/products/${encodeURIComponent(productId)}/plans`,
+      );
+    } catch {
+      return this.requestAdmin<Array<Record<string, unknown>>>(
+        "GET",
+        `/products/${encodeURIComponent(productId)}/plans`,
+      );
+    }
   }
 
   static async getProduct(productId: string) {
@@ -273,6 +298,9 @@ export class HubBillingService {
         allowed: empresa.ativo,
         reason: "hub_not_configured",
         features: empresa.hub_features ?? {},
+        quantity: this.getStoredQuantity(empresa),
+        planCode: empresa.plano ?? null,
+        planName: null,
         daysLeft: effectiveDaysLeft,
         expiresAt: effectiveExpiresAt,
       };
@@ -289,6 +317,9 @@ export class HubBillingService {
         allowed: false,
         reason: "hub_mapping_missing",
         features: {},
+        quantity: null,
+        planCode: null,
+        planName: null,
         daysLeft: null,
       };
     }
@@ -296,12 +327,16 @@ export class HubBillingService {
     const now = Date.now();
     if (empresa.hub_cache_until && empresa.hub_cache_until.getTime() > now) {
       const cachedDaysLeft = this.getStoredDaysLeft(empresa);
-      if (cachedDaysLeft !== null) {
+      const cachedQuantity = this.getStoredQuantity(empresa);
+      if (cachedDaysLeft !== null || cachedQuantity !== null) {
         return {
           synced: true,
           allowed: !this.isLicenseDenied(empresa),
           reason: empresa.hub_license_reason || empresa.hub_license_status || undefined,
           features: empresa.hub_features ?? {},
+          quantity: cachedQuantity,
+          planCode: empresa.plano ?? null,
+          planName: null,
           daysLeft: cachedDaysLeft,
         };
       }
@@ -311,10 +346,13 @@ export class HubBillingService {
 
     empresa.hub_license_status = access.accessStatus || (access.allowed ? "licensed" : access.reason || "license_inactive");
     empresa.hub_license_reason = access.allowed ? null : access.reason || access.accessStatus || "license_inactive";
-    empresa.hub_features = this.attachHubMeta(access.features, {
+    empresa.hub_features = this.withHubMeta(access.features, {
       daysLeft: access.daysLeft ?? null,
       expiresAt: access.expiresAt ?? null,
       accessStatus: access.accessStatus ?? null,
+      quantity: access.quantity ?? null,
+      planCode: access.planCode ?? null,
+      planName: access.planName ?? null,
       syncedAt: new Date().toISOString(),
     });
     empresa.hub_last_sync = new Date();
@@ -338,10 +376,13 @@ export class HubBillingService {
     })();
 
     // Reescreve hub_features com daysLeft/expiresAt efetivos
-    empresa.hub_features = this.attachHubMeta(access.features, {
+    empresa.hub_features = this.withHubMeta(access.features, {
       daysLeft: effectiveDaysLeft,
       expiresAt: effectiveExpiresAt,
       accessStatus: access.accessStatus ?? null,
+      quantity: access.quantity ?? null,
+      planCode: access.planCode ?? null,
+      planName: access.planName ?? null,
       syncedAt: new Date().toISOString(),
     });
 
@@ -385,6 +426,12 @@ export class HubBillingService {
       const daysLeft = typeof daysLeftRaw === "number" ? daysLeftRaw : null;
       const bannerRaw = (statusData as { banner?: unknown }).banner;
       const banner = typeof bannerRaw === "string" ? bannerRaw : null;
+      const quantityRaw = (statusData as { quantity?: unknown }).quantity;
+      const quantity = typeof quantityRaw === "number" && Number.isFinite(quantityRaw) ? quantityRaw : null;
+      const planCodeRaw = (statusData as { planCode?: unknown }).planCode;
+      const planCode = typeof planCodeRaw === "string" ? planCodeRaw : null;
+      const planNameRaw = (statusData as { planName?: unknown }).planName;
+      const planName = typeof planNameRaw === "string" ? planNameRaw : null;
       const trialEndAtRaw = (statusData as { trialEndAt?: unknown }).trialEndAt;
       const licenseEndAtRaw = (statusData as { licenseEndAt?: unknown }).licenseEndAt;
       const expiresAtRaw =
@@ -403,6 +450,9 @@ export class HubBillingService {
         allowed: canAccess,
         reason: canAccess ? reason : reason,
         features,
+        quantity,
+        planCode,
+        planName,
         expiresAt: expiresAtRaw,
         daysLeft,
         banner,

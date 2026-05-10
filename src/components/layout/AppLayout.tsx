@@ -8,9 +8,8 @@ import { Menu, LogOut, Sun, Moon, Building2, CreditCard, Lock } from "lucide-rea
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
-import { format, parseISO } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import { formatLicenseRemainingTime } from "@/lib/license-time";
+import { formatDateBR } from "@/lib/date-br";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -49,15 +48,6 @@ function isLicenseBlocked(data?: LicenseStatus | null) {
   if (!data?.hub_customer_id) return false;
   const status = (data?.hub_license_status || "").toLowerCase();
   return BLOCKED_STATUSES.has(status);
-}
-
-function fmtDate(date?: string | null) {
-  if (!date) return null;
-  try {
-    return format(parseISO(date), "dd/MM/yyyy", { locale: ptBR });
-  } catch {
-    return date;
-  }
 }
 
 function getAuthToken() {
@@ -142,7 +132,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   }
 
   const blocked = isLicenseBlocked(licenseData);
-  const expiresDate = fmtDate(licenseData?.hub_expires_at);
+  const expiresDate = licenseData?.hub_expires_at ? formatDateBR(licenseData.hub_expires_at, "") : null;
   const daysLeft = typeof licenseData?.days_left === "number" ? licenseData.days_left : null;
   const planLabel = getPlanLabel(licenseData, planosDisponiveis);
   const licenseTimeLabel = formatLicenseRemainingTime({

@@ -34,6 +34,13 @@ async function resolveHubOnLoginIfNeeded(args: { empresa: Empresa; user: Usuario
     email,
   });
 
+  const quantityRaw = (resolved as Record<string, unknown>).quantity;
+  const quantity = typeof quantityRaw === "number" && Number.isFinite(quantityRaw) ? quantityRaw : null;
+  const planCodeRaw = (resolved as Record<string, unknown>).planCode;
+  const planCode = typeof planCodeRaw === "string" ? planCodeRaw : null;
+  const planNameRaw = (resolved as Record<string, unknown>).planName;
+  const planName = typeof planNameRaw === "string" ? planNameRaw : null;
+
   empresa.hub_customer_id = typeof resolved.customerId === "string" ? resolved.customerId : empresa.hub_customer_id;
   empresa.hub_product_code = hubProductId;
   empresa.hub_license_status =
@@ -47,6 +54,25 @@ async function resolveHubOnLoginIfNeeded(args: { empresa: Empresa; user: Usuario
         : empresa.hub_license_reason;
   empresa.hub_last_sync = new Date();
   empresa.hub_cache_until = new Date(Date.now() + (Boolean(resolved.canAccess) ? 60_000 : 10_000));
+
+  empresa.hub_features = HubBillingService.withHubMeta(
+    (resolved.features && typeof resolved.features === "object" && !Array.isArray(resolved.features)
+      ? (resolved.features as Record<string, unknown>)
+      : (empresa.hub_features as Record<string, unknown> | null | undefined)) ?? {},
+    {
+      daysLeft: typeof resolved.daysLeft === "number" ? resolved.daysLeft : null,
+      expiresAt: typeof resolved.trialEndAt === "string"
+        ? resolved.trialEndAt
+        : typeof resolved.licenseEndAt === "string"
+          ? resolved.licenseEndAt
+          : null,
+      accessStatus: typeof resolved.accessStatus === "string" ? resolved.accessStatus : null,
+      quantity,
+      planCode,
+      planName,
+      syncedAt: new Date().toISOString(),
+    },
+  );
 
   const trialEndAt = typeof resolved.trialEndAt === "string" ? resolved.trialEndAt : null;
   const licenseEndAt = typeof resolved.licenseEndAt === "string" ? resolved.licenseEndAt : null;

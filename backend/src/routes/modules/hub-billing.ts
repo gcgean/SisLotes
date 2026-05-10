@@ -166,6 +166,7 @@ hubBillingRouter.get("/planos-disponiveis", requireAuth, async (_req: AuthReques
     const hubName = hubPlan ? pickString(hubPlan, ["name"]) : null;
     const hubDescription = hubPlan ? pickString(hubPlan, ["description"]) : null;
     const hubAmountRaw = hubPlan ? pickNumber(hubPlan, ["amount", "value", "amountCents"]) : null;
+    const hubQuantity = hubPlan ? pickNumber(hubPlan, ["quantity"]) : null;
     const hubAmount =
       hubAmountRaw == null
         ? null
@@ -190,6 +191,7 @@ hubBillingRouter.get("/planos-disponiveis", requireAuth, async (_req: AuthReques
       code: basePlan.code,
       title: hubName || basePlan.title,
       amount: hubAmount ?? basePlan.amount,
+      quantity: hubQuantity ?? null,
       description: hubDescription || (hubPlan ? `Plano ${hubName || basePlan.title}` : basePlan.description),
       active,
       planId: hubPlanId || localPlanId || null,

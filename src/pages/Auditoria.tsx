@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { formatDateTimeBR } from "@/lib/date-br";
 
 interface RegistroAuditoria {
   id_auditoria: number;
@@ -142,7 +143,7 @@ const Auditoria = () => {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">{registro.descricao}</td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">
-                      {new Date(registro.data_hora).toLocaleString("pt-BR")}
+                      {formatDateTimeBR(registro.data_hora, registro.data_hora)}
                     </td>
                     <td className="px-4 py-3 text-muted-foreground text-xs">{registro.ip_address}</td>
                   </tr>
