@@ -130,18 +130,33 @@ const Loteamentos = () => {
     },
   });
 
-  const { data, isLoading, isError } = useQuery<ListaLoteamentosResponse>({
+  const { data, isLoading, isError, error } = useQuery<ListaLoteamentosResponse>({
     queryKey: ["loteamentos"],
     queryFn: async () => {
       const response = await fetch("/api/loteamentos", { headers: { ...getAuthHeaders() } });
-      if (!response.ok) throw new Error("Erro ao carregar loteamentos");
+      if (!response.ok) {
+        let data: unknown;
+        try { data = await response.json(); } catch { data = null; }
+        const msg =
+          typeof data === "object" && data !== null && "error" in data &&
+          typeof (data as { error?: unknown }).error === "string"
+            ? (data as { error: string }).error
+            : "Erro ao carregar loteamentos";
+        throw new Error(msg);
+      }
       return response.json();
     },
   });
 
-  if (isError) {
-    toast({ title: "Erro ao carregar loteamentos", variant: "destructive" });
-  }
+  useEffect(() => {
+    if (isError) {
+      toast({
+        title: "Erro ao carregar loteamentos",
+        description: error instanceof Error ? error.message : "Erro ao carregar loteamentos",
+        variant: "destructive",
+      });
+    }
+  }, [isError, error]);
 
   // Busca lotes do loteamento selecionado
   const {
