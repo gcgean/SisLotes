@@ -328,7 +328,7 @@ export class HubBillingService {
     if (empresa.hub_cache_until && empresa.hub_cache_until.getTime() > now) {
       const cachedDaysLeft = this.getStoredDaysLeft(empresa);
       const cachedQuantity = this.getStoredQuantity(empresa);
-      if (cachedDaysLeft !== null || cachedQuantity !== null) {
+      if (cachedQuantity !== null) {
         return {
           synced: true,
           allowed: !this.isLicenseDenied(empresa),
@@ -339,6 +339,51 @@ export class HubBillingService {
           planName: null,
           daysLeft: cachedDaysLeft,
         };
+      }
+
+      if (cachedDaysLeft !== null) {
+        try {
+          const access = await this.resolveEmpresaAccess(empresa);
+
+          empresa.hub_license_status =
+            access.accessStatus || (access.allowed ? "licensed" : access.reason || "license_inactive");
+          empresa.hub_license_reason = access.allowed ? null : access.reason || access.accessStatus || "license_inactive";
+          empresa.hub_features = this.withHubMeta(access.features, {
+            daysLeft: access.daysLeft ?? cachedDaysLeft,
+            expiresAt: access.expiresAt ?? null,
+            accessStatus: access.accessStatus ?? null,
+            quantity: access.quantity ?? null,
+            planCode: access.planCode ?? null,
+            planName: access.planName ?? null,
+            syncedAt: new Date().toISOString(),
+          });
+          empresa.hub_last_sync = new Date();
+          empresa.hub_cache_until = new Date(Date.now() + (access.allowed ? 60_000 : 10_000));
+
+          await AppDataSource.getRepository(Empresa).save(empresa);
+
+          return {
+            synced: true,
+            allowed: !this.isLicenseDenied(empresa),
+            reason: empresa.hub_license_reason || empresa.hub_license_status || undefined,
+            features: empresa.hub_features ?? {},
+            quantity: this.getStoredQuantity(empresa),
+            planCode: empresa.plano ?? null,
+            planName: null,
+            daysLeft: this.getStoredDaysLeft(empresa),
+          };
+        } catch {
+          return {
+            synced: true,
+            allowed: !this.isLicenseDenied(empresa),
+            reason: empresa.hub_license_reason || empresa.hub_license_status || undefined,
+            features: empresa.hub_features ?? {},
+            quantity: null,
+            planCode: empresa.plano ?? null,
+            planName: null,
+            daysLeft: cachedDaysLeft,
+          };
+        }
       }
     }
 
