@@ -478,11 +478,34 @@ export class HubBillingService {
           : typeof quantityRaw === "string" && quantityRaw.trim() && !Number.isNaN(Number(quantityRaw))
             ? Number(quantityRaw)
             : null;
-      const quantity = quantityParsed != null && Number.isFinite(quantityParsed) ? quantityParsed : null;
+      let quantity = quantityParsed != null && Number.isFinite(quantityParsed) ? quantityParsed : null;
       const planCodeRaw = (statusData as { planCode?: unknown }).planCode;
       const planCode = typeof planCodeRaw === "string" ? planCodeRaw : null;
       const planNameRaw = (statusData as { planName?: unknown }).planName;
       const planName = typeof planNameRaw === "string" ? planNameRaw : null;
+
+      // Fallback: /access/status não retorna quantity em trial — busca nos planos do produto
+      if (quantity === null && productId) {
+        try {
+          const plans = await this.getProductPlans(productId);
+          const planCodeUpper = planCode?.toUpperCase();
+          const match = planCodeUpper
+            ? plans.find((p) => typeof p.code === "string" && p.code.toUpperCase() === planCodeUpper)
+            : plans.find((p) => p.isActive === true || String(p.status ?? "").toLowerCase() === "active");
+          if (match) {
+            const raw = match.quantity;
+            const parsed =
+              typeof raw === "number" && Number.isFinite(raw)
+                ? raw
+                : typeof raw === "string" && raw.trim() && !Number.isNaN(Number(raw))
+                  ? Number(raw)
+                  : null;
+            if (parsed !== null && Number.isFinite(parsed)) quantity = parsed;
+          }
+        } catch {
+          // ignora — fallback opcional
+        }
+      }
       const trialEndAtRaw = (statusData as { trialEndAt?: unknown }).trialEndAt;
       const licenseEndAtRaw = (statusData as { licenseEndAt?: unknown }).licenseEndAt;
       const expiresAtRaw =
