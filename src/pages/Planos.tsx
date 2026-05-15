@@ -190,7 +190,7 @@ const Planos = () => {
         : [];
       return planos.length > 0 ? planos : PLANOS;
     },
-    staleTime: 60_000,
+    staleTime: 0,
   });
 
   const checkoutMutation = useMutation({
