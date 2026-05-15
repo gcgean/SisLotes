@@ -128,77 +128,51 @@ async function resolveHubPlanDynamicByCode(planCode: string, productId: string) 
 }
 
 hubBillingRouter.get("/planos-disponiveis", requireAuth, async (_req: AuthRequest, res) => {
-  const map = getHubPlanMap();
   const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
 
-  let plansFromHubByCode: Record<string, Record<string, unknown>> = {};
-  let plansFromHubById: Record<string, Record<string, unknown>> = {};
-  let hubLoaded = false;
   if (productId) {
     try {
       const plansFromHub = await HubBillingService.getProductPlans(productId);
-      hubLoaded = true;
-      plansFromHubByCode = plansFromHub.reduce<Record<string, Record<string, unknown>>>((acc, item) => {
-        const code = pickString(item, ["code"]);
-        if (code) acc[code.toUpperCase()] = item;
-        return acc;
-      }, {});
-      plansFromHubById = plansFromHub.reduce<Record<string, Record<string, unknown>>>((acc, item) => {
-        const id = pickString(item, ["id", "planId"]);
-        if (id) acc[id] = item;
-        return acc;
-      }, {});
+      const planos = plansFromHub
+        .filter((item) => item.isActive === true || String(item.status ?? "").toLowerCase() === "active")
+        .map((item) => {
+          const amountRaw = pickNumber(item, ["amount", "value", "amountCents"]);
+          const amount =
+            amountRaw == null
+              ? 0
+              : Number.isInteger(amountRaw) && Math.abs(amountRaw) >= 100
+              ? amountRaw / 100
+              : amountRaw;
+          return {
+            code: pickString(item, ["code"]) || "",
+            title: pickString(item, ["name"]) || pickString(item, ["code"]) || "",
+            amount,
+            quantity: pickNumber(item, ["quantity"]) ?? null,
+            description: pickString(item, ["description"]) ?? null,
+            active: true,
+            planId: pickString(item, ["id", "planId"]) || null,
+            source: "hub",
+            hubStatus: String(item.status ?? "").toLowerCase() || null,
+          };
+        });
+      return res.json({ planos });
     } catch (err) {
       console.warn("[Hub] Falha ao buscar planos em /products/:id/plans:", err instanceof Error ? err.message : err);
     }
   }
 
-  const planos = PLAN_CATALOG.map((basePlan) => {
-    const localPlanId = map[basePlan.code]?.planId || "";
-    const hubPlan = selectHubPlanForCode({
-      expectedCode: basePlan.code,
-      mappedId: localPlanId,
-      byCode: plansFromHubByCode,
-      byId: plansFromHubById,
-    });
-    const hubStatus = hubPlan ? String(hubPlan.status ?? "").toLowerCase() : "";
-    const hubActiveFlag = hubPlan ? hubPlan.isActive : undefined;
-    const hubName = hubPlan ? pickString(hubPlan, ["name"]) : null;
-    const hubDescription = hubPlan ? pickString(hubPlan, ["description"]) : null;
-    const hubAmountRaw = hubPlan ? pickNumber(hubPlan, ["amount", "value", "amountCents"]) : null;
-    const hubQuantity = hubPlan ? pickNumber(hubPlan, ["quantity"]) : null;
-    const hubAmount =
-      hubAmountRaw == null
-        ? null
-        : Number.isInteger(hubAmountRaw) && Math.abs(hubAmountRaw) >= 100
-        ? hubAmountRaw / 100
-        : hubAmountRaw;
-    const hubPlanId = hubPlan ? pickString(hubPlan, ["id", "planId"]) : null;
-
-    const activeByHubStatus = hubPlan ? hubStatus === "active" : null;
-    const activeByHubFlag = hubPlan && typeof hubActiveFlag === "boolean" ? hubActiveFlag : null;
-    const active = hubPlan
-      ? activeByHubFlag != null
-        ? activeByHubFlag
-        : activeByHubStatus != null
-        ? activeByHubStatus
-        : Boolean(localPlanId)
-      : hubLoaded
-      ? false
-      : Boolean(localPlanId);
-
-    return {
-      code: basePlan.code,
-      title: hubName || basePlan.title,
-      amount: hubAmount ?? basePlan.amount,
-      quantity: hubQuantity ?? null,
-      description: hubDescription || (hubPlan ? `Plano ${hubName || basePlan.title}` : basePlan.description),
-      active,
-      planId: hubPlanId || localPlanId || null,
-      source: hubPlan ? "hub" : "local_fallback",
-      hubStatus: hubStatus || null,
-    };
-  });
+  // Fallback local quando hub não está disponível
+  const planos = PLAN_CATALOG.map((basePlan) => ({
+    code: basePlan.code,
+    title: basePlan.title,
+    amount: basePlan.amount,
+    quantity: null,
+    description: basePlan.description,
+    active: true,
+    planId: null,
+    source: "local_fallback",
+    hubStatus: null,
+  }));
 
   return res.json({ planos });
 });
@@ -945,22 +919,34 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
   const payload = parseResult.data;
   const planCode = payload.planCode.toUpperCase();
   const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || "";
-  const hubPlanMap = getHubPlanMap();
-  const hubPlan = hubPlanMap[planCode];
 
   if (!hubProductId) {
     return res.status(500).json({ error: "HUB_BILLING_PRODUCT_ID não configurado" });
   }
-  if (!hubPlan?.planId) {
-    return res.status(400).json({ error: `Plano '${planCode}' não mapeado para o Hub Billing` });
+
+  // Resolve planId dinamicamente pelo code do hub (suporta qualquer plano cadastrado)
+  const hubPlanMap = getHubPlanMap();
+  const hubPlanStatic = hubPlanMap[planCode];
+  const dynamicPlan = !hubPlanStatic?.planId
+    ? await resolveHubPlanDynamicByCode(planCode, hubProductId)
+    : null;
+  const resolvedPlanId = hubPlanStatic?.planId || dynamicPlan?.planId || null;
+  const resolvedAmount = hubPlanStatic?.amountCents
+    ? hubPlanStatic.amountCents
+    : dynamicPlan?.amount != null
+    ? Math.round(dynamicPlan.amount * 100)
+    : 0;
+
+  if (!resolvedPlanId) {
+    return res.status(400).json({ error: `Plano '${planCode}' não encontrado no Hub Billing` });
   }
 
   try {
     const subscription = await HubBillingService.createSubscription({
       customerId: empresa.hub_customer_id,
       productId: hubProductId,
-      planId: hubPlan.planId,
-      contractedAmount: hubPlan.amountCents,
+      planId: resolvedPlanId,
+      contractedAmount: resolvedAmount,
       ...(payload.subscriptionPayload ?? {}),
     });
 
@@ -980,7 +966,7 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
     const chargeId = artifacts.chargeId;
     const status = artifacts.status;
     const amountRaw = artifacts.amountRaw;
-    const amount = normalizeHubAmount(amountRaw, hubPlan.amountCents / 100);
+    const amount = normalizeHubAmount(amountRaw, resolvedAmount / 100);
     const checkoutUrl = artifacts.checkoutUrl;
     const pixCode = artifacts.pixCode;
     const pixQrCode = artifacts.pixQrCode;
