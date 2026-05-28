@@ -11,6 +11,7 @@ import {
   Building2,
   Activity,
   ShieldAlert,
+  MessageSquare,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -42,6 +43,7 @@ const secondaryItems = [
   { title: "Planos", url: "/planos", icon: Wallet },
   { title: "Relatórios", url: "/relatorios", icon: FileText },
   { title: "Auditoria", url: "/auditoria", icon: Activity },
+  { title: "Sugestões", url: "/sugestoes", icon: MessageSquare },
   { title: "Configurações", url: "/configuracoes", icon: Settings },
 ];
 

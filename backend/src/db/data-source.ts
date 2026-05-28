@@ -12,6 +12,7 @@ import { Empresa } from "../entities/Empresa";
 import { Auditoria } from "../entities/Auditoria";
 import { HubBillingCharge } from "../entities/HubBillingCharge";
 import { HubBillingEvent } from "../entities/HubBillingEvent";
+import { Sugestao } from "../entities/Sugestao";
 import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateClientes";
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
@@ -32,6 +33,7 @@ import { AddIgnorePlanControlToEmpresa1700000000016 } from "../migrations/170000
 import { AllowEntradaTipoPagamento1700000000016 } from "../migrations/1700000000016-AllowEntradaTipoPagamento";
 import { AddModeloContratoToEmpresa1700000000017 } from "../migrations/1700000000017-AddModeloContratoToEmpresa";
 import { FixAllSequences1700000000018 } from "../migrations/1700000000018-FixAllSequences";
+import { CreateSugestoes1700000000019 } from "../migrations/1700000000019-CreateSugestoes";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -40,7 +42,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -62,6 +64,7 @@ export const AppDataSource = new DataSource({
     AllowEntradaTipoPagamento1700000000016,
     AddModeloContratoToEmpresa1700000000017,
     FixAllSequences1700000000018,
+    CreateSugestoes1700000000019,
   ],
   synchronize: false,
   logging: false,

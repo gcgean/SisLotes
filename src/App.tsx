@@ -18,6 +18,7 @@ import Login from "./pages/Login";
 import PrimeiroAcesso from "./pages/PrimeiroAcesso";
 import Admin from "./pages/Admin";
 import Planos from "./pages/Planos";
+import Sugestoes from "./pages/Sugestoes";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { useLicenseFeatures } from "./hooks/useLicenseFeatures";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
@@ -141,6 +142,14 @@ const App = () => (
                   <RequireFeature feature="module_planos">
                     <Planos />
                   </RequireFeature>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/sugestoes"
+              element={
+                <RequireAuth>
+                  <Sugestoes />
                 </RequireAuth>
               }
             />
