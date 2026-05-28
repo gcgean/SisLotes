@@ -275,21 +275,6 @@ export function AppLayout({ children }: AppLayoutProps) {
       {/* Bottom navigation bar — only on mobile */}
       <BottomNav />
 
-      {/* ── Botão flutuante WhatsApp Suporte ──────────────────────────── */}
-      <a
-        href="https://wa.me/5585920066836?text=Ol%C3%A1!%20Preciso%20de%20suporte%20com%20o%20SISLOTE."
-        target="_blank"
-        rel="noopener noreferrer"
-        title="Suporte via WhatsApp"
-        className="fixed bottom-24 right-4 md:bottom-6 md:right-6 z-[150] flex items-center gap-2 bg-[#25D366] hover:bg-[#1ebe5d] text-white rounded-full shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 group px-3 py-3 md:px-4"
-      >
-        {/* Ícone WhatsApp */}
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" className="h-6 w-6 shrink-0 fill-white">
-          <path d="M16 3C9.373 3 4 8.373 4 15c0 2.385.668 4.61 1.832 6.505L4 29l7.695-1.813A11.94 11.94 0 0016 28c6.627 0 12-5.373 12-12S22.627 3 16 3zm0 2c5.523 0 10 4.477 10 10s-4.477 10-10 10a9.96 9.96 0 01-5.03-1.352l-.36-.218-4.568 1.076 1.104-4.44-.237-.373A9.958 9.958 0 016 15c0-5.523 4.477-10 10-10zm-3.16 5c-.19 0-.499.071-.76.356-.261.285-1 .977-1 2.38s1.023 2.76 1.165 2.95c.143.19 1.977 3.15 4.86 4.29.679.271 1.208.433 1.621.555.681.201 1.302.173 1.792.105.547-.076 1.686-.689 1.924-1.354.238-.665.238-1.236.167-1.354-.071-.119-.261-.19-.547-.333-.285-.143-1.686-.833-1.948-.928-.261-.095-.451-.143-.641.143-.19.285-.737.928-.903 1.118-.166.19-.333.214-.618.071-.285-.143-1.203-.443-2.291-1.413-.847-.754-1.419-1.686-1.585-1.971-.167-.285-.018-.44.125-.582.128-.128.285-.333.428-.499.143-.166.19-.285.285-.475.095-.19.048-.357-.024-.499-.071-.143-.641-1.547-.878-2.118-.228-.552-.462-.476-.641-.485L12.84 10z" />
-        </svg>
-        {/* Label visível em desktop */}
-        <span className="hidden md:inline text-sm font-semibold whitespace-nowrap">Suporte</span>
-      </a>
 
       {/* ── Bloqueio de licença ───────────────────────────────────────── */}
       {blocked && !onPlanosPage && (

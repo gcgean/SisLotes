@@ -12,6 +12,7 @@ import {
   Activity,
   ShieldAlert,
   MessageSquare,
+  HeadphonesIcon,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -46,6 +47,9 @@ const secondaryItems = [
   { title: "Sugestões", url: "/sugestoes", icon: MessageSquare },
   { title: "Configurações", url: "/configuracoes", icon: Settings },
 ];
+
+const WHATSAPP_SUPPORT_URL =
+  "https://wa.me/5585991152749?text=Ol%C3%A1!%20Preciso%20de%20suporte%20com%20o%20SISLOTE.";
 
 export function AppSidebar() {
   const location = useLocation();
@@ -127,6 +131,20 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a
+                    href={WHATSAPP_SUPPORT_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-md text-base text-[#25D366] hover:text-[#1ebe5d] hover:bg-sidebar-accent transition-colors"
+                    onClick={() => setOpenMobile(false)}
+                  >
+                    <HeadphonesIcon className="h-5 w-5 shrink-0" />
+                    <span>Suporte</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
