@@ -617,8 +617,8 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     hub_last_sync: empresa.hub_last_sync,
     hub_configured: planControlDisabled ? false : HubBillingService.isConfigured(),
     plan_control_disabled: planControlDisabled,
-    days_left: daysLeft,
-    banner: syncResult?.banner ?? null,
+    days_left: planControlDisabled ? null : daysLeft,
+    banner: planControlDisabled ? null : (syncResult?.banner ?? null),
     access_status: syncResult?.accessStatus ?? empresa.hub_license_status ?? null,
   });
 });
