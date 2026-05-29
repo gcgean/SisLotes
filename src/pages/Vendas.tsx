@@ -936,13 +936,6 @@ const Vendas = () => {
       `;
     }
 
-    // Agrupa parcelas em páginas de 3
-    const porPagina = 3;
-    const paginas: (typeof parcelas)[] = [];
-    for (let i = 0; i < parcelas.length; i += porPagina) {
-      paginas.push(parcelas.slice(i, i + porPagina));
-    }
-
     const html = `
       <!DOCTYPE html>
       <html>
@@ -953,12 +946,17 @@ const Vendas = () => {
         <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          @page { margin: 8mm; }
+          @page { size: A4; margin: 10mm; }
           body { font-family: Arial, sans-serif; background: white; }
-          .pagina { height: 277mm; display: flex; flex-direction: column; gap: 4px; page-break-after: always; }
-          .pagina:last-child { page-break-after: auto; }
-          .row-pair { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-height: 0; }
-          .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; display: flex; flex-direction: column; }
+          .row-pair {
+            height: calc((297mm - 20mm - 4mm) / 3);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            page-break-inside: avoid;
+          }
+          .row-pair:nth-child(3n) { page-break-after: always; }
+          .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; display: flex; flex-direction: column; height: 100%; }
           .header { border-bottom: 1.5px solid #222; margin-bottom: 4px; padding-bottom: 3px; text-align: center; }
           .empresa-nome { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
           .empresa-sub { font-size: 6.5px; color: #444; margin-top: 1px; }
@@ -983,14 +981,10 @@ const Vendas = () => {
         </style>
       </head>
       <body>
-        ${paginas.map((grupo) => `
-          <div class="pagina">
-            ${grupo.map((p) => `
-              <div class="row-pair">
-                ${buildCarne(p, "1ª Via — Cliente")}
-                ${buildCarne(p, "2ª Via — Empresa")}
-              </div>
-            `).join("")}
+        ${parcelas.map((p) => `
+          <div class="row-pair">
+            ${buildCarne(p, "1ª Via — Cliente")}
+            ${buildCarne(p, "2ª Via — Empresa")}
           </div>
         `).join("")}
         <script>
@@ -1110,13 +1104,6 @@ const Vendas = () => {
       `;
     }
 
-    // Agrupa parcelas em páginas de 3
-    const porPaginaD = 3;
-    const paginasD: (typeof parcelas)[] = [];
-    for (let i = 0; i < parcelas.length; i += porPaginaD) {
-      paginasD.push(parcelas.slice(i, i + porPaginaD));
-    }
-
     const html = `
       <!DOCTYPE html>
       <html>
@@ -1127,12 +1114,17 @@ const Vendas = () => {
         <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          @page { margin: 8mm; }
+          @page { size: A4; margin: 10mm; }
           body { font-family: Arial, sans-serif; background: white; }
-          .pagina { height: 277mm; display: flex; flex-direction: column; gap: 4px; page-break-after: always; }
-          .pagina:last-child { page-break-after: auto; }
-          .row-pair { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-height: 0; }
-          .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+          .row-pair {
+            height: calc((297mm - 20mm - 4mm) / 3);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            page-break-inside: avoid;
+          }
+          .row-pair:nth-child(3n) { page-break-after: always; }
+          .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; position: relative; overflow: hidden; display: flex; flex-direction: column; height: 100%; }
           .header { border-bottom: 1.5px solid #222; margin-bottom: 4px; padding-bottom: 3px; text-align: center; }
           .empresa-nome { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
           .empresa-sub { font-size: 6.5px; color: #444; margin-top: 1px; }
@@ -1159,14 +1151,10 @@ const Vendas = () => {
         </style>
       </head>
       <body>
-        ${paginasD.map((grupo) => `
-          <div class="pagina">
-            ${grupo.map((p) => `
-              <div class="row-pair">
-                ${buildCarne(p, "1ª Via — Cliente")}
-                ${buildCarne(p, "2ª Via — Empresa")}
-              </div>
-            `).join("")}
+        ${parcelas.map((p) => `
+          <div class="row-pair">
+            ${buildCarne(p, "1ª Via — Cliente")}
+            ${buildCarne(p, "2ª Via — Empresa")}
           </div>
         `).join("")}
         <script>
