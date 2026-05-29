@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -691,19 +692,14 @@ const Lotes = () => {
               className="pl-9"
             />
           </div>
-          <Select value={filterLoteamento} onValueChange={(v) => { setFilterLoteamento(v); setPage(1); }}>
-            <SelectTrigger className="w-full sm:w-[220px]">
-              <SelectValue placeholder="Loteamento" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os loteamentos</SelectItem>
-              {loteamentos.map((l) => (
-                <SelectItem key={l.id_loteamento} value={String(l.id_loteamento)}>
-                  {l.nome}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <LoteamentoCombobox
+            loteamentos={loteamentos}
+            value={filterLoteamento}
+            onValueChange={(v) => { setFilterLoteamento(v); setPage(1); }}
+            allOptionLabel="Todos os loteamentos"
+            placeholder="Loteamento"
+            className="w-full sm:w-[220px]"
+          />
           <div className="flex flex-wrap gap-2">
             {(["all", "disponivel", "vendido"] as const).map((s) => (
               <Button
@@ -855,30 +851,14 @@ const Lotes = () => {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Loteamento</FormLabel>
-                      <Select
-                        onValueChange={field.onChange}
-                        value={field.value}
-                        disabled={isReadOnly || !loteamentosCarregados}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Selecione um loteamento" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {loteamentos.length === 0 ? (
-                            <div className="px-2 py-2 text-xs text-muted-foreground">
-                              Nenhum loteamento cadastrado
-                            </div>
-                          ) : (
-                            loteamentos.map((l) => (
-                              <SelectItem key={l.id_loteamento} value={String(l.id_loteamento)}>
-                                {l.nome}
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <LoteamentoCombobox
+                          loteamentos={loteamentos}
+                          value={field.value}
+                          onValueChange={field.onChange}
+                          disabled={isReadOnly || !loteamentosCarregados}
+                        />
+                      </FormControl>
                       {!isReadOnly && loteamentosCarregados && loteamentos.length === 0 && (
                         <p className="text-xs text-muted-foreground">
                           Cadastre um loteamento em{" "}

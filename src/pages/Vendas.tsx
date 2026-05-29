@@ -50,11 +50,14 @@ import {
   ShoppingCart,
   Printer,
   History,
+  Grid3X3,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { gerarReciboParcela, ReciboEmpresa } from "@/utils/reciboParcela";
 import { ContratoDialog } from "@/components/contratos/ContratoDialog";
 import { NovoClienteDialog, NovoClienteFormValues } from "@/components/clientes/NovoClienteDialog";
+import { NovoLoteDialog } from "@/components/lotes/NovoLoteDialog";
+import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
 import { FileText, Pencil, FileCheck, Receipt, FileSignature, ArrowRightLeft } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -218,8 +221,18 @@ const Vendas = () => {
   const [baixaValor, setBaixaValor] = useState("");
   const [baixaConta, setBaixaConta] = useState("");
 
+  // ── seleção de intervalo de parcelas para impressão do carnê
+  const [carneRangeAberto, setCarneRangeAberto] = useState(false);
+  const [carneModo, setCarneModo] = useState<"venda" | "detalhe">("venda");
+  const [carneTotalParcelas, setCarneTotalParcelas] = useState(0);
+  const [carneDe, setCarneDe] = useState(1);
+  const [carneAte, setCarneAte] = useState(12);
+
   // ── cadastro rápido de cliente (no step 2)
   const [novoClienteAberto, setNovoClienteAberto] = useState(false);
+
+  // ── cadastro rápido de lote (no step 1)
+  const [novoLoteAberto, setNovoLoteAberto] = useState(false);
 
   // ── cancelar
   const [confirmarCancelamento, setConfirmarCancelamento] = useState<VendaListItem | null>(null);
@@ -754,7 +767,18 @@ const Vendas = () => {
     }
   }
 
-  function imprimirCarne() {
+  function abrirCarneRange(modo: "venda" | "detalhe") {
+    const total = modo === "venda"
+      ? (vendaCriada?.pagamentos?.length ?? 0)
+      : (vendaDetalhe?.pagamentos?.length ?? 0);
+    setCarneModo(modo);
+    setCarneTotalParcelas(total);
+    setCarneDe(1);
+    setCarneAte(Math.min(12, total));
+    setCarneRangeAberto(true);
+  }
+
+  function imprimirCarne(de = 1, ate = Infinity) {
     if (!vendaCriada) return;
     const win = window.open("", "", "width=900,height=700");
     if (!win) {
@@ -783,8 +807,9 @@ const Vendas = () => {
     const jurosPct = Number(vendaCriada.porcentagem) || 1;
     const instrucoes = `Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.`;
 
-    const parcelas = [...(vendaCriada.pagamentos ?? [])].sort((a, b) => a.numero_parcela - b.numero_parcela);
-    const totalParcelas = parcelas.length;
+    const todasParcelas = [...(vendaCriada.pagamentos ?? [])].sort((a, b) => a.numero_parcela - b.numero_parcela);
+    const parcelas = todasParcelas.filter((p) => p.numero_parcela >= de && p.numero_parcela <= ate);
+    const totalParcelas = todasParcelas.length;
 
     function buildCarne(p: typeof parcelas[0], via: string): string {
       const docNum = `${String(vendaCriada!.id_venda).padStart(6, "0")}${String(p.numero_parcela).padStart(2, "0")}`;
@@ -915,7 +940,7 @@ const Vendas = () => {
     win.document.close();
   }
 
-  function imprimirCarneDetalhe() {
+  function imprimirCarneDetalhe(de = 1, ate = Infinity) {
     if (!vendaDetalhe || !vendaDetalheInfo) return;
     const win = window.open("", "", "width=900,height=700");
     if (!win) {
@@ -941,7 +966,8 @@ const Vendas = () => {
     const jurosPct = Number(vendaDetalheInfo.porcentagem) || 1;
     const instrucoes = `Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.`;
 
-    const parcelas = [...vendaDetalhe.pagamentos].sort((a, b) => a.numero_parcela - b.numero_parcela);
+    const todasParcelas = [...vendaDetalhe.pagamentos].sort((a, b) => a.numero_parcela - b.numero_parcela);
+    const parcelas = todasParcelas.filter((p) => p.numero_parcela >= de && p.numero_parcela <= ate);
 
     function buildCarne(p: typeof parcelas[0], via: string): string {
       const docNum = `${String(vendaDetalheInfo!.id_venda).padStart(6, "0")}${String(p.numero_parcela).padStart(2, "0")}`;
@@ -1326,30 +1352,34 @@ const Vendas = () => {
               <div className="space-y-4">
                 <div>
                   <Label>Loteamento</Label>
-                  <Select
+                  <LoteamentoCombobox
+                    loteamentos={loteamentos}
                     value={selectedLoteamento ? String(selectedLoteamento.id_loteamento) : ""}
                     onValueChange={(v) => {
                       const lot = loteamentos.find((l) => String(l.id_loteamento) === v) ?? null;
                       setSelectedLoteamento(lot);
                       setSelectedLote(null);
                     }}
-                  >
-                    <SelectTrigger className="mt-1.5">
-                      <SelectValue placeholder="Selecione um loteamento" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {loteamentos.map((l) => (
-                        <SelectItem key={l.id_loteamento} value={String(l.id_loteamento)}>
-                          {l.nome}{l.cidade ? ` — ${l.cidade}${l.estado ? `/${l.estado}` : ""}` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    className="mt-1.5"
+                  />
                 </div>
 
                 {selectedLoteamento && (
                   <div>
-                    <Label>Selecione o Lote Disponível</Label>
+                    <div className="flex items-center justify-between mb-1">
+                      <Label>Selecione o Lote Disponível</Label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 gap-1.5 text-xs"
+                        title="Cadastrar novo lote"
+                        onClick={() => setNovoLoteAberto(true)}
+                      >
+                        <Grid3X3 className="h-3.5 w-3.5" />
+                        Novo Lote
+                      </Button>
+                    </div>
                     <p className="text-xs text-muted-foreground mb-2">{lotesDisponiveis.length} lote(s) disponível(is)</p>
                     {lotesDisponiveis.length === 0 ? (
                       <div className="border border-dashed border-border rounded-lg p-8 text-center text-sm text-muted-foreground">
@@ -1728,7 +1758,7 @@ const Vendas = () => {
             </div>
             {/* Ações */}
             <div className="flex flex-wrap gap-2 justify-between items-center">
-              <Button variant="outline" size="sm" onClick={() => imprimirCarne()} className="gap-2">
+              <Button variant="outline" size="sm" onClick={() => abrirCarneRange("venda")} className="gap-2">
                 <Printer className="h-4 w-4" />
                 Imprimir Carnê
               </Button>
@@ -1865,7 +1895,7 @@ const Vendas = () => {
             <Button
               variant="outline"
               className="gap-2"
-              onClick={imprimirCarneDetalhe}
+              onClick={() => abrirCarneRange("detalhe")}
               disabled={!vendaDetalhe}
             >
               <Printer className="h-4 w-4" />
@@ -1952,6 +1982,120 @@ const Vendas = () => {
           await criarClienteRapidoMutation.mutateAsync(values);
         }}
       />
+
+      <NovoLoteDialog
+        open={novoLoteAberto}
+        onOpenChange={setNovoLoteAberto}
+        defaultLoteamentoId={selectedLoteamento?.id_loteamento ?? null}
+        onSuccess={(novoLote) => {
+          setSelectedLote({
+            id_lote: novoLote.id_lote,
+            id_loteamento: novoLote.id_loteamento,
+            lote: novoLote.lote,
+            quadra: novoLote.quadra,
+            area: novoLote.area,
+            frente: novoLote.frente,
+            status: "disponivel",
+          });
+        }}
+      />
+
+      {/* ── Dialog: Seleção de intervalo para impressão do carnê ── */}
+      <Dialog open={carneRangeAberto} onOpenChange={setCarneRangeAberto}>
+        <DialogContent className="max-w-sm" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Printer className="h-4 w-4" />
+              Imprimir Carnê
+            </DialogTitle>
+            <DialogDescription>
+              Selecione o intervalo de parcelas a imprimir.
+              {carneTotalParcelas > 0 && (
+                <span className="block mt-1 text-xs">Total: {carneTotalParcelas} parcela{carneTotalParcelas !== 1 ? "s" : ""}</span>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="flex items-center gap-3">
+              <div className="flex-1">
+                <Label className="text-xs mb-1.5 block">Da parcela</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={carneTotalParcelas}
+                  value={carneDe}
+                  onChange={(e) => {
+                    const v = Math.max(1, Math.min(Number(e.target.value), carneAte));
+                    setCarneDe(v);
+                  }}
+                />
+              </div>
+              <span className="mt-5 text-muted-foreground">até</span>
+              <div className="flex-1">
+                <Label className="text-xs mb-1.5 block">Até a parcela</Label>
+                <Input
+                  type="number"
+                  min={carneDe}
+                  max={carneTotalParcelas}
+                  value={carneAte}
+                  onChange={(e) => {
+                    const v = Math.max(carneDe, Math.min(Number(e.target.value), carneTotalParcelas));
+                    setCarneAte(v);
+                  }}
+                />
+              </div>
+            </div>
+
+            <p className="text-xs text-muted-foreground text-center">
+              {carneAte - carneDe + 1} parcela{(carneAte - carneDe + 1) !== 1 ? "s" : ""} serão impressas
+              {" "}(nº {carneDe} a {carneAte})
+            </p>
+
+            <div className="flex gap-2 flex-wrap justify-center">
+              {carneTotalParcelas >= 12 && (
+                <>
+                  <Button type="button" variant="outline" size="sm" className="text-xs"
+                    onClick={() => { setCarneDe(1); setCarneAte(Math.min(12, carneTotalParcelas)); }}>
+                    1º Ano (1–12)
+                  </Button>
+                  {carneTotalParcelas >= 24 && (
+                    <Button type="button" variant="outline" size="sm" className="text-xs"
+                      onClick={() => { setCarneDe(13); setCarneAte(Math.min(24, carneTotalParcelas)); }}>
+                      2º Ano (13–24)
+                    </Button>
+                  )}
+                  {carneTotalParcelas >= 36 && (
+                    <Button type="button" variant="outline" size="sm" className="text-xs"
+                      onClick={() => { setCarneDe(25); setCarneAte(Math.min(36, carneTotalParcelas)); }}>
+                      3º Ano (25–36)
+                    </Button>
+                  )}
+                </>
+              )}
+              <Button type="button" variant="outline" size="sm" className="text-xs"
+                onClick={() => { setCarneDe(1); setCarneAte(carneTotalParcelas); }}>
+                Todas
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCarneRangeAberto(false)}>Cancelar</Button>
+            <Button
+              className="gap-2"
+              onClick={() => {
+                setCarneRangeAberto(false);
+                if (carneModo === "venda") imprimirCarne(carneDe, carneAte);
+                else imprimirCarneDetalhe(carneDe, carneAte);
+              }}
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ══════════════════════════════════════════════════════════════════════
           ALERT — CONFIRMAR CANCELAMENTO

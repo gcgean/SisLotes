@@ -13,6 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import { FileText, Download, BarChart3, DollarSign, Users, Calendar, Printer } from "lucide-react";
 import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
 import { formatDateBR } from "@/lib/date-br";
+import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -628,19 +629,13 @@ const Relatorios = () => {
                   selectedReport === "enderecos" ||
                   selectedReport === "atraso" ||
                   selectedReport === "clientes-loteamento") && (
-                  <Select value={loteamentoIdInput} onValueChange={setLoteamentoIdInput}>
-                    <SelectTrigger className="w-full sm:w-[220px]">
-                      <SelectValue placeholder="Selecione um loteamento" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos os loteamentos</SelectItem>
-                      {loteamentosData.map((lot) => (
-                        <SelectItem key={lot.id_loteamento} value={String(lot.id_loteamento)}>
-                          {lot.nome}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <LoteamentoCombobox
+                    loteamentos={loteamentosData}
+                    value={loteamentoIdInput}
+                    onValueChange={setLoteamentoIdInput}
+                    allOptionLabel="Todos os loteamentos"
+                    className="w-full sm:w-[220px]"
+                  />
                 )}
                 {selectedReport === "juros" && (
                   <Select value={contaIdJurosInput} onValueChange={setContaIdJurosInput}>

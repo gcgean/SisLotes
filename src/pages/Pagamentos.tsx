@@ -28,7 +28,12 @@ import {
   User,
   X,
   Printer,
+  ChevronsUpDown,
+  Check,
 } from "lucide-react";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { gerarReciboParcela } from "@/utils/reciboParcela";
@@ -136,6 +141,7 @@ const Pagamentos = () => {
 
   // ── Filtros compartilhados: loteamento e lote ──
   const [filtroLoteamento, setFiltroLoteamento] = useState("all");
+  const [filtroLoteamentoOpen, setFiltroLoteamentoOpen] = useState(false);
   const [filtroLote, setFiltroLote] = useState("all");
 
   // ── Seleção múltipla (aba Abertas) ──
@@ -563,20 +569,39 @@ const Pagamentos = () => {
         {clienteSelecionado && todosRegistros.length > 0 && (
           <div className="glass-card rounded-lg px-5 py-3 flex flex-wrap items-center gap-3">
             <span className="text-xs text-muted-foreground font-medium">Filtrar por:</span>
-            <Select
-              value={filtroLoteamento}
-              onValueChange={(v) => { setFiltroLoteamento(v); setFiltroLote("all"); setSelecionados(new Set()); }}
-            >
-              <SelectTrigger className="h-8 w-56 text-sm">
-                <SelectValue placeholder="Todos os loteamentos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos os loteamentos</SelectItem>
-                {loteamentosUnicos.map((l) => (
-                  <SelectItem key={l} value={l}>{l}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={filtroLoteamentoOpen} onOpenChange={setFiltroLoteamentoOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  role="combobox"
+                  className={cn("h-8 w-56 text-sm justify-between font-normal", filtroLoteamento === "all" && "text-muted-foreground")}
+                >
+                  <span className="truncate">{filtroLoteamento === "all" ? "Todos os loteamentos" : filtroLoteamento}</span>
+                  <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Buscar loteamento..." />
+                  <CommandList>
+                    <CommandEmpty>Nenhum loteamento encontrado.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem value="all" onSelect={() => { setFiltroLoteamento("all"); setFiltroLote("all"); setSelecionados(new Set()); setFiltroLoteamentoOpen(false); }}>
+                        <Check className={cn("mr-2 h-4 w-4", filtroLoteamento === "all" ? "opacity-100" : "opacity-0")} />
+                        Todos os loteamentos
+                      </CommandItem>
+                      {loteamentosUnicos.map((l) => (
+                        <CommandItem key={l} value={l} onSelect={() => { setFiltroLoteamento(l); setFiltroLote("all"); setSelecionados(new Set()); setFiltroLoteamentoOpen(false); }}>
+                          <Check className={cn("mr-2 h-4 w-4", filtroLoteamento === l ? "opacity-100" : "opacity-0")} />
+                          {l}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
 
             <Select
               value={filtroLote}

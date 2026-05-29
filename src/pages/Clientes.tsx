@@ -635,8 +635,8 @@ const Clientes = () => {
         />
 
         {/* ── Dialog Cadastro/Edição/Visualização ── */}
-        <Dialog open={dialogAberto} onOpenChange={setDialogAberto}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <Dialog open={dialogAberto} onOpenChange={(open) => { if (open || modo === "view") setDialogAberto(open); }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto" onInteractOutside={(e) => { if (modo !== "view") e.preventDefault(); }}>
             <ErrorBoundary>
             <DialogHeader>
               <DialogTitle>
