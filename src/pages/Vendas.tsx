@@ -936,6 +936,13 @@ const Vendas = () => {
       `;
     }
 
+    // Agrupa parcelas em páginas de 3
+    const porPagina = 3;
+    const paginas: (typeof parcelas)[] = [];
+    for (let i = 0; i < parcelas.length; i += porPagina) {
+      paginas.push(parcelas.slice(i, i + porPagina));
+    }
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -946,38 +953,44 @@ const Vendas = () => {
         <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 8px; }
-          .row-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; page-break-inside: avoid; }
-          .carne { border: 1px dashed #555; padding: 7px 8px; background: white; font-size: 8px; }
-          .header { border-bottom: 1.5px solid #222; margin-bottom: 5px; padding-bottom: 4px; text-align: center; }
-          .empresa-nome { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-          .empresa-sub { font-size: 7px; color: #444; margin-top: 1px; }
-          .via-label { font-size: 7px; font-style: italic; color: #666; margin-top: 3px; }
-          .field-row { display: flex; gap: 4px; margin-bottom: 4px; }
-          .field-row.grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 4px; margin-bottom: 4px; }
+          @page { margin: 8mm; }
+          body { font-family: Arial, sans-serif; background: white; }
+          .pagina { height: 277mm; display: flex; flex-direction: column; gap: 4px; page-break-after: always; }
+          .pagina:last-child { page-break-after: auto; }
+          .row-pair { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-height: 0; }
+          .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; display: flex; flex-direction: column; }
+          .header { border-bottom: 1.5px solid #222; margin-bottom: 4px; padding-bottom: 3px; text-align: center; }
+          .empresa-nome { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+          .empresa-sub { font-size: 6.5px; color: #444; margin-top: 1px; }
+          .via-label { font-size: 6.5px; font-style: italic; color: #666; margin-top: 2px; }
+          .field-row { display: flex; gap: 4px; margin-bottom: 3px; }
+          .field-row.grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 4px; margin-bottom: 3px; }
           .field { display: flex; flex-direction: column; min-width: 0; }
           .field.full { flex: 1; }
-          .flabel { font-weight: bold; font-size: 6.5px; color: #555; text-transform: uppercase; margin-bottom: 1px; }
-          .fvalue { font-size: 8px; border-bottom: 1px solid #aaa; padding-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .fvalue.bold { font-weight: bold; font-size: 9px; }
-          .instrucoes { font-size: 6.5px; color: #555; border: 0.5px solid #ccc; padding: 3px 5px; margin: 4px 0; line-height: 1.4; }
-          .calc-section { margin: 4px 0; }
-          .calc-row { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 3px; }
-          .calc-label { font-size: 7px; white-space: nowrap; min-width: 90px; }
+          .flabel { font-weight: bold; font-size: 6px; color: #555; text-transform: uppercase; margin-bottom: 1px; }
+          .fvalue { font-size: 7.5px; border-bottom: 1px solid #aaa; padding-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .fvalue.bold { font-weight: bold; font-size: 8.5px; }
+          .instrucoes { font-size: 6px; color: #555; border: 0.5px solid #ccc; padding: 2px 4px; margin: 3px 0; line-height: 1.4; }
+          .calc-section { margin: 3px 0; }
+          .calc-row { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 2px; }
+          .calc-label { font-size: 6.5px; white-space: nowrap; min-width: 85px; }
           .calc-label.bold { font-weight: bold; }
-          .calc-line { flex: 1; border-bottom: 1px solid #333; height: 10px; }
+          .calc-line { flex: 1; border-bottom: 1px solid #333; height: 9px; }
           .total-row .calc-line { border-bottom: 2px solid #000; }
-          .barcode-area { text-align: center; margin-top: 5px; border-top: 1px solid #ddd; padding-top: 4px; }
-          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; line-height: 1; }
-          .barcode-num { font-size: 7px; letter-spacing: 2px; margin-top: 1px; font-family: 'Courier New', monospace; }
-          @media print { body { padding: 4px; } .row-pair { page-break-inside: avoid; } }
+          .barcode-area { text-align: center; margin-top: auto; padding-top: 3px; border-top: 1px solid #ddd; }
+          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 34px; line-height: 1; }
+          .barcode-num { font-size: 6.5px; letter-spacing: 2px; margin-top: 1px; font-family: 'Courier New', monospace; }
         </style>
       </head>
       <body>
-        ${parcelas.map((p) => `
-          <div class="row-pair">
-            ${buildCarne(p, "1ª Via — Cliente")}
-            ${buildCarne(p, "2ª Via — Empresa")}
+        ${paginas.map((grupo) => `
+          <div class="pagina">
+            ${grupo.map((p) => `
+              <div class="row-pair">
+                ${buildCarne(p, "1ª Via — Cliente")}
+                ${buildCarne(p, "2ª Via — Empresa")}
+              </div>
+            `).join("")}
           </div>
         `).join("")}
         <script>
@@ -1097,6 +1110,13 @@ const Vendas = () => {
       `;
     }
 
+    // Agrupa parcelas em páginas de 3
+    const porPaginaD = 3;
+    const paginasD: (typeof parcelas)[] = [];
+    for (let i = 0; i < parcelas.length; i += porPaginaD) {
+      paginasD.push(parcelas.slice(i, i + porPaginaD));
+    }
+
     const html = `
       <!DOCTYPE html>
       <html>
@@ -1107,90 +1127,46 @@ const Vendas = () => {
         <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
         <style>
           * { margin: 0; padding: 0; box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; background: white; margin: 0; padding: 8px; }
-
-          .row-pair {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            margin-bottom: 8px;
-            page-break-inside: avoid;
-          }
-
-          .carne {
-            border: 1px dashed #555;
-            padding: 7px 8px;
-            background: white;
-            font-size: 8px;
-            position: relative;
-            overflow: hidden;
-          }
-
-          /* Header */
-          .header { border-bottom: 1.5px solid #222; margin-bottom: 5px; padding-bottom: 4px; text-align: center; }
-          .empresa-nome { font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-          .empresa-sub { font-size: 7px; color: #444; margin-top: 1px; }
-          .via-label { font-size: 7px; font-style: italic; color: #666; margin-top: 3px; }
-
-          /* PAGO overlay */
+          @page { margin: 8mm; }
+          body { font-family: Arial, sans-serif; background: white; }
+          .pagina { height: 277mm; display: flex; flex-direction: column; gap: 4px; page-break-after: always; }
+          .pagina:last-child { page-break-after: auto; }
+          .row-pair { flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; min-height: 0; }
+          .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+          .header { border-bottom: 1.5px solid #222; margin-bottom: 4px; padding-bottom: 3px; text-align: center; }
+          .empresa-nome { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+          .empresa-sub { font-size: 6.5px; color: #444; margin-top: 1px; }
+          .via-label { font-size: 6.5px; font-style: italic; color: #666; margin-top: 2px; }
           .pago.carne { opacity: 0.85; }
-          .pago-overlay {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%) rotate(-30deg);
-            font-size: 32px;
-            font-weight: bold;
-            color: rgba(22,163,74,0.25);
-            border: 4px solid rgba(22,163,74,0.25);
-            padding: 4px 10px;
-            pointer-events: none;
-            white-space: nowrap;
-          }
-
-          /* Fields */
-          .field-row { display: flex; gap: 4px; margin-bottom: 4px; }
-          .field-row.grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 4px; margin-bottom: 4px; }
+          .pago-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 30px; font-weight: bold; color: rgba(22,163,74,0.25); border: 4px solid rgba(22,163,74,0.25); padding: 4px 10px; pointer-events: none; white-space: nowrap; }
+          .field-row { display: flex; gap: 4px; margin-bottom: 3px; }
+          .field-row.grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 4px; margin-bottom: 3px; }
           .field { display: flex; flex-direction: column; min-width: 0; }
           .field.full { flex: 1; }
-          .flabel { font-weight: bold; font-size: 6.5px; color: #555; text-transform: uppercase; margin-bottom: 1px; }
-          .fvalue { font-size: 8px; border-bottom: 1px solid #aaa; padding-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .fvalue.bold { font-weight: bold; font-size: 9px; }
-
-          /* Instruções */
-          .instrucoes {
-            font-size: 6.5px;
-            color: #555;
-            border: 0.5px solid #ccc;
-            padding: 3px 5px;
-            margin: 4px 0;
-            line-height: 1.4;
-          }
-
-          /* Cálculo */
-          .calc-section { margin: 4px 0; }
-          .calc-row { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 3px; }
-          .calc-label { font-size: 7px; white-space: nowrap; min-width: 90px; }
+          .flabel { font-weight: bold; font-size: 6px; color: #555; text-transform: uppercase; margin-bottom: 1px; }
+          .fvalue { font-size: 7.5px; border-bottom: 1px solid #aaa; padding-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .fvalue.bold { font-weight: bold; font-size: 8.5px; }
+          .instrucoes { font-size: 6px; color: #555; border: 0.5px solid #ccc; padding: 2px 4px; margin: 3px 0; line-height: 1.4; }
+          .calc-section { margin: 3px 0; }
+          .calc-row { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 2px; }
+          .calc-label { font-size: 6.5px; white-space: nowrap; min-width: 85px; }
           .calc-label.bold { font-weight: bold; }
-          .calc-line { flex: 1; border-bottom: 1px solid #333; height: 10px; }
+          .calc-line { flex: 1; border-bottom: 1px solid #333; height: 9px; }
           .total-row .calc-line { border-bottom: 2px solid #000; }
-
-          /* Barcode */
-          .barcode-area { text-align: center; margin-top: 5px; border-top: 1px solid #ddd; padding-top: 4px; }
-          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 40px; line-height: 1; letter-spacing: 0; }
-          .barcode-num { font-size: 7px; letter-spacing: 2px; margin-top: 1px; font-family: 'Courier New', monospace; }
-
-          @media print {
-            body { padding: 4px; }
-            .row-pair { page-break-inside: avoid; }
-          }
+          .barcode-area { text-align: center; margin-top: auto; padding-top: 3px; border-top: 1px solid #ddd; }
+          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 34px; line-height: 1; letter-spacing: 0; }
+          .barcode-num { font-size: 6.5px; letter-spacing: 2px; margin-top: 1px; font-family: 'Courier New', monospace; }
         </style>
       </head>
       <body>
-        ${parcelas.map((p) => `
-          <div class="row-pair">
-            ${buildCarne(p, "1ª Via — Cliente")}
-            ${buildCarne(p, "2ª Via — Empresa")}
+        ${paginasD.map((grupo) => `
+          <div class="pagina">
+            ${grupo.map((p) => `
+              <div class="row-pair">
+                ${buildCarne(p, "1ª Via — Cliente")}
+                ${buildCarne(p, "2ª Via — Empresa")}
+              </div>
+            `).join("")}
           </div>
         `).join("")}
         <script>
