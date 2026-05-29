@@ -1453,9 +1453,28 @@ const Vendas = () => {
                   </Button>
                 </div>
 
-                <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+                {/* Card do cliente selecionado — sempre visível quando há seleção */}
+                {selectedCliente && (
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-lg border-2 border-primary bg-primary/5 text-sm">
+                    <div className="h-9 w-9 rounded-full bg-primary/15 flex items-center justify-center shrink-0">
+                      <User className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-primary truncate">{selectedCliente.nome}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedCliente.cpf ?? selectedCliente.cnpj ?? "Sem documento"}
+                        {selectedCliente.cidade ? ` · ${selectedCliente.cidade}` : ""}
+                      </p>
+                    </div>
+                    <CheckCircle2 className="h-5 w-5 text-primary shrink-0" />
+                  </div>
+                )}
+
+                <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
                   {clientesFiltrados.length === 0 ? (
-                    <div className="text-center py-8 text-sm text-muted-foreground">Nenhum cliente encontrado</div>
+                    <div className="text-center py-6 text-sm text-muted-foreground">
+                      {clienteSearch.trim() ? "Nenhum cliente encontrado" : "Digite o nome para buscar"}
+                    </div>
                   ) : (
                     clientesFiltrados.map((c) => (
                       <button
