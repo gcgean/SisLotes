@@ -953,9 +953,10 @@ const Vendas = () => {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 6px;
+            margin-bottom: 5mm;
             page-break-inside: avoid;
           }
-          .row-pair:nth-child(3n) { page-break-after: always; }
+          .row-pair:nth-child(3n) { page-break-after: always; margin-bottom: 0; }
           .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; display: flex; flex-direction: column; height: 100%; }
           .header { border-bottom: 1.5px solid #222; margin-bottom: 4px; padding-bottom: 3px; text-align: center; }
           .empresa-nome { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -1134,9 +1135,10 @@ const Vendas = () => {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 6px;
+            margin-bottom: 5mm;
             page-break-inside: avoid;
           }
-          .row-pair:nth-child(3n) { page-break-after: always; }
+          .row-pair:nth-child(3n) { page-break-after: always; margin-bottom: 0; }
           .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; position: relative; overflow: hidden; display: flex; flex-direction: column; height: 100%; }
           .header { border-bottom: 1.5px solid #222; margin-bottom: 4px; padding-bottom: 3px; text-align: center; }
           .empresa-nome { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -1178,8 +1180,9 @@ const Vendas = () => {
             var px1mm = mmPx.getBoundingClientRect().height;
             document.body.removeChild(mmPx);
             var paginaH = 277 * px1mm;
+            var gapTotal = 2 * 5 * px1mm; // 2 gaps de 5mm entre os 3 pares
             var rows = document.querySelectorAll('.row-pair');
-            var altH = Math.floor(paginaH / 3);
+            var altH = Math.floor((paginaH - gapTotal) / 3);
             rows.forEach(function(r) { r.style.height = altH + 'px'; });
           }
           function imprimir() { ajustarAlturas(); setTimeout(function() { window.print(); }, 100); }
