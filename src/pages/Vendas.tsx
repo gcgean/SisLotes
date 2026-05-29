@@ -301,7 +301,6 @@ const Vendas = () => {
       return json.data ?? [];
     },
     staleTime: 0,
-    gcTime: 0,       // sem cache entre sessões — sempre busca ao reabrir
     retry: 2,
     enabled: novaVendaAberto || historicoAberto,
   });
@@ -543,8 +542,44 @@ const Vendas = () => {
       setNovoClienteAberto(false);
       toast({ title: "Cliente cadastrado e selecionado" });
     },
-    onError: (err) => {
-      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro", variant: "destructive" });
+    onError: (err, variables) => {
+      const msg = err instanceof Error ? err.message : "Erro";
+      // CPF/CNPJ duplicado: tenta encontrar e selecionar o cliente existente na lista
+      const isDuplicate = msg.toLowerCase().includes("cpf") || msg.toLowerCase().includes("cnpj") || msg.toLowerCase().includes("cadastrado");
+      if (isDuplicate) {
+        const cpfDigits = (variables.cpf ?? "").replace(/\D/g, "");
+        const cnpjDigits = (variables.cnpj ?? "").replace(/\D/g, "");
+        const existente = clientes.find((c) => {
+          const cCpf = (c.cpf ?? "").replace(/\D/g, "");
+          const cCnpj = (c.cnpj ?? "").replace(/\D/g, "");
+          return (cpfDigits && cCpf === cpfDigits) || (cnpjDigits && cCnpj === cnpjDigits);
+        });
+        if (existente) {
+          setSelectedCliente(existente);
+          setClienteSearch("");
+          setNovoClienteAberto(false);
+          toast({ title: "Cliente já cadastrado", description: `${existente.nome} selecionado automaticamente.` });
+          return;
+        }
+        // Cliente existe no banco mas não está no cache ainda — refaz a busca
+        refetchClientes().then(({ data }) => {
+          const encontrado = (data ?? []).find((c) => {
+            const cCpf = (c.cpf ?? "").replace(/\D/g, "");
+            const cCnpj = (c.cnpj ?? "").replace(/\D/g, "");
+            return (cpfDigits && cCpf === cpfDigits) || (cnpjDigits && cCnpj === cnpjDigits);
+          });
+          if (encontrado) {
+            setSelectedCliente(encontrado);
+            setClienteSearch("");
+            setNovoClienteAberto(false);
+            toast({ title: "Cliente já cadastrado", description: `${encontrado.nome} selecionado automaticamente.` });
+            return;
+          }
+          toast({ title: "Erro", description: msg, variant: "destructive" });
+        });
+        return;
+      }
+      toast({ title: "Erro", description: msg, variant: "destructive" });
     },
   });
 
