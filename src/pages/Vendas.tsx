@@ -295,10 +295,19 @@ const Vendas = () => {
   const { data: clientes = [], refetch: refetchClientes } = useQuery<Cliente[]>({
     queryKey: ["clientes-venda"],
     queryFn: async () => {
-      const r = await fetch("/api/clientes?limit=2000", { headers: { ...getAuthHeaders() } });
-      if (!r.ok) throw new Error();
-      const json = await r.json() as { data: Cliente[] };
-      return json.data ?? [];
+      // Busca todos os clientes em lotes de 1000 para suportar bases grandes
+      const all: Cliente[] = [];
+      let page = 1;
+      while (true) {
+        const r = await fetch(`/api/clientes?limit=1000&page=${page}`, { headers: { ...getAuthHeaders() } });
+        if (!r.ok) throw new Error();
+        const json = await r.json() as { data: Cliente[]; total: number };
+        const data = json.data ?? [];
+        all.push(...data);
+        if (all.length >= json.total || data.length < 1000) break;
+        page++;
+      }
+      return all;
     },
     staleTime: 0,
     retry: 2,
