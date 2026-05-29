@@ -529,12 +529,18 @@ const Vendas = () => {
       return r.json() as Promise<Cliente>;
     },
     onSuccess: (cliente) => {
-      queryClient.invalidateQueries({ queryKey: ["clientes-venda"] });
+      // Injeta o novo cliente diretamente no cache — aparece na lista imediatamente
+      queryClient.setQueryData<Cliente[]>(["clientes-venda"], (old) => {
+        const lista = old ?? [];
+        // evita duplicata
+        if (lista.some((c) => c.id_cliente === cliente.id_cliente)) return lista;
+        return [...lista, cliente].sort((a, b) => a.nome.localeCompare(b.nome));
+      });
       queryClient.invalidateQueries({ queryKey: ["clientes"] });
       setSelectedCliente(cliente);
+      // Limpa o campo de busca para que o novo cliente apareça destacado
+      setClienteSearch("");
       setNovoClienteAberto(false);
-      // Refetch imediato para garantir que a lista já inclui o novo cliente
-      setTimeout(() => refetchClientes(), 100);
       toast({ title: "Cliente cadastrado e selecionado" });
     },
     onError: (err) => {
