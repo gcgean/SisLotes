@@ -295,12 +295,13 @@ const Vendas = () => {
   const { data: clientes = [], refetch: refetchClientes } = useQuery<Cliente[]>({
     queryKey: ["clientes-venda"],
     queryFn: async () => {
-      const r = await fetch("/api/clientes?limit=500", { headers: { ...getAuthHeaders() } });
+      const r = await fetch("/api/clientes?limit=2000", { headers: { ...getAuthHeaders() } });
       if (!r.ok) throw new Error();
       const json = await r.json() as { data: Cliente[] };
       return json.data ?? [];
     },
     staleTime: 0,
+    gcTime: 0,       // sem cache entre sessões — sempre busca ao reabrir
     retry: 2,
     enabled: novaVendaAberto || historicoAberto,
   });
@@ -529,8 +530,11 @@ const Vendas = () => {
     },
     onSuccess: (cliente) => {
       queryClient.invalidateQueries({ queryKey: ["clientes-venda"] });
+      queryClient.invalidateQueries({ queryKey: ["clientes"] });
       setSelectedCliente(cliente);
       setNovoClienteAberto(false);
+      // Refetch imediato para garantir que a lista já inclui o novo cliente
+      setTimeout(() => refetchClientes(), 100);
       toast({ title: "Cliente cadastrado e selecionado" });
     },
     onError: (err) => {
