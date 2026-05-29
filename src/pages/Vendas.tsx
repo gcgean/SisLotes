@@ -949,7 +949,7 @@ const Vendas = () => {
           @page { size: A4; margin: 10mm; }
           body { font-family: Arial, sans-serif; background: white; }
           .row-pair {
-            height: calc((297mm - 20mm - 4mm) / 3);
+            height: 91mm; /* ajustado via JS após load */
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 6px;
@@ -988,10 +988,23 @@ const Vendas = () => {
           </div>
         `).join("")}
         <script>
+          function ajustarAlturas() {
+            // Mede a altura real da página e distribui 3 linhas perfeitamente
+            var mmPx = document.createElement('div');
+            mmPx.style.cssText = 'position:absolute;left:-9999px;width:100mm;height:1mm';
+            document.body.appendChild(mmPx);
+            var px1mm = mmPx.getBoundingClientRect().height;
+            document.body.removeChild(mmPx);
+            var paginaH = 277 * px1mm; // 297mm - 2x10mm margem
+            var rows = document.querySelectorAll('.row-pair');
+            var altH = Math.floor(paginaH / 3);
+            rows.forEach(function(r) { r.style.height = altH + 'px'; });
+          }
+          function imprimir() { ajustarAlturas(); setTimeout(function() { window.print(); }, 100); }
           if (document.fonts) {
-            document.fonts.ready.then(() => setTimeout(() => window.print(), 150));
+            document.fonts.ready.then(function() { setTimeout(imprimir, 150); });
           } else {
-            setTimeout(() => window.print(), 600);
+            setTimeout(imprimir, 600);
           }
         </script>
       </body>
@@ -1117,7 +1130,7 @@ const Vendas = () => {
           @page { size: A4; margin: 10mm; }
           body { font-family: Arial, sans-serif; background: white; }
           .row-pair {
-            height: calc((297mm - 20mm - 4mm) / 3);
+            height: 91mm; /* ajustado via JS após load */
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 6px;
@@ -1158,11 +1171,22 @@ const Vendas = () => {
           </div>
         `).join("")}
         <script>
-          // Aguarda a fonte de barcode carregar antes de imprimir
+          function ajustarAlturas() {
+            var mmPx = document.createElement('div');
+            mmPx.style.cssText = 'position:absolute;left:-9999px;width:100mm;height:1mm';
+            document.body.appendChild(mmPx);
+            var px1mm = mmPx.getBoundingClientRect().height;
+            document.body.removeChild(mmPx);
+            var paginaH = 277 * px1mm;
+            var rows = document.querySelectorAll('.row-pair');
+            var altH = Math.floor(paginaH / 3);
+            rows.forEach(function(r) { r.style.height = altH + 'px'; });
+          }
+          function imprimir() { ajustarAlturas(); setTimeout(function() { window.print(); }, 100); }
           if (document.fonts) {
-            document.fonts.ready.then(() => setTimeout(() => window.print(), 150));
+            document.fonts.ready.then(function() { setTimeout(imprimir, 150); });
           } else {
-            setTimeout(() => window.print(), 600);
+            setTimeout(imprimir, 600);
           }
         </script>
       </body>
