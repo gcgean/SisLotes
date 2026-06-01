@@ -458,32 +458,32 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       font-size: 11pt;
       color: #000;
       background: #fff;
-      padding: ${semTimbrado ? '60mm 20mm 20mm 20mm' : '15mm 20mm'};
+      padding: 15mm 20mm;
       line-height: 1.4;
     }
     .titulo-caixa {
-      border: ${semTimbrado ? 'none' : '1px solid #000'};
-      width: ${semTimbrado ? 'auto' : '200px'};
+      border: 1px solid #000;
+      width: 200px;
       margin: 0 auto 30px auto;
       text-align: center;
       padding: 4px;
       font-weight: bold;
-      text-decoration: ${semTimbrado ? 'underline' : 'none'};
-      font-size: ${semTimbrado ? '13pt' : '11pt'};
+      text-decoration: none;
+      font-size: 11pt;
     }
     .caixa-texto {
-      border: ${semTimbrado ? 'none' : '1px solid #000'};
-      padding: ${semTimbrado ? '0' : '15px'};
-      margin-bottom: ${semTimbrado ? '0' : '10px'};
+      border: 1px solid #000;
+      padding: 15px;
+      margin-bottom: 10px;
       text-align: justify;
-      text-indent: ${semTimbrado ? '50px' : '0'};
+      text-indent: 0;
     }
     .caixa-texto.segundo {
-      text-indent: ${semTimbrado ? '50px' : '0'};
+      text-indent: 0;
     }
     .data-local {
       margin-bottom: 50px;
-      margin-top: ${semTimbrado ? '20px' : '0'};
+      margin-top: 0;
     }
     .testemunhas-titulo {
       margin-bottom: 20px;
@@ -508,7 +508,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       font-size: 10pt;
     }
     @media print {
-      body { padding: ${semTimbrado ? '60mm 15mm 15mm 15mm' : '15mm 20mm'}; }
+      body { padding: 15mm 20mm; }
       .btn-print { display: none; }
     }
     .btn-print {
