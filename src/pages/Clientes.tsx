@@ -71,6 +71,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { toast } from "@/hooks/use-toast";
 import { formatCpfCnpj, isValidCpfCnpj } from "@/lib/cpfCnpj";
 import { formatDateBR } from "@/lib/date-br";
@@ -248,6 +250,8 @@ const Clientes = () => {
   const [dialogAberto, setDialogAberto] = useState(false);
   const [novoClienteCompartilhadoAberto, setNovoClienteCompartilhadoAberto] = useState(false);
   const [dialogTab, setDialogTab] = useState("dados");
+  const [viewOuterTab, setViewOuterTab] = useState<"dados" | "lotes" | "documentos">("dados");
+  const [usarTimbrado, setUsarTimbrado] = useState(true);
   const [confirmarExclusao, setConfirmarExclusao] = useState<Cliente | null>(null);
   const [loadingFull, setLoadingFull] = useState(false);
   const [dialogLotesAberto, setDialogLotesAberto] = useState(false);
@@ -427,6 +431,7 @@ const Clientes = () => {
     setModo("view");
     setClienteSelecionado(cliente);
     setDialogTab("dados");
+    setViewOuterTab("dados");
     form.reset(clienteToFormValues(cliente));
     setDialogAberto(true);
     setLoadingFull(true);
@@ -659,35 +664,44 @@ const Clientes = () => {
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit, onInvalid)} className="space-y-4">
 
-                  {/* Seletor de tipo sempre visível no topo */}
-                  <FormField
-                    control={form.control}
-                    name="tipo"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Tipo de cliente</FormLabel>
-                        <FormControl>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            disabled={isView || modo === "edit"}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="f">Pessoa Física</SelectItem>
-                              <SelectItem value="j">Pessoa Jurídica</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  {isView ? (
+                  <Tabs value={viewOuterTab} onValueChange={(v) => setViewOuterTab(v as "dados" | "lotes" | "documentos")}>
+                    <TabsList className="w-full grid grid-cols-3">
+                      <TabsTrigger value="dados">Dados Pessoais</TabsTrigger>
+                      <TabsTrigger value="lotes">Lotes &amp; Vendas</TabsTrigger>
+                      <TabsTrigger value="documentos">Documentos</TabsTrigger>
+                    </TabsList>
 
-                  {/* Abas */}
-                  <Tabs value={dialogTab} onValueChange={setDialogTab}>
+                    {/* ── Aba externa 1: Dados Pessoais ── */}
+                    <TabsContent value="dados" className="space-y-4 pt-2">
+                      {/* Seletor de tipo (disabled no modo view) */}
+                      <FormField
+                        control={form.control}
+                        name="tipo"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Tipo de cliente</FormLabel>
+                            <FormControl>
+                              <Select
+                                value={field.value}
+                                onValueChange={field.onChange}
+                                disabled={true}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="f">Pessoa Física</SelectItem>
+                                  <SelectItem value="j">Pessoa Jurídica</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      {/* Sub-abas internas */}
+                      <Tabs value={dialogTab} onValueChange={setDialogTab}>
                     <TabsList className="w-full grid grid-cols-3">
                       <TabsTrigger value="dados" className="gap-1.5">
                         <User className="h-3.5 w-3.5" />
@@ -1061,255 +1075,359 @@ const Clientes = () => {
                       )}
                     </TabsContent>
                   </Tabs>
+                    </TabsContent>
 
-                  {/* ── Seções exclusivas do modo visualização ── */}
-                  {isView && clienteSelecionado && (
-                    <div className="space-y-4 pt-2">
-                      <Separator />
+                    {/* ── Aba externa 2: Lotes & Vendas ── */}
+                    <TabsContent value="lotes" className="space-y-4 pt-2">
+                      {clienteSelecionado && (
+                        <>
+                          <div className="flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 text-primary border-primary/40 hover:bg-primary/5"
+                              onClick={() => {
+                                setDialogAberto(false);
+                                navigate(`/pagamentos?cliente=${clienteSelecionado.id_cliente}`);
+                              }}
+                            >
+                              <CreditCard className="h-4 w-4" />
+                              Pagamentos
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="gap-2 text-emerald-600 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+                              onClick={() => {
+                                setDialogAberto(false);
+                                navigate(`/vendas?cliente=${clienteSelecionado.id_cliente}`);
+                              }}
+                            >
+                              <ShoppingCart className="h-4 w-4" />
+                              Vender Lote
+                            </Button>
+                          </div>
 
-                      {/* Opções */}
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                          Opções
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="gap-2 text-primary border-primary/40 hover:bg-primary/5"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              navigate(`/pagamentos?cliente=${clienteSelecionado.id_cliente}`);
-                            }}
-                          >
-                            <CreditCard className="h-4 w-4" />
-                            Pagamentos
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="gap-2 text-emerald-600 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              navigate(`/vendas?cliente=${clienteSelecionado.id_cliente}`);
-                            }}
-                          >
-                            <ShoppingCart className="h-4 w-4" />
-                            Vender Lote
-                          </Button>
-                        </div>
+                          <div className="space-y-2">
+                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                              Lotes do Cliente
+                            </p>
+                            {loadingVendasCliente ? (
+                              <div className="text-xs text-muted-foreground">
+                                Carregando lotes do cliente...
+                              </div>
+                            ) : isErrorVendasCliente ? (
+                              <div className="text-xs text-destructive">
+                                Erro ao carregar lotes vinculados ao cliente.
+                              </div>
+                            ) : vendasCliente.length === 0 ? (
+                              <div className="text-xs text-muted-foreground">
+                                Nenhum lote/venda vinculada a este cliente.
+                              </div>
+                            ) : (
+                              <div className="border border-border rounded-md overflow-hidden">
+                                <div className="max-h-56 overflow-x-auto overflow-y-auto">
+                                  <table className="w-full text-xs min-w-[400px]">
+                                    <thead>
+                                      <tr className="border-b border-border bg-muted/50">
+                                        <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">Loteamento</th>
+                                        <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">Lote</th>
+                                        <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">Data</th>
+                                        <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">Parc.</th>
+                                        <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border">
+                                      {vendasCliente.map((venda) => (
+                                        <tr key={venda.id_venda}>
+                                          <td className="px-3 py-2"><span className="font-medium">{venda.loteamento}</span></td>
+                                          <td className="px-3 py-2 text-muted-foreground">{venda.lote_desc}</td>
+                                          <td className="px-3 py-2 text-muted-foreground">{formatDateBr(venda.data_venda)}</td>
+                                          <td className="px-3 py-2 text-muted-foreground">{venda.parcelas}x</td>
+                                          <td className="px-3 py-2">
+                                            <Badge variant={venda.status === "quitada" ? "secondary" : venda.status === "cancelada" ? "destructive" : "default"}>
+                                              {venda.status === "aberta" ? "Aberta" : venda.status === "quitada" ? "Quitada" : venda.status === "cancelada" ? "Cancelada" : venda.status}
+                                            </Badge>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </TabsContent>
+
+                    {/* ── Aba externa 3: Documentos ── */}
+                    <TabsContent value="documentos" className="space-y-4 pt-2">
+                      {/* Toggle timbrado */}
+                      <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
+                        <Switch checked={usarTimbrado} onCheckedChange={setUsarTimbrado} id="timbrado" />
+                        <Label htmlFor="timbrado" className="cursor-pointer text-sm">
+                          Incluir cabeçalho/timbrado da empresa
+                        </Label>
                       </div>
 
-                      <Separator />
+                      {/* Botões de documentos */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2 justify-start"
+                          onClick={() => {
+                            setDialogAberto(false);
+                            setContratoDialogAberto(true);
+                          }}
+                        >
+                          <FileText className="h-4 w-4" />
+                          Contrato
+                        </Button>
 
-                      {/* Lotes do Cliente */}
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                          Lotes do Cliente
-                        </p>
-                        {loadingVendasCliente ? (
-                          <div className="text-xs text-muted-foreground">
-                            Carregando lotes do cliente...
-                          </div>
-                        ) : isErrorVendasCliente ? (
-                          <div className="text-xs text-destructive">
-                            Erro ao carregar lotes vinculados ao cliente.
-                          </div>
-                        ) : vendasCliente.length === 0 ? (
-                          <div className="text-xs text-muted-foreground">
-                            Nenhum lote/venda vinculada a este cliente.
-                          </div>
-                        ) : (
-                          <div className="border border-border rounded-md overflow-hidden">
-                            <div className="max-h-56 overflow-x-auto overflow-y-auto">
-                              <table className="w-full text-xs min-w-[400px]">
-                                <thead>
-                                  <tr className="border-b border-border bg-muted/50">
-                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
-                                      Loteamento
-                                    </th>
-                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
-                                      Lote
-                                    </th>
-                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
-                                      Data
-                                    </th>
-                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
-                                      Parc.
-                                    </th>
-                                    <th className="text-left px-3 py-2 font-medium text-[11px] text-muted-foreground">
-                                      Status
-                                    </th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-border">
-                                  {vendasCliente.map((venda) => (
-                                    <tr key={venda.id_venda}>
-                                      <td className="px-3 py-2">
-                                        <span className="font-medium">{venda.loteamento}</span>
-                                      </td>
-                                      <td className="px-3 py-2 text-muted-foreground">
-                                        {venda.lote_desc}
-                                      </td>
-                                      <td className="px-3 py-2 text-muted-foreground">
-                                        {formatDateBr(venda.data_venda)}
-                                      </td>
-                                      <td className="px-3 py-2 text-muted-foreground">
-                                        {venda.parcelas}x
-                                      </td>
-                                      <td className="px-3 py-2">
-                                        <Badge variant={venda.status === "quitada" ? "secondary" : venda.status === "cancelada" ? "destructive" : "default"}>
-                                          {venda.status === "aberta"
-                                            ? "Aberta"
-                                            : venda.status === "quitada"
-                                            ? "Quitada"
-                                            : venda.status === "cancelada"
-                                            ? "Cancelada"
-                                            : venda.status}
-                                        </Badge>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2 justify-start"
+                          onClick={() => {
+                            setDialogAberto(false);
+                            setContratoDialogAberto(true);
+                          }}
+                        >
+                          <FileCheck className="h-4 w-4" />
+                          Contrato À Vista
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2 justify-start"
+                          onClick={() => {
+                            setDialogAberto(false);
+                            setContratoDialogAberto(true);
+                            setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-recibo-quitacao")), 100);
+                          }}
+                        >
+                          <Receipt className="h-4 w-4" />
+                          Recibo de Quitação
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2 justify-start"
+                          onClick={() => {
+                            setDialogAberto(false);
+                            setContratoDialogAberto(true);
+                            setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbrado ? "abrir-minuta" : "abrir-minuta-sem-timbrado")), 100);
+                          }}
+                        >
+                          <FileSignature className="h-4 w-4" />
+                          Minuta
+                        </Button>
+
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="gap-2 justify-start col-span-2"
+                          onClick={() => {
+                            setDialogAberto(false);
+                            setContratoDialogAberto(true);
+                            setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-termo-transferencia")), 100);
+                          }}
+                        >
+                          <ArrowRightLeft className="h-4 w-4" />
+                          Termo de Transferência
+                        </Button>
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                  ) : (
+                  <>
+                  {/* Seletor de tipo sempre visível no topo (modo create/edit) */}
+                  <FormField
+                    control={form.control}
+                    name="tipo"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Tipo de cliente</FormLabel>
+                        <FormControl>
+                          <Select
+                            value={field.value}
+                            onValueChange={field.onChange}
+                            disabled={isView || modo === "edit"}
+                          >
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="f">Pessoa Física</SelectItem>
+                              <SelectItem value="j">Pessoa Jurídica</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {/* Abas internas (modo create/edit) */}
+                  <Tabs value={dialogTab} onValueChange={setDialogTab}>
+                    <TabsList className="w-full grid grid-cols-3">
+                      <TabsTrigger value="dados" className="gap-1.5">
+                        <User className="h-3.5 w-3.5" />
+                        {tipoWatch === "j" ? "Dados da Empresa" : "Dados Pessoais"}
+                        {(form.formState.errors.nome || form.formState.errors.cpf || form.formState.errors.cnpj || form.formState.errors.razao_social) && (
+                          <AlertCircle className="h-3.5 w-3.5 text-destructive" />
                         )}
+                      </TabsTrigger>
+                      <TabsTrigger value="endereco" className="gap-1.5">
+                        <MapPin className="h-3.5 w-3.5" />
+                        Endereço
+                        {(form.formState.errors.endereco || form.formState.errors.cidade || form.formState.errors.estado || form.formState.errors.cep) && (
+                          <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                        )}
+                      </TabsTrigger>
+                      <TabsTrigger value="contato" className="gap-1.5">
+                        <Phone className="h-3.5 w-3.5" />
+                        Contato
+                        {(form.formState.errors.fone_res || form.formState.errors.fone_com) && (
+                          <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                        )}
+                      </TabsTrigger>
+                    </TabsList>
+
+                    {/* ── ABA 1: Dados Gerais (create/edit) ── */}
+                    <TabsContent value="dados" className="space-y-4 pt-4">
+                      <FormField
+                        control={form.control}
+                        name="nome"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{tipoWatch === "j" ? "Nome do responsável *" : "Nome completo *"}</FormLabel>
+                            <FormControl>
+                              <Input {...field} disabled={false} placeholder="Digite o nome completo" />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      {tipoWatch === "j" ? (
+                        <>
+                          <FormField control={form.control} name="razao_social" render={({ field }) => (
+                            <FormItem><FormLabel>Razão social</FormLabel><FormControl><Input {...field} disabled={false} placeholder="Razão social da empresa" /></FormControl><FormMessage /></FormItem>
+                          )} />
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField control={form.control} name="cnpj" render={({ field }) => (
+                              <FormItem><FormLabel>CNPJ <span className="text-destructive">*</span></FormLabel><FormControl>
+                                <Input {...field} disabled={false} placeholder="00.000.000/0000-00" onChange={(e) => field.onChange(formatCpfCnpj(e.target.value))} />
+                              </FormControl><FormMessage /></FormItem>
+                            )} />
+                            <FormField control={form.control} name="cpf" render={({ field }) => (
+                              <FormItem><FormLabel>CPF do responsável</FormLabel><FormControl><Input {...field} disabled={false} placeholder="000.000.000-00" /></FormControl><FormMessage /></FormItem>
+                            )} />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField control={form.control} name="rg" render={({ field }) => (
+                              <FormItem><FormLabel>RG do responsável</FormLabel><FormControl><Input {...field} disabled={false} placeholder="0000000" /></FormControl><FormMessage /></FormItem>
+                            )} />
+                            <FormField control={form.control} name="profissao" render={({ field }) => (
+                              <FormItem><FormLabel>Ramo de atividade</FormLabel><FormControl><Input {...field} disabled={false} placeholder="Ex: Comércio, Serviços..." /></FormControl><FormMessage /></FormItem>
+                            )} />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField control={form.control} name="cpf" render={({ field }) => (
+                              <FormItem><FormLabel>CPF <span className="text-destructive">*</span></FormLabel><FormControl>
+                                <Input {...field} disabled={false} placeholder="000.000.000-00" onChange={(e) => field.onChange(formatCpfCnpj(e.target.value))} />
+                              </FormControl><FormMessage /></FormItem>
+                            )} />
+                            <FormField control={form.control} name="rg" render={({ field }) => (
+                              <FormItem><FormLabel>RG</FormLabel><FormControl><Input {...field} disabled={false} placeholder="0000000" /></FormControl><FormMessage /></FormItem>
+                            )} />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <FormField control={form.control} name="estado_civil" render={({ field }) => (
+                              <FormItem><FormLabel>Estado civil</FormLabel><FormControl>
+                                <Select value={field.value || "_none"} onValueChange={(v) => field.onChange(v === "_none" ? "" : v)} disabled={false}>
+                                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="_none">— Não informado —</SelectItem>
+                                    {ESTADO_CIVIL_LIST.map((ec) => <SelectItem key={ec} value={ec}>{ec}</SelectItem>)}
+                                  </SelectContent>
+                                </Select>
+                              </FormControl><FormMessage /></FormItem>
+                            )} />
+                            <FormField control={form.control} name="conjuge" render={({ field }) => (
+                              <FormItem><FormLabel>Cônjuge / Companheiro(a)</FormLabel><FormControl><Input {...field} disabled={false} placeholder="Nome do cônjuge" /></FormControl><FormMessage /></FormItem>
+                            )} />
+                          </div>
+                          <FormField control={form.control} name="profissao" render={({ field }) => (
+                            <FormItem><FormLabel>Profissão</FormLabel><FormControl><Input {...field} disabled={false} placeholder="Ex: Engenheiro, Professor..." /></FormControl><FormMessage /></FormItem>
+                          )} />
+                        </>
+                      )}
+                    </TabsContent>
+
+                    {/* ── ABA 2: Endereço (create/edit) ── */}
+                    <TabsContent value="endereco" className="space-y-4 pt-4">
+                      <FormField control={form.control} name="endereco" render={({ field }) => (
+                        <FormItem><FormLabel>Endereço</FormLabel><FormControl><Input {...field} disabled={false} placeholder="Rua, Av., número..." /></FormControl><FormMessage /></FormItem>
+                      )} />
+                      <FormField control={form.control} name="complemento" render={({ field }) => (
+                        <FormItem><FormLabel>Complemento</FormLabel><FormControl><Input {...field} disabled={false} placeholder="Apto, bloco, casa..." /></FormControl><FormMessage /></FormItem>
+                      )} />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField control={form.control} name="bairro" render={({ field }) => (
+                          <FormItem><FormLabel>Bairro</FormLabel><FormControl><Input {...field} disabled={false} placeholder="Bairro" /></FormControl><FormMessage /></FormItem>
+                        )} />
+                        <FormField control={form.control} name="cep" render={({ field }) => (
+                          <FormItem><FormLabel>CEP</FormLabel><FormControl><Input {...field} disabled={false} placeholder="00000-000" maxLength={9} /></FormControl><FormMessage /></FormItem>
+                        )} />
                       </div>
-
-                      <Separator />
-
-                      {/* Impressão de Documentos */}
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                          Impressão de Documentos
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                          {/* Contrato A Prazo — abre o ContratoDialog */}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              setContratoDialogAberto(true);
-                            }}
-                          >
-                            <FileText className="h-3.5 w-3.5" />
-                            Contrato
-                          </Button>
-
-                          {/* Contrato À Vista — abre o mesmo dialog mas pré-seleciona à vista */}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              setContratoDialogAberto(true);
-                            }}
-                          >
-                            <FileCheck className="h-3.5 w-3.5" />
-                            Contrato À Vista
-                          </Button>
-
-                          {/* Recibo de Quitação — abre o ContratoDialog na aba de recibo */}
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            className="gap-1.5 h-8 text-xs bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border-emerald-200 border"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              setContratoDialogAberto(true);
-                              // Um pequeno atraso para garantir que o dialog abriu antes de disparar o evento
-                              setTimeout(() => {
-                                window.dispatchEvent(new CustomEvent('abrir-recibo-quitacao'));
-                              }, 100);
-                            }}
-                          >
-                            <Receipt className="h-3.5 w-3.5" />
-                            Recibo de Quitação
-                          </Button>
-
-                          {/* Recibo s/ Timbrado — usa o mesmo modelo do recibo, sem diferença visual por enquanto */}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              setContratoDialogAberto(true);
-                              setTimeout(() => {
-                                window.dispatchEvent(new CustomEvent("abrir-recibo-quitacao"));
-                              }, 100);
-                            }}
-                          >
-                            <Receipt className="h-3.5 w-3.5" />
-                            Recibo s/ Timbrado
-                          </Button>
-
-                          {/* Minuta */}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              setContratoDialogAberto(true);
-                              setTimeout(() => {
-                                window.dispatchEvent(new CustomEvent("abrir-minuta"));
-                              }, 100);
-                            }}
-                          >
-                            <FileSignature className="h-3.5 w-3.5" />
-                            Minuta
-                          </Button>
-
-                          {/* Minuta s/ Timbrado */}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              setContratoDialogAberto(true);
-                              setTimeout(() => {
-                                window.dispatchEvent(new CustomEvent("abrir-minuta-sem-timbrado"));
-                              }, 100);
-                            }}
-                          >
-                            <FileSignature className="h-3.5 w-3.5" />
-                            Minuta s/ Timbrado
-                          </Button>
-
-                          {/* Termo de Transferência */}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="gap-1.5 h-8 text-xs text-muted-foreground hover:text-foreground border border-border hover:border-border/80"
-                            onClick={() => {
-                              setDialogAberto(false);
-                              setContratoDialogAberto(true);
-                              setTimeout(() => {
-                                window.dispatchEvent(new CustomEvent("abrir-termo-transferencia"));
-                              }, 100);
-                            }}
-                          >
-                            <ArrowRightLeft className="h-3.5 w-3.5" />
-                            Termo de Transferência
-                          </Button>
-                        </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <FormField control={form.control} name="cidade" render={({ field }) => (
+                          <FormItem className="md:col-span-2"><FormLabel>Cidade</FormLabel><FormControl><Input {...field} disabled={false} placeholder="Cidade" /></FormControl><FormMessage /></FormItem>
+                        )} />
+                        <FormField control={form.control} name="estado" render={({ field }) => (
+                          <FormItem><FormLabel>UF</FormLabel><FormControl>
+                            <Select value={field.value || "_none"} onValueChange={(v) => field.onChange(v === "_none" ? "" : v)} disabled={false}>
+                              <SelectTrigger><SelectValue placeholder="UF" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="_none">—</SelectItem>
+                                {UF_LIST.map((uf) => <SelectItem key={uf} value={uf}>{uf}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          </FormControl><FormMessage /></FormItem>
+                        )} />
                       </div>
-                    </div>
+                    </TabsContent>
+
+                    {/* ── ABA 3: Contato (create/edit) ── */}
+                    <TabsContent value="contato" className="space-y-4 pt-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <FormField control={form.control} name="fone_res" render={({ field }) => (
+                          <FormItem><FormLabel>Telefone residencial</FormLabel><FormControl>
+                            <Input {...field} disabled={false} placeholder="(00) 0000-0000" type="tel" />
+                          </FormControl><FormMessage /></FormItem>
+                        )} />
+                        <FormField control={form.control} name="fone_com" render={({ field }) => (
+                          <FormItem><FormLabel>{tipoWatch === "j" ? "Telefone comercial / Celular" : "Telefone comercial"}</FormLabel><FormControl>
+                            <Input {...field} disabled={false} placeholder="(00) 0 0000-0000" type="tel" />
+                          </FormControl><FormMessage /></FormItem>
+                        )} />
+                      </div>
+                      <p className="text-xs text-muted-foreground pt-2">
+                        Após preencher todas as abas, clique em <strong>Salvar</strong> abaixo.
+                      </p>
+                    </TabsContent>
+                  </Tabs>
+                  </>
                   )}
 
                   {!isView && (

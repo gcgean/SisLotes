@@ -59,6 +59,7 @@ import { NovoClienteDialog, NovoClienteFormValues } from "@/components/clientes/
 import { NovoLoteDialog } from "@/components/lotes/NovoLoteDialog";
 import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
 import { FileText, Pencil, FileCheck, Receipt, FileSignature, ArrowRightLeft } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 type VendaStatus = "aberta" | "quitada" | "cancelada";
@@ -180,7 +181,8 @@ const Vendas = () => {
 
   // ── nova venda dialog
   const [novaVendaAberto, setNovaVendaAberto] = useState(false);
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [usarTimbradoVenda, setUsarTimbradoVenda] = useState(true);
   const [selectedLoteamento, setSelectedLoteamento] = useState<Loteamento | null>(null);
   const [selectedLote, setSelectedLote] = useState<LoteDisponivel | null>(null);
   const [selectedCliente, setSelectedCliente] = useState<Cliente | null>(null);
@@ -1379,6 +1381,7 @@ const Vendas = () => {
                 { n: 1, label: "Lote", icon: MapPin },
                 { n: 2, label: "Cliente", icon: User },
                 { n: 3, label: "Condições", icon: DollarSign },
+                { n: 4, label: "Revisão", icon: ClipboardList },
               ] as const).map(({ n, label, icon: Icon }, i) => (
                 <div key={n} className="flex items-center gap-2">
                   {i > 0 && <div className={`h-px flex-1 w-8 ${step > n - 1 ? "bg-primary" : "bg-border"}`} />}
@@ -1567,6 +1570,7 @@ const Vendas = () => {
                   </div>
                 </div>
 
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label htmlFor="data_venda">Data da Venda</Label>
@@ -1628,13 +1632,66 @@ const Vendas = () => {
                 )}
               </div>
             )}
+
+            {/* ── Step 4: Revisão & Documentos ── */}
+            {step === 4 && (
+              <div className="space-y-4">
+                <p className="text-sm font-semibold text-muted-foreground">Revise as informações antes de registrar</p>
+
+                {/* Cards de resumo */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-muted/50 rounded-lg p-3 text-xs">
+                    <p className="font-semibold uppercase text-muted-foreground mb-1">Lote</p>
+                    <p className="font-bold">{selectedLoteamento?.nome}</p>
+                    <p>Lote {selectedLote?.lote} · Quadra {selectedLote?.quadra}</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-3 text-xs">
+                    <p className="font-semibold uppercase text-muted-foreground mb-1">Cliente</p>
+                    <p className="font-bold">{selectedCliente?.nome}</p>
+                    <p>{selectedCliente?.cpf ?? selectedCliente?.cnpj ?? "—"}</p>
+                  </div>
+                  <div className="bg-muted/50 rounded-lg p-3 text-xs">
+                    <p className="font-semibold uppercase text-muted-foreground mb-1">Pagamento</p>
+                    <p className="font-bold">{numParcelas}x de {fmtCurrency(Number(valorParcelaVenda))}</p>
+                    <p>Entrada: {fmtCurrency(Number(valorEntrada))}</p>
+                  </div>
+                </div>
+
+                {/* Toggle timbrado */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
+                  <Switch checked={usarTimbradoVenda} onCheckedChange={setUsarTimbradoVenda} id="timbrado-venda" />
+                  <Label htmlFor="timbrado-venda" className="cursor-pointer text-sm">
+                    Incluir cabeçalho/timbrado da empresa nos documentos
+                  </Label>
+                </div>
+
+                {/* Botões de documento */}
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">Documentos (opcional — pode gerar após registrar)</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs"
+                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbradoVenda ? "abrir-minuta" : "abrir-minuta-sem-timbrado")), 100); }}>
+                      <FileSignature className="h-3.5 w-3.5" /> Minuta
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs"
+                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-recibo-quitacao")), 100); }}>
+                      <Receipt className="h-3.5 w-3.5" /> Recibo
+                    </Button>
+                    <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs"
+                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); }}>
+                      <FileText className="h-3.5 w-3.5" /> Contrato
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <DialogFooter className="border-t border-border pt-3 flex-row justify-between gap-2">
             <Button
               variant="outline"
               onClick={() => {
-                if (step > 1) setStep((s) => (s - 1) as 1 | 2 | 3);
+                if (step > 1) setStep((s) => (s - 1) as 1 | 2 | 3 | 4);
                 else { setNovaVendaAberto(false); resetNovaVenda(); }
               }}
               className="gap-1"
@@ -1643,12 +1700,13 @@ const Vendas = () => {
               {step === 1 ? "Cancelar" : "Voltar"}
             </Button>
 
-            {step < 3 ? (
+            {step < 4 ? (
               <Button
-                onClick={() => setStep((s) => (s + 1) as 2 | 3)}
+                onClick={() => setStep((s) => (s + 1) as 2 | 3 | 4)}
                 disabled={
                   (step === 1 && !selectedLote) ||
-                  (step === 2 && !selectedCliente)
+                  (step === 2 && !selectedCliente) ||
+                  (step === 3 && (Number(valorParcelaVenda) <= 0 || !dataVenda || Number(numParcelas) < 1))
                 }
                 className="gap-1"
               >
