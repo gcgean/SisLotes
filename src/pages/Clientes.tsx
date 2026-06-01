@@ -1182,6 +1182,7 @@ const Clientes = () => {
                           onClick={() => {
                             setDialogAberto(false);
                             setContratoDialogAberto(true);
+                            if (!usarTimbrado) setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-contrato-sem-timbrado")), 100);
                           }}
                         >
                           <FileText className="h-4 w-4" />
@@ -1195,6 +1196,7 @@ const Clientes = () => {
                           onClick={() => {
                             setDialogAberto(false);
                             setContratoDialogAberto(true);
+                            if (!usarTimbrado) setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-contrato-sem-timbrado")), 100);
                           }}
                         >
                           <FileCheck className="h-4 w-4" />
@@ -1208,7 +1210,7 @@ const Clientes = () => {
                           onClick={() => {
                             setDialogAberto(false);
                             setContratoDialogAberto(true);
-                            setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-recibo-quitacao")), 100);
+                            setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbrado ? "abrir-recibo-quitacao" : "abrir-recibo-sem-timbrado")), 100);
                           }}
                         >
                           <Receipt className="h-4 w-4" />
@@ -1236,7 +1238,7 @@ const Clientes = () => {
                           onClick={() => {
                             setDialogAberto(false);
                             setContratoDialogAberto(true);
-                            setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-termo-transferencia")), 100);
+                            setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbrado ? "abrir-termo-transferencia" : "abrir-termo-sem-timbrado")), 100);
                           }}
                         >
                           <ArrowRightLeft className="h-4 w-4" />

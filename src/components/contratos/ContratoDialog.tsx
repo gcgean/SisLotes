@@ -195,7 +195,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
   });
 
   const [acaoAutomatica, setAcaoAutomatica] = useState<
-    null | "recibo" | "minuta" | "minuta-sem-timbrado" | "termo-transferencia"
+    null | "recibo" | "recibo-sem-timbrado" | "minuta" | "minuta-sem-timbrado" | "termo-transferencia" | "termo-sem-timbrado" | "contrato-sem-timbrado"
   >(null);
 
   function handleSelecionarVenda(venda: VendaResumo) {
@@ -205,20 +205,29 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
 
   useEffect(() => {
     const handleAbrirRecibo = () => setAcaoAutomatica("recibo");
+    const handleAbrirReciboSemTimbrado = () => setAcaoAutomatica("recibo-sem-timbrado");
     const handleAbrirMinuta = () => setAcaoAutomatica("minuta");
     const handleAbrirMinutaSemTimbrado = () => setAcaoAutomatica("minuta-sem-timbrado");
     const handleAbrirTermoTransferencia = () => setAcaoAutomatica("termo-transferencia");
+    const handleAbrirTermoSemTimbrado = () => setAcaoAutomatica("termo-sem-timbrado");
+    const handleAbrirContratoSemTimbrado = () => setAcaoAutomatica("contrato-sem-timbrado");
 
     window.addEventListener("abrir-recibo-quitacao", handleAbrirRecibo);
+    window.addEventListener("abrir-recibo-sem-timbrado", handleAbrirReciboSemTimbrado);
     window.addEventListener("abrir-minuta", handleAbrirMinuta);
     window.addEventListener("abrir-minuta-sem-timbrado", handleAbrirMinutaSemTimbrado);
     window.addEventListener("abrir-termo-transferencia", handleAbrirTermoTransferencia);
+    window.addEventListener("abrir-termo-sem-timbrado", handleAbrirTermoSemTimbrado);
+    window.addEventListener("abrir-contrato-sem-timbrado", handleAbrirContratoSemTimbrado);
 
     return () => {
       window.removeEventListener("abrir-recibo-quitacao", handleAbrirRecibo);
+      window.removeEventListener("abrir-recibo-sem-timbrado", handleAbrirReciboSemTimbrado);
       window.removeEventListener("abrir-minuta", handleAbrirMinuta);
       window.removeEventListener("abrir-minuta-sem-timbrado", handleAbrirMinutaSemTimbrado);
       window.removeEventListener("abrir-termo-transferencia", handleAbrirTermoTransferencia);
+      window.removeEventListener("abrir-termo-sem-timbrado", handleAbrirTermoSemTimbrado);
+      window.removeEventListener("abrir-contrato-sem-timbrado", handleAbrirContratoSemTimbrado);
     };
   }, []);
 
@@ -250,7 +259,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     onClose();
   }
 
-  function gerarReciboQuitacao() {
+  function gerarReciboQuitacao(semTimbrado = false) {
     if (!contratoData) return;
     const { venda, cliente, lote, loteamento, empresa } = contratoData;
 
@@ -343,7 +352,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
 </head>
 <body>
   <div class="conteudo" contenteditable="true">
-    ${buildTimbrado(empresa, false)}
+    ${buildTimbrado(empresa, semTimbrado)}
 
     <div class="titulo">${titulo}</div>
 
@@ -387,13 +396,19 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     if (!contratoData || loadingContrato) return;
 
     if (acaoAutomatica === "recibo") {
-      gerarReciboQuitacao();
+      gerarReciboQuitacao(false);
+    } else if (acaoAutomatica === "recibo-sem-timbrado") {
+      gerarReciboQuitacao(true);
     } else if (acaoAutomatica === "minuta") {
       gerarMinuta(false);
     } else if (acaoAutomatica === "minuta-sem-timbrado") {
       gerarMinuta(true);
     } else if (acaoAutomatica === "termo-transferencia") {
-      gerarTermoTransferencia();
+      gerarTermoTransferencia(false);
+    } else if (acaoAutomatica === "termo-sem-timbrado") {
+      gerarTermoTransferencia(true);
+    } else if (acaoAutomatica === "contrato-sem-timbrado") {
+      gerarContrato(true);
     }
 
     setAcaoAutomatica(null);
@@ -568,7 +583,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     printWindow.focus();
   }
 
-  function gerarTermoTransferencia() {
+  function gerarTermoTransferencia(semTimbrado = false) {
     if (!contratoData) return;
     const { cliente, lote, loteamento, empresa } = contratoData;
 
@@ -647,7 +662,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
 </head>
 <body>
   <div class="conteudo" contenteditable="true">
-    ${buildTimbrado(empresa, false)}
+    ${buildTimbrado(empresa, semTimbrado)}
 
     <div class="titulo">TERMO DE TRANSFERÊNCIA DE LOTE</div>
 
@@ -760,14 +775,14 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     return template.replace(/\{\{([\w.]+)\}\}/g, (_, key) => replacements[key] ?? `{{${key}}}`);
   }
 
-  function gerarContrato() {
+  function gerarContrato(semTimbrado = false) {
     if (!contratoData) return;
     const { venda, cliente, lote, loteamento, empresa } = contratoData;
 
     // Usa modelo personalizado da empresa (ou o padrão em formato {{placeholder}})
     const templateAtivo = empresa?.modelo_contrato ?? MODELO_CONTRATO_PADRAO;
     if (templateAtivo) {
-      const timbrado = buildTimbrado(empresa, false);
+      const timbrado = buildTimbrado(empresa, semTimbrado);
       const corpo = applyContratoTemplate(templateAtivo);
       const titulo = tipoContrato === "a-vista"
         ? "CONTRATO DE PROMESSA DE COMPRA E VENDA DE POSSE DE IMÓVEL (À VISTA)"

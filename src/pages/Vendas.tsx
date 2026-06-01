@@ -1674,11 +1674,11 @@ const Vendas = () => {
                       <FileSignature className="h-3.5 w-3.5" /> Minuta
                     </Button>
                     <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs"
-                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-recibo-quitacao")), 100); }}>
+                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbradoVenda ? "abrir-recibo-quitacao" : "abrir-recibo-sem-timbrado")), 100); }}>
                       <Receipt className="h-3.5 w-3.5" /> Recibo
                     </Button>
                     <Button type="button" variant="outline" size="sm" className="gap-1.5 text-xs"
-                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); }}>
+                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); if (!usarTimbradoVenda) setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-contrato-sem-timbrado")), 100); }}>
                       <FileText className="h-3.5 w-3.5" /> Contrato
                     </Button>
                   </div>
