@@ -218,12 +218,10 @@ pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res
   const saved = await repo.save(pagamento);
 
   const log = logRepo.create({
-    id_empresa: req.user?.id_empresa ?? 1,
     id_usuario: req.user?.id_usuario ?? 1,
     servico: "pagamento_estorno",
     url: `/api/pagamentos/${id}/estornar`,
     log: `Pagamento ${saved.id_pagamento} estornado — voltou para aberto`,
-    query: "{}",
   });
   await logRepo.save(log);
 
