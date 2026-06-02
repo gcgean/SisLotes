@@ -944,25 +944,26 @@ const Pagamentos = () => {
                                 Pago
                               </Badge>
                             </td>
-                            <td className="px-5 py-3 text-right">
-                              <div className="flex items-center justify-end gap-2">
+                            <td className="px-3 py-3 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
                                 <Button
                                   variant="outline"
                                   size="sm"
                                   className="h-7 gap-1.5 text-xs"
                                   onClick={() => handleReimprimirRecibo(pag)}
+                                  title="Imprimir recibo"
                                 >
                                   <Printer className="h-3.5 w-3.5" />
                                   Recibo
                                 </Button>
                                 <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-7 gap-1.5 text-xs text-destructive border-destructive/40 hover:bg-destructive/5"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
                                   onClick={() => setEstornoConfirm(pag)}
+                                  title="Cancelar pagamento"
                                 >
-                                  <X className="h-3.5 w-3.5" />
-                                  Cancelar
+                                  <X className="h-4 w-4" />
                                 </Button>
                               </div>
                             </td>
