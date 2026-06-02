@@ -314,9 +314,54 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       font-weight: bold;
       text-decoration: underline;
       font-size: 14pt;
-      margin-bottom: 40px;
+      margin-bottom: 30px;
     }
     p { margin-bottom: 15px; text-align: justify; text-indent: 50px; }
+    .imovel-box {
+      border: 1.5px solid #000;
+      border-radius: 4px;
+      padding: 12px 16px;
+      margin: 18px 0 20px 0;
+    }
+    .imovel-box .box-titulo {
+      font-weight: bold;
+      font-size: 10pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #ccc;
+      padding-bottom: 6px;
+      margin-bottom: 10px;
+      text-indent: 0;
+    }
+    .imovel-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 20px;
+      font-size: 11pt;
+    }
+    .imovel-campo {
+      display: flex;
+      flex-direction: column;
+    }
+    .imovel-label {
+      font-size: 8pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      color: #555;
+      letter-spacing: 0.3px;
+    }
+    .imovel-valor {
+      font-size: 11pt;
+      font-weight: bold;
+      border-bottom: 1px solid #aaa;
+      padding-bottom: 2px;
+    }
+    .imovel-grid-4 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 6px 12px;
+      margin-top: 8px;
+    }
     .data-local {
       margin-top: 40px;
       margin-bottom: 60px;
@@ -357,15 +402,59 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     <div class="titulo">${titulo}</div>
 
     <p>
-      Declaro, para os devidos fins, que o(a) Sr(a) <b>${clienteNome}</b>, brasileiro(a), ${clienteEstadoCivil}, inscrito no CPF nº ${clienteCpf} e Cédula de Identidade nº ${clienteRg}, residente e domiciliado ${clienteEnd}${clienteBairro}, em ${clienteCidade}/${clienteEstado}, <b>CONCLUIU</b> o pagamento do <b>lote ${loteNum} da quadra ${quadraNum}</b> do Desmembramento denominado ${loteamentoNome}, na cidade de ${loteamentoCidade}/${loteamentoEstado}, medindo ${frente} de frente, ${fundo} de fundo, ${esquerdo} de lado esquerdo e ${direito} de lado direito.
+      Declaro, para os devidos fins, que o(a) Sr(a) <b>${clienteNome}</b>, brasileiro(a), ${clienteEstadoCivil}, inscrito(a) no CPF nº ${clienteCpf} e Cédula de Identidade nº ${clienteRg}, residente e domiciliado(a) ${clienteEnd}${clienteBairro}, em ${clienteCidade}/${clienteEstado}, <b>CONCLUIU</b> o pagamento integral do imóvel abaixo identificado:
     </p>
-    
+
+    <div class="imovel-box">
+      <div class="box-titulo">Identificação do Imóvel</div>
+      <div class="imovel-grid">
+        <div class="imovel-campo">
+          <span class="imovel-label">Loteamento</span>
+          <span class="imovel-valor">${loteamentoNome}</span>
+        </div>
+        <div class="imovel-campo">
+          <span class="imovel-label">Cidade / Estado</span>
+          <span class="imovel-valor">${loteamentoCidade} / ${loteamentoEstado}</span>
+        </div>
+        <div class="imovel-campo">
+          <span class="imovel-label">Lote nº</span>
+          <span class="imovel-valor">${loteNum}</span>
+        </div>
+        <div class="imovel-campo">
+          <span class="imovel-label">Quadra</span>
+          <span class="imovel-valor">${quadraNum}</span>
+        </div>
+      </div>
+      <div class="imovel-grid-4">
+        <div class="imovel-campo">
+          <span class="imovel-label">Área (m²)</span>
+          <span class="imovel-valor">${area}</span>
+        </div>
+        <div class="imovel-campo">
+          <span class="imovel-label">Frente (m)</span>
+          <span class="imovel-valor">${frente}</span>
+        </div>
+        <div class="imovel-campo">
+          <span class="imovel-label">Fundo (m)</span>
+          <span class="imovel-valor">${fundo}</span>
+        </div>
+        <div class="imovel-campo">
+          <span class="imovel-label">Lado Direito (m)</span>
+          <span class="imovel-valor">${direito}</span>
+        </div>
+        <div class="imovel-campo" style="grid-column: span 1;">
+          <span class="imovel-label">Lado Esquerdo (m)</span>
+          <span class="imovel-valor">${esquerdo}</span>
+        </div>
+      </div>
+    </div>
+
     <p>
-      Declaro ainda que dou plena e geral <b>QUITAÇÃO</b> e desde já cedo e transfiro a posse REAL, domínio, direito sobre o citado imóvel, para que possa o outorgado dele usar, gozar e dispor livremente como seu, que é, e fica sendo de hoje em diante por força desta declaração, obrigando-se o outorgante (vendedor) por si e seus herdeiros e sucessores a fazerem a presente firme, boa e valiosa.
+      Declaro ainda que dou plena e geral <b>QUITAÇÃO</b> e desde já cedo e transfiro a posse REAL, domínio e direito sobre o citado imóvel, para que possa o outorgado dele usar, gozar e dispor livremente como seu, obrigando-se o outorgante por si e seus herdeiros e sucessores a fazerem a presente firme, boa e valiosa.
     </p>
-    
+
     <p>
-      E pela <b>OUTORGADO(A)</b> compradora me foi dito que aceita a presente declaração em seus expressos termos, por se achar o mesmo de pleno acordo com o ajustado e contratado.
+      E pela <b>OUTORGADA</b> compradora me foi dito que aceita a presente declaração em seus expressos termos, por se achar de pleno acordo com o ajustado e contratado.
     </p>
 
     <div class="data-local">
