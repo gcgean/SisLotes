@@ -455,7 +455,8 @@ const Pagamentos = () => {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["pagamentos"] });
+      queryClient.invalidateQueries({ queryKey: ["pagamentos-abertos"] });
+      queryClient.invalidateQueries({ queryKey: ["pagamentos-pagos"] });
       setEstornoConfirm(null);
       toast({ title: "Pagamento cancelado", description: "A parcela voltou para Em Aberto." });
     },
