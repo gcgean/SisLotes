@@ -822,13 +822,13 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
 
     <div class="assinaturas">
       <div class="assinatura-linha">${cedenteNome}</div>
-      <div class="assinatura-label">(Cedente)</div>
+      <div class="assinatura-label">(Cedente / Transferidor)</div>
 
-      <div class="assinatura-linha">__________________________________________</div>
-      <div class="assinatura-label">(Comprador)</div>
+      <div class="assinatura-linha">&nbsp;</div>
+      <div class="assinatura-label">(Comprador / Cessionário)</div>
 
-      <div class="assinatura-linha">${empresa?.nome_fantasia ?? loteamento?.prop_nome ?? "__________________________________________"}</div>
-      <div class="assinatura-label">(Anuente)</div>
+      <div class="assinatura-linha">${empresa?.nome_fantasia ?? loteamento?.prop_nome ?? "&nbsp;"}</div>
+      <div class="assinatura-label">(Anuente / Vendedor)</div>
     </div>
   </div>
 
