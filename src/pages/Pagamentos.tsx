@@ -1035,7 +1035,7 @@ const Pagamentos = () => {
             <AlertDialogAction
               className="bg-destructive hover:bg-destructive/90"
               disabled={estornoMutation.isPending}
-              onClick={() => { if (estornoConfirm) estornoMutation.mutate(estornoConfirm.id_pagamento); }}
+              onClick={() => { if (estornoConfirm) estornoMutation.mutate(estornoConfirm.id); }}
             >
               {estornoMutation.isPending ? "Cancelando..." : "Sim, cancelar pagamento"}
             </AlertDialogAction>
