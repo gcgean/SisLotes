@@ -487,6 +487,7 @@ const Vendas = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vendas"] });
       queryClient.invalidateQueries({ queryKey: ["lotes"] });
+      queryClient.refetchQueries({ queryKey: ["vendas"] });
       setConfirmarCancelamento(null);
       toast({ title: "Venda cancelada com sucesso" });
     },
