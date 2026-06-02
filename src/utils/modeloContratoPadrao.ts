@@ -35,14 +35,26 @@ export const MODELO_CONTRATO_PADRAO = `<div class="titulo">CONTRATO DE PROMESSA 
 
 <p class="secao">2. DO OBJETIVO DO CONTRATO</p>
 <p>
-  <b>Lote nº:</b> {{lote.numero}}&nbsp;&nbsp;&nbsp;
-  <b>Quadra:</b> {{lote.quadra}}&nbsp;&nbsp;&nbsp;
-  <b>Área:</b> {{lote.area}} m²<br/>
-  <b>Frente:</b> {{lote.frente}}&nbsp;&nbsp;&nbsp;
-  <b>Fundo:</b> {{lote.fundo}}&nbsp;&nbsp;&nbsp;
-  <b>Lado direito:</b> {{lote.direito}}&nbsp;&nbsp;&nbsp;
-  <b>Lado Esquerdo:</b> {{lote.esquerdo}}
+  O imóvel objeto deste contrato está situado no loteamento <b>{{loteamento.nome}}</b>,
+  com as seguintes características:
 </p>
+<table style="width:100%;border-collapse:collapse;margin:8px 0 12px 0;font-size:11pt;">
+  <tr>
+    <td style="border:1px solid #000;padding:5px 8px;width:50%;"><b>Loteamento:</b> {{loteamento.nome}}</td>
+    <td style="border:1px solid #000;padding:5px 8px;width:25%;"><b>Lote nº:</b> {{lote.numero}}</td>
+    <td style="border:1px solid #000;padding:5px 8px;width:25%;"><b>Quadra:</b> {{lote.quadra}}</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #000;padding:5px 8px;"><b>Área:</b> {{lote.area}} m²</td>
+    <td style="border:1px solid #000;padding:5px 8px;"><b>Frente:</b> {{lote.frente}} m</td>
+    <td style="border:1px solid #000;padding:5px 8px;"><b>Fundo:</b> {{lote.fundo}} m</td>
+  </tr>
+  <tr>
+    <td style="border:1px solid #000;padding:5px 8px;"><b>Cidade/Estado:</b> {{loteamento.cidade}}/{{loteamento.estado}}</td>
+    <td style="border:1px solid #000;padding:5px 8px;"><b>Lado Direito:</b> {{lote.direito}} m</td>
+    <td style="border:1px solid #000;padding:5px 8px;"><b>Lado Esquerdo:</b> {{lote.esquerdo}} m</td>
+  </tr>
+</table>
 
 <p class="secao">3. DO PREÇO, DA FORMA E CONDIÇÕES DE PAGAMENTO</p>
 <p>
