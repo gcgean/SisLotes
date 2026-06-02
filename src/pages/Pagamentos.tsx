@@ -20,6 +20,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Search,
   CheckCircle2,
   Clock,
@@ -161,6 +171,9 @@ const Pagamentos = () => {
   const [reajusteOpen, setReajusteOpen] = useState(false);
   const [reajustePercentual, setReajustePercentual] = useState("5");
   const [reajusteConfirmado, setReajusteConfirmado] = useState(false);
+
+  // ── Estorno de pagamento ──
+  const [estornoConfirm, setEstornoConfirm] = useState<Pagamento | null>(null);
 
   // ─── Busca de clientes (autocomplete) ────────────────────────────────────
 
@@ -426,6 +439,28 @@ const Pagamentos = () => {
     },
     onError: (err) => {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro ao reajustar", variant: "destructive" });
+    },
+  });
+
+  const estornoMutation = useMutation({
+    mutationFn: async (id_pagamento: number) => {
+      const res = await fetch(`/api/pagamentos/${id_pagamento}/estornar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Erro ao estornar pagamento");
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pagamentos"] });
+      setEstornoConfirm(null);
+      toast({ title: "Pagamento cancelado", description: "A parcela voltou para Em Aberto." });
+    },
+    onError: (err) => {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro ao estornar", variant: "destructive" });
     },
   });
 
@@ -871,7 +906,7 @@ const Pagamentos = () => {
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Valor</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Valor Pago</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Situação</th>
-                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Recibo</th>
+                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -910,15 +945,26 @@ const Pagamentos = () => {
                               </Badge>
                             </td>
                             <td className="px-5 py-3 text-right">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="h-7 gap-1.5 text-xs"
-                                onClick={() => handleReimprimirRecibo(pag)}
-                              >
-                                <Printer className="h-3.5 w-3.5" />
-                                Recibo
-                              </Button>
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 gap-1.5 text-xs"
+                                  onClick={() => handleReimprimirRecibo(pag)}
+                                >
+                                  <Printer className="h-3.5 w-3.5" />
+                                  Recibo
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="h-7 gap-1.5 text-xs text-destructive border-destructive/40 hover:bg-destructive/5"
+                                  onClick={() => setEstornoConfirm(pag)}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  Cancelar
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         ))
@@ -956,6 +1002,46 @@ const Pagamentos = () => {
       </div>
 
       {/* ─── Dialog de Reajuste Anual ─── */}
+      {/* ─── AlertDialog de confirmação de estorno ─── */}
+      <AlertDialog open={!!estornoConfirm} onOpenChange={(o) => { if (!o) setEstornoConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <X className="h-5 w-5" />
+              Cancelar Pagamento
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                Tem certeza que deseja cancelar este pagamento?
+              </span>
+              {estornoConfirm && (
+                <span className="block bg-muted rounded-md p-3 text-sm text-foreground">
+                  <strong>{estornoConfirm.lote}</strong> — Parcela{" "}
+                  {estornoConfirm.numero_parcela === 0 || estornoConfirm.tipo === "entrada"
+                    ? "Entrada"
+                    : `${estornoConfirm.numero_parcela}/${estornoConfirm.parcelas}`}
+                  {" "}· Pago em {estornoConfirm.pago_data ?? "—"} · Valor{" "}
+                  {estornoConfirm.valor_pago != null ? formatCurrency(estornoConfirm.valor_pago) : formatCurrency(estornoConfirm.valor)}
+                </span>
+              )}
+              <span className="block text-destructive font-medium">
+                A parcela voltará para "Em Aberto" e o valor pago será apagado.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={estornoMutation.isPending}>Não, manter</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              disabled={estornoMutation.isPending}
+              onClick={() => { if (estornoConfirm) estornoMutation.mutate(estornoConfirm.id_pagamento); }}
+            >
+              {estornoMutation.isPending ? "Cancelando..." : "Sim, cancelar pagamento"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <Dialog open={reajusteOpen} onOpenChange={(o) => { if (!reajusteMutation.isPending) { setReajusteOpen(o); setReajusteConfirmado(false); } }}>
         <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>

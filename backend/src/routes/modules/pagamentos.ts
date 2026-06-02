@@ -196,6 +196,40 @@ pagamentosRouter.post("/retorno", (_req, res) => {
   return res.status(200).json({ message: "Retorno processado (stub)" });
 });
 
+// ─── POST /:id/estornar — Cancelar pagamento e voltar para aberto ─────────────
+pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const repo = AppDataSource.getRepository(Pagamento);
+  const logRepo = AppDataSource.getRepository(Log);
+
+  const where: Record<string, unknown> = { id_pagamento: Number(id) };
+  if (req.user?.id_empresa) where.id_empresa = req.user.id_empresa;
+
+  const pagamento = await repo.findOne({ where });
+
+  if (!pagamento) return res.status(404).json({ error: "Pagamento não encontrado" });
+  if (pagamento.situacao !== "pago") return res.status(400).json({ error: "Este pagamento não está pago e não pode ser estornado." });
+
+  pagamento.situacao = "aberto";
+  pagamento.pago_data = null as unknown as string;
+  pagamento.valor_pago = null as unknown as string;
+  pagamento.id_conta = null as unknown as number;
+
+  const saved = await repo.save(pagamento);
+
+  const log = logRepo.create({
+    id_empresa: req.user?.id_empresa ?? 1,
+    id_usuario: req.user?.id_usuario ?? 1,
+    servico: "pagamento_estorno",
+    url: `/api/pagamentos/${id}/estornar`,
+    log: `Pagamento ${saved.id_pagamento} estornado — voltou para aberto`,
+    query: "{}",
+  });
+  await logRepo.save(log);
+
+  return res.json(saved);
+});
+
 // ─── POST /reajuste — Reajuste percentual em parcelas em aberto ───────────────
 pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) => {
   const schema = z.object({
