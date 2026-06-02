@@ -195,3 +195,61 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
 pagamentosRouter.post("/retorno", (_req, res) => {
   return res.status(200).json({ message: "Retorno processado (stub)" });
 });
+
+// ─── POST /reajuste — Reajuste percentual em parcelas em aberto ───────────────
+pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) => {
+  const schema = z.object({
+    id_cliente: z.number().int().positive(),
+    percentual: z.number().positive().max(100),
+    id_venda: z.number().int().positive().optional(), // opcional: reajustar só uma venda
+  });
+
+  const parse = schema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+  }
+
+  const { id_cliente, percentual, id_venda } = parse.data;
+  const id_empresa = req.user?.id_empresa;
+
+  if (!id_empresa) {
+    return res.status(400).json({ error: "Empresa não definida" });
+  }
+
+  const repo = AppDataSource.getRepository(Pagamento);
+
+  // Busca parcelas em aberto do cliente (filtra por empresa para segurança)
+  const qb = repo
+    .createQueryBuilder("p")
+    .leftJoin("p.venda", "v")
+    .where("p.id_empresa = :id_empresa", { id_empresa })
+    .andWhere("p.situacao = 'aberto'")
+    .andWhere("v.id_cliente = :id_cliente", { id_cliente });
+
+  if (id_venda) {
+    qb.andWhere("p.id_venda = :id_venda", { id_venda });
+  }
+
+  const parcelas = await qb.getMany();
+
+  if (parcelas.length === 0) {
+    return res.status(404).json({ error: "Nenhuma parcela em aberto encontrada para este cliente." });
+  }
+
+  const fator = 1 + percentual / 100;
+  const atualizadas: Pagamento[] = [];
+
+  for (const p of parcelas) {
+    const valorAtual = Number(p.valor);
+    p.valor = (valorAtual * fator).toFixed(2);
+    atualizadas.push(p);
+  }
+
+  await repo.save(atualizadas);
+
+  return res.json({
+    total_parcelas: atualizadas.length,
+    percentual,
+    mensagem: `${atualizadas.length} parcela(s) reajustada(s) em ${percentual}%.`,
+  });
+});

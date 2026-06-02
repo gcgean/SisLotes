@@ -30,6 +30,7 @@ import {
   Printer,
   ChevronsUpDown,
   Check,
+  TrendingUp,
 } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -155,6 +156,11 @@ const Pagamentos = () => {
   // ── Dialog de recibo (reimprimir do histórico) ──
   const [reciboDialogOpen, setReciboDialogOpen] = useState(false);
   const [pagamentoParaRecibo, setPagamentoParaRecibo] = useState<Pagamento | null>(null);
+
+  // ── Dialog de reajuste anual ──
+  const [reajusteOpen, setReajusteOpen] = useState(false);
+  const [reajustePercentual, setReajustePercentual] = useState("5");
+  const [reajusteConfirmado, setReajusteConfirmado] = useState(false);
 
   // ─── Busca de clientes (autocomplete) ────────────────────────────────────
 
@@ -398,6 +404,31 @@ const Pagamentos = () => {
     }
   }
 
+  const reajusteMutation = useMutation({
+    mutationFn: async ({ id_cliente, percentual }: { id_cliente: number; percentual: number }) => {
+      const res = await fetch("/api/pagamentos/reajuste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ id_cliente, percentual }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Erro ao aplicar reajuste");
+      }
+      return res.json() as Promise<{ total_parcelas: number; percentual: number; mensagem: string }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["pagamentos"] });
+      setReajusteOpen(false);
+      setReajusteConfirmado(false);
+      setReajustePercentual("5");
+      toast({ title: "Reajuste aplicado!", description: data.mensagem });
+    },
+    onError: (err) => {
+      toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro ao reajustar", variant: "destructive" });
+    },
+  });
+
   function handleReimprimirRecibo(pag: Pagamento) {
     const dias = pag.pago_data
       ? Math.max(0, Math.floor(
@@ -523,9 +554,20 @@ const Pagamentos = () => {
           </div>
 
           {clienteSelecionado && (
-            <p className="text-xs text-muted-foreground mt-2">
-              Exibindo parcelas de: <span className="font-semibold text-foreground">{clienteSelecionado.nome}</span>
-            </p>
+            <div className="flex items-center justify-between mt-2">
+              <p className="text-xs text-muted-foreground">
+                Exibindo parcelas de: <span className="font-semibold text-foreground">{clienteSelecionado.nome}</span>
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-amber-700 border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                onClick={() => { setReajusteConfirmado(false); setReajusteOpen(true); }}
+              >
+                <TrendingUp className="h-3.5 w-3.5" />
+                Reajuste Anual
+              </Button>
+            </div>
           )}
         </div>
 
@@ -912,6 +954,125 @@ const Pagamentos = () => {
           </div>
         )}
       </div>
+
+      {/* ─── Dialog de Reajuste Anual ─── */}
+      <Dialog open={reajusteOpen} onOpenChange={(o) => { if (!reajusteMutation.isPending) { setReajusteOpen(o); setReajusteConfirmado(false); } }}>
+        <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-amber-600" />
+              Reajuste Anual de Parcelas
+            </DialogTitle>
+            <DialogDescription>
+              Aplica um percentual de reajuste em todas as parcelas <strong>em aberto</strong> do cliente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Cliente */}
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
+              <User className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div>
+                <p className="text-xs text-muted-foreground">Cliente</p>
+                <p className="font-semibold text-sm">{clienteSelecionado?.nome}</p>
+              </div>
+            </div>
+
+            {/* Percentual */}
+            <div>
+              <Label htmlFor="reajuste-pct" className="text-sm font-medium">
+                Percentual de Reajuste (%)
+              </Label>
+              <div className="flex items-center gap-3 mt-1.5">
+                <Input
+                  id="reajuste-pct"
+                  type="number"
+                  min="0.01"
+                  max="100"
+                  step="0.01"
+                  value={reajustePercentual}
+                  onChange={(e) => { setReajustePercentual(e.target.value); setReajusteConfirmado(false); }}
+                  className="w-32"
+                  placeholder="5.00"
+                />
+                <span className="text-sm text-muted-foreground">%</span>
+                <div className="flex gap-1 ml-auto">
+                  {[5, 7, 10, 15].map((v) => (
+                    <Button key={v} type="button" variant="outline" size="sm" className="text-xs h-7 px-2"
+                      onClick={() => { setReajustePercentual(String(v)); setReajusteConfirmado(false); }}>
+                      {v}%
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Preview */}
+            {Number(reajustePercentual) > 0 && (
+              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 space-y-1.5 text-sm">
+                <p className="font-semibold text-amber-800 dark:text-amber-300 text-xs uppercase tracking-wide">Prévia do reajuste</p>
+                <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                  <span>Parcelas em aberto</span>
+                  <span className="font-medium">
+                    {pagamentosAbertosFiltered.filter(p => p.situacao === "aberto").length} parcelas
+                  </span>
+                </div>
+                <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                  <span>Reajuste</span>
+                  <span className="font-medium">+{reajustePercentual}%</span>
+                </div>
+                <div className="flex justify-between border-t border-amber-200 dark:border-amber-700 pt-1.5">
+                  <span className="font-semibold text-amber-800 dark:text-amber-300">Total em aberto após reajuste</span>
+                  <span className="font-bold text-amber-800 dark:text-amber-300">
+                    {formatCurrency(totalAberto * (1 + Number(reajustePercentual) / 100))}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Confirmação */}
+            {!reajusteConfirmado && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>Esta ação <strong>não pode ser desfeita</strong>. Os valores das parcelas em aberto serão alterados permanentemente.</span>
+              </div>
+            )}
+
+            {reajusteConfirmado && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 text-xs text-green-800 dark:text-green-300">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                <span>Confirmado. Clique em <strong>Aplicar Reajuste</strong> para prosseguir.</span>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setReajusteOpen(false)} disabled={reajusteMutation.isPending}>
+              Cancelar
+            </Button>
+            {!reajusteConfirmado ? (
+              <Button
+                variant="destructive"
+                onClick={() => setReajusteConfirmado(true)}
+                disabled={!Number(reajustePercentual) || Number(reajustePercentual) <= 0}
+              >
+                Confirmar Reajuste
+              </Button>
+            ) : (
+              <Button
+                className="bg-amber-600 hover:bg-amber-700"
+                onClick={() => {
+                  if (!clienteSelecionado) return;
+                  reajusteMutation.mutate({ id_cliente: clienteSelecionado.id_cliente, percentual: Number(reajustePercentual) });
+                }}
+                disabled={reajusteMutation.isPending}
+              >
+                {reajusteMutation.isPending ? "Aplicando..." : "Aplicar Reajuste"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* ─── Dialog de Recebimento ─── */}
       <Dialog open={baixaOpen} onOpenChange={setBaixaOpen}>
