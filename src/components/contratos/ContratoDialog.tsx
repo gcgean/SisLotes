@@ -606,6 +606,27 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       padding: 6px 20px;
       cursor: pointer;
     }
+    .lote-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 12px 0;
+      font-size: 10.5pt;
+    }
+    .lote-table td {
+      border: 1px solid #000;
+      padding: 5px 8px;
+    }
+    .lote-label {
+      font-size: 7.5pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      color: #444;
+      display: block;
+      margin-bottom: 2px;
+    }
+    .lote-val {
+      font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -621,10 +642,28 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     </div>
  
     <div class="caixa-texto segundo">
-      O referido terreno recebeu o nome particular de "${loteamentoNome}", lote "${loteNum}", imóvel de forma regular, constituído de parte do lote nº ${loteNum} da quadra ${quadraNum} do ${loteamentoNome} com área de ${area}m².<br>
-      Medindo e extremando: AO SUL (frente): ${frente} com a Rua/Av. XXX; AO NORTE (fundos): ${fundo} com a Rua/Av. XXX; AO OESTE (lado direito): ${direito} com a Rua/Av. XXX; AO LESTE (lado esquerdo): ${esquerdo} com a Rua/Av. XXX;<br>
-      O Comprador pagou ao Vendedor o valor total de R$ ${venda.valor_total.toFixed(2)} (${valorExtenso}).<br>
-      Para registrar no Cartório Ofício Privativo de Registro de Imóveis, ${loteamento?.cidade ?? "—"}-${loteamento?.estado ?? "—"}. MATRÍCULA Nº XXXX, lavrada em Notas desse cartório, em data de XX/XX/XXXX. Por força deste termo, O VENDEDOR dá toda posse e quitação do imóvel acima citado, para o COMPRADOR, ficando o vendedor isento de qualquer taxa de impostos junto a Prefeitura Municipal de ${loteamento?.cidade ?? "—"}-${loteamento?.estado ?? "—"}, assim como, toda e qualquer ônus fiscal.
+      O referido terreno está localizado no loteamento <b>${loteamentoNome}</b>, conforme descrição abaixo:
+
+      <table class="lote-table">
+        <tr>
+          <td style="width:50%"><span class="lote-label">Loteamento</span><span class="lote-val">${loteamentoNome}</span></td>
+          <td style="width:25%"><span class="lote-label">Lote nº</span><span class="lote-val">${loteNum}</span></td>
+          <td style="width:25%"><span class="lote-label">Quadra</span><span class="lote-val">${quadraNum}</span></td>
+        </tr>
+        <tr>
+          <td><span class="lote-label">Cidade / Estado</span><span class="lote-val">${loteamento?.cidade ?? "—"} / ${loteamento?.estado ?? "—"}</span></td>
+          <td><span class="lote-label">Área (m²)</span><span class="lote-val">${area}</span></td>
+          <td><span class="lote-label">Frente (m)</span><span class="lote-val">${frente}</span></td>
+        </tr>
+        <tr>
+          <td><span class="lote-label">Fundo (m)</span><span class="lote-val">${fundo}</span></td>
+          <td><span class="lote-label">Lado Direito (m)</span><span class="lote-val">${direito}</span></td>
+          <td><span class="lote-label">Lado Esquerdo (m)</span><span class="lote-val">${esquerdo}</span></td>
+        </tr>
+      </table>
+
+      O Comprador pagou ao Vendedor o valor total de <b>R$ ${venda.valor_total.toFixed(2)}</b> (${valorExtenso}).<br><br>
+      Para registrar no Cartório Ofício Privativo de Registro de Imóveis, ${loteamento?.cidade ?? "—"}-${loteamento?.estado ?? "—"}. Por força deste termo, O VENDEDOR dá toda posse e quitação do imóvel acima citado para o COMPRADOR, ficando o vendedor isento de qualquer taxa de impostos junto à Prefeitura Municipal de ${loteamento?.cidade ?? "—"}-${loteamento?.estado ?? "—"}, assim como toda e qualquer ônus fiscal.
     </div>
  
     <div class="data-local">
