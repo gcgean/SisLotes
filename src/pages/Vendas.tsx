@@ -177,7 +177,7 @@ const Vendas = () => {
 
   // ── list state
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | VendaStatus>("all");
+  const [filterStatus, setFilterStatus] = useState<"all" | "ativas" | VendaStatus>("ativas");
 
   // ── nova venda dialog
   const [novaVendaAberto, setNovaVendaAberto] = useState(false);
@@ -1245,7 +1245,10 @@ const Vendas = () => {
       v.cliente.toLowerCase().includes(search.toLowerCase()) ||
       v.lote.toLowerCase().includes(search.toLowerCase()) ||
       v.loteamento.toLowerCase().includes(search.toLowerCase());
-    const matchStatus = filterStatus === "all" || v.status === filterStatus;
+    const matchStatus =
+      filterStatus === "all" ? true :
+      filterStatus === "ativas" ? v.status !== "cancelada" :
+      v.status === filterStatus;
     return matchSearch && matchStatus;
   });
 
@@ -1285,9 +1288,14 @@ const Vendas = () => {
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            {(["all", "aberta", "quitada", "cancelada"] as const).map((s) => (
-              <Button key={s} size="sm" variant={filterStatus === s ? "default" : "outline"} onClick={() => setFilterStatus(s)}>
-                {s === "all" ? "Todas" : statusConfig[s].label}
+            {(["ativas", "aberta", "quitada", "cancelada", "all"] as const).map((s) => (
+              <Button
+                key={s}
+                size="sm"
+                variant={filterStatus === s ? "default" : "outline"}
+                onClick={() => setFilterStatus(s)}
+              >
+                {s === "all" ? "Todas" : s === "ativas" ? "Ativas" : s === "quitada" ? "Finalizadas" : statusConfig[s as VendaStatus].label}
               </Button>
             ))}
           </div>
