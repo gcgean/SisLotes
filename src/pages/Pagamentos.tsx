@@ -41,6 +41,8 @@ import {
   ChevronsUpDown,
   Check,
   TrendingUp,
+  FileText,
+  RefreshCw,
 } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -82,6 +84,7 @@ interface PagamentoApi {
   valor_pago: string | null;
   multa?: string | null;
   juros?: string | null;
+  reajustado?: boolean;
   venda?: {
     parcelas: number;
     cliente?: { nome: string };
@@ -106,6 +109,7 @@ interface Pagamento {
   valor: number;
   pago_data?: string;
   valor_pago?: number;
+  reajustado?: boolean;
 }
 
 // ─── Utilitários ─────────────────────────────────────────────────────────────
@@ -171,6 +175,10 @@ const Pagamentos = () => {
   const [reajusteOpen, setReajusteOpen] = useState(false);
   const [reajustePercentual, setReajustePercentual] = useState("5");
   const [reajusteConfirmado, setReajusteConfirmado] = useState(false);
+  const [reajusteDe, setReajusteDe] = useState<number>(1);
+  const [reajusteAte, setReajusteAte] = useState<number>(9999);
+  const [reajusteAplicado, setReajusteAplicado] = useState(false);
+  const [reajusteSuccessRange, setReajusteSuccessRange] = useState<{ de: number; ate: number; total: number; percentual: string } | null>(null);
 
   // ── Estorno de pagamento ──
   const [estornoConfirm, setEstornoConfirm] = useState<Pagamento | null>(null);
@@ -260,6 +268,7 @@ const Pagamentos = () => {
             situacao,
             vencimento: formatDateBR(p.vencimento, p.vencimento),
             valor: Number(p.valor),
+            reajustado: p.reajustado ?? false,
           };
         })
         .sort((a, b) => parseBrDate(a.vencimento).getTime() - parseBrDate(b.vencimento).getTime());
@@ -297,6 +306,7 @@ const Pagamentos = () => {
           valor: Number(p.valor),
           pago_data: p.pago_data ? formatDateBR(p.pago_data, p.pago_data) : undefined,
           valor_pago: p.valor_pago != null ? Number(p.valor_pago) : undefined,
+          reajustado: p.reajustado ?? false,
         }))
         .sort((a, b) => {
           const da = a.pago_data ? parseBrDate(a.pago_data).getTime() : 0;
@@ -418,11 +428,24 @@ const Pagamentos = () => {
   }
 
   const reajusteMutation = useMutation({
-    mutationFn: async ({ id_cliente, percentual }: { id_cliente: number; percentual: number }) => {
+    mutationFn: async ({
+      id_cliente,
+      percentual,
+      parcela_de,
+      parcela_ate,
+    }: {
+      id_cliente: number;
+      percentual: number;
+      parcela_de: number;
+      parcela_ate: number;
+    }) => {
+      const body: Record<string, unknown> = { id_cliente, percentual };
+      if (parcela_de > 1) body.parcela_de = parcela_de;
+      if (parcela_ate < 9999) body.parcela_ate = parcela_ate;
       const res = await fetch("/api/pagamentos/reajuste", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ id_cliente, percentual }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({})) as { error?: string };
@@ -431,9 +454,12 @@ const Pagamentos = () => {
       return res.json() as Promise<{ total_parcelas: number; percentual: number; mensagem: string }>;
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["pagamentos"] });
-      setReajusteOpen(false);
+      // Refetch imediato para pegar os novos valores no carnê
+      queryClient.invalidateQueries({ queryKey: ["pagamentos-abertos"] });
+      queryClient.refetchQueries({ queryKey: ["pagamentos-abertos", clienteSelecionado?.id_cliente] });
       setReajusteConfirmado(false);
+      setReajusteAplicado(true);
+      setReajusteSuccessRange({ de: reajusteDe, ate: reajusteAte, total: data.total_parcelas, percentual: reajustePercentual });
       setReajustePercentual("5");
       toast({ title: "Reajuste aplicado!", description: data.mensagem });
     },
@@ -483,6 +509,150 @@ const Pagamentos = () => {
     );
   }
 
+  // ─── Helper: fechar dialog de reajuste e resetar tudo ────────────────────
+
+  function fecharReajusteDialog() {
+    setReajusteOpen(false);
+    setReajusteConfirmado(false);
+    setReajusteAplicado(false);
+    setReajustePercentual("5");
+    setReajusteDe(1);
+    setReajusteAte(9999);
+    setReajusteSuccessRange(null);
+  }
+
+  // ─── Impressão de carnê das parcelas reajustadas ─────────────────────────
+
+  function imprimirCarneReajustado(de: number, ate: number) {
+    const parcelasParaImprimir = pagamentosAbertos
+      .filter(p => p.tipo !== "entrada" && p.numero_parcela > 0 && p.numero_parcela >= de && p.numero_parcela <= ate)
+      .sort((a, b) => a.numero_parcela - b.numero_parcela);
+
+    if (parcelasParaImprimir.length === 0) {
+      toast({ title: "Nenhuma parcela no intervalo", variant: "destructive" });
+      return;
+    }
+
+    const nomeCliente = clienteSelecionado?.nome ?? "";
+    const emp = empresaInfo;
+
+    // Agrupa por lote (pode haver múltiplos lotes/vendas)
+    const byLote = new Map<string, typeof parcelasParaImprimir>();
+    for (const p of parcelasParaImprimir) {
+      if (!byLote.has(p.lote)) byLote.set(p.lote, []);
+      byLote.get(p.lote)!.push(p);
+    }
+
+    let allPagesHTML = "";
+
+    for (const [loteKey, loteParcelas] of byLote) {
+      const loteamento = loteParcelas[0]?.loteamento ?? "";
+      const totalParcelasLote = loteParcelas[0]?.parcelas ?? 0;
+
+      for (let i = 0; i < loteParcelas.length; i += 3) {
+        const slice = loteParcelas.slice(i, i + 3);
+        const carnesHtml = slice.map(p => {
+          const valorFmt = formatCurrency(p.valor);
+          const parcelaLabel = `${p.numero_parcela}/${totalParcelasLote}`;
+          return `<div class="carne-item">
+  <div class="carne-top">
+    <div class="info-block">
+      <div class="lbl">Loteamento</div>
+      <div class="val">${loteamento}</div>
+      <div class="sub">${loteKey}</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="lbl">Parcela</div>
+      <div class="parcela-num">${parcelaLabel}</div>
+    </div>
+  </div>
+  <div class="carne-mid">
+    <div class="lbl">Cliente</div>
+    <div class="val">${nomeCliente}</div>
+  </div>
+  <div class="carne-bot">
+    <div>
+      <div class="lbl">Vencimento</div>
+      <div class="val-lg">${p.vencimento}</div>
+    </div>
+    <div class="badge-reaj">✓ REAJUSTADO</div>
+    <div style="text-align:right;">
+      <div class="lbl">Valor</div>
+      <div class="val-valor">${valorFmt}</div>
+    </div>
+  </div>
+</div>`;
+        }).join('');
+        allPagesHTML += `<div class="page">${carnesHtml}</div>`;
+      }
+    }
+
+    const empresaHeader = emp
+      ? `<div class="emp-header">
+          <div class="emp-nome">${emp.nome_fantasia}</div>
+          ${emp.cnpj ? `<div class="emp-det">CNPJ: ${emp.cnpj}</div>` : ""}
+          ${emp.telefone ? `<div class="emp-det">Tel: ${emp.telefone}</div>` : ""}
+        </div>`
+      : "";
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Carnê Reajustado — ${nomeCliente}</title>
+<style>
+@page{size:A4 portrait;margin:10mm 12mm}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;font-size:9pt}
+.emp-header{text-align:center;padding-bottom:4px;margin-bottom:6px;border-bottom:2px solid #333}
+.emp-nome{font-size:11pt;font-weight:700}
+.emp-det{font-size:8pt;color:#555}
+.page{width:100%;height:277mm;display:flex;flex-direction:column;gap:5mm;page-break-after:always}
+.page:last-child{page-break-after:avoid}
+.carne-item{flex:1;border:2px solid #222;border-radius:3px;padding:8px 12px;display:flex;flex-direction:column;justify-content:space-between}
+.carne-top{display:flex;justify-content:space-between;align-items:flex-start}
+.carne-mid{border-top:1px solid #ddd;border-bottom:1px solid #ddd;padding:4px 0}
+.carne-bot{display:flex;justify-content:space-between;align-items:flex-end;padding-top:4px}
+.lbl{font-size:6.5pt;color:#777;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px}
+.val{font-size:8.5pt;font-weight:600}
+.sub{font-size:7.5pt;color:#555}
+.val-lg{font-size:10pt;font-weight:700}
+.val-valor{font-size:13pt;font-weight:700}
+.parcela-num{font-size:14pt;font-weight:700}
+.badge-reaj{font-size:7pt;font-weight:700;color:#b45309;background:#fef3c7;padding:2px 6px;border-radius:3px;letter-spacing:.5px;align-self:center}
+</style>
+</head>
+<body>
+${empresaHeader}
+${allPagesHTML}
+<script>
+(function(){
+  var d=document.createElement('div');
+  d.style.cssText='position:absolute;left:-9999px;width:1mm;height:1mm';
+  document.body.appendChild(d);
+  var px1mm=d.getBoundingClientRect().height;
+  document.body.removeChild(d);
+  document.querySelectorAll('.page').forEach(function(pg){
+    var its=pg.querySelectorAll('.carne-item');
+    var gaps=(its.length-1)*5*px1mm;
+    var h=Math.floor((277*px1mm-gaps)/its.length);
+    its.forEach(function(it){it.style.height=h+'px';it.style.flex='none';});
+  });
+  window.print();
+})();
+</script>
+</body>
+</html>`;
+
+    const win = window.open("", "_blank", "width=900,height=700");
+    if (!win) {
+      toast({ title: "Popup bloqueado", description: "Permita popups para imprimir", variant: "destructive" });
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+  }
+
   // ─── Dados derivados ─────────────────────────────────────────────────────
 
   // Todos os registros combinados para montar listas únicas de filtro
@@ -516,6 +686,29 @@ const Pagamentos = () => {
   });
 
   const atrasadas = pagamentosAbertosFiltered.filter((p) => p.situacao === "atrasado");
+
+  // ── Cálculos para o reajuste por ano ──
+  const parcelasAbertasSemEntrada = pagamentosAbertos.filter(
+    (p) => p.tipo !== "entrada" && p.numero_parcela > 0
+  );
+  const maxNumeroParcela = parcelasAbertasSemEntrada.reduce(
+    (mx, p) => Math.max(mx, p.numero_parcela), 0
+  );
+  const totalAnosDisponiveis = Math.ceil(maxNumeroParcela / 12) || 1;
+  const anosDisponiveis = Array.from({ length: totalAnosDisponiveis }, (_, i) => {
+    const ano = i + 1;
+    const de = (ano - 1) * 12 + 1;
+    const ate = ano * 12;
+    const count = parcelasAbertasSemEntrada.filter(
+      (p) => p.numero_parcela >= de && p.numero_parcela <= ate
+    ).length;
+    return { ano, de, ate, count };
+  }).filter((a) => a.count > 0);
+
+  const parcelasNoReajusteRange = parcelasAbertasSemEntrada.filter(
+    (p) => p.numero_parcela >= reajusteDe && p.numero_parcela <= reajusteAte
+  );
+  const totalNoReajusteRange = parcelasNoReajusteRange.reduce((s, p) => s + p.valor, 0);
   const totalAberto = pagamentosAbertosFiltered.reduce((s, p) => s + p.valor, 0);
   const totalAtrasado = atrasadas.reduce((s, p) => s + p.valor, 0);
   const totalPago = pagamentosPagosFiltered.reduce((s, p) => s + (p.valor_pago ?? p.valor), 0);
@@ -598,7 +791,7 @@ const Pagamentos = () => {
                 variant="outline"
                 size="sm"
                 className="gap-2 text-amber-700 border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                onClick={() => { setReajusteConfirmado(false); setReajusteOpen(true); }}
+                onClick={() => { setReajusteConfirmado(false); setReajusteAplicado(false); setReajusteSuccessRange(null); setReajusteOpen(true); }}
               >
                 <TrendingUp className="h-3.5 w-3.5" />
                 Reajuste Anual
@@ -835,7 +1028,18 @@ const Pagamentos = () => {
                                 {pag.vencimento}
                               </td>
                               <td className="px-5 py-3 font-medium">
-                                {formatCurrency(pag.valor)}
+                                <div className="flex items-center gap-1.5">
+                                  {formatCurrency(pag.valor)}
+                                  {pag.reajustado && (
+                                    <span
+                                      title="Parcela reajustada"
+                                      className="inline-flex items-center gap-0.5 text-amber-600 bg-amber-50 dark:bg-amber-950/30 px-1.5 py-0.5 rounded text-xs font-semibold"
+                                    >
+                                      <TrendingUp className="h-3 w-3" />
+                                      Reaj.
+                                    </span>
+                                  )}
+                                </div>
                                 {dias > 0 && (
                                   <span className="block text-xs text-destructive">
                                     c/ encargos: {formatCurrency(enc.total)}
@@ -1044,121 +1248,240 @@ const Pagamentos = () => {
         </AlertDialogContent>
       </AlertDialog>
 
-      <Dialog open={reajusteOpen} onOpenChange={(o) => { if (!reajusteMutation.isPending) { setReajusteOpen(o); setReajusteConfirmado(false); } }}>
-        <DialogContent className="sm:max-w-md" onInteractOutside={(e) => e.preventDefault()}>
+      <Dialog open={reajusteOpen} onOpenChange={(o) => { if (!reajusteMutation.isPending) { if (!o) fecharReajusteDialog(); } }}>
+        <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <TrendingUp className="h-5 w-5 text-amber-600" />
               Reajuste Anual de Parcelas
             </DialogTitle>
             <DialogDescription>
-              Aplica um percentual de reajuste em todas as parcelas <strong>em aberto</strong> do cliente.
+              Aplica um percentual de reajuste nas parcelas <strong>em aberto</strong> do intervalo selecionado.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            {/* Cliente */}
-            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
-              <User className="h-4 w-4 text-muted-foreground shrink-0" />
-              <div>
-                <p className="text-xs text-muted-foreground">Cliente</p>
-                <p className="font-semibold text-sm">{clienteSelecionado?.nome}</p>
+          {/* ── Estado de sucesso ── */}
+          {reajusteAplicado && reajusteSuccessRange ? (
+            <div className="space-y-4 py-2">
+              <div className="flex flex-col items-center gap-3 p-6 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 text-center">
+                <CheckCircle2 className="h-10 w-10 text-green-600" />
+                <div>
+                  <p className="font-semibold text-green-800 dark:text-green-300 text-base">Reajuste aplicado com sucesso!</p>
+                  <p className="text-sm text-green-700 dark:text-green-400 mt-1">
+                    {reajusteSuccessRange.total} parcela(s) reajustadas
+                    {reajusteSuccessRange.ate < 9999
+                      ? ` (parcelas ${reajusteSuccessRange.de} a ${reajusteSuccessRange.ate})`
+                      : reajusteSuccessRange.de > 1
+                        ? ` (a partir da parcela ${reajusteSuccessRange.de})`
+                        : " (todas as parcelas em aberto)"}
+                    {" "}em <strong>+{reajusteSuccessRange.percentual}%</strong>.
+                  </p>
+                </div>
               </div>
+              <p className="text-xs text-muted-foreground text-center">
+                Os valores já foram atualizados na listagem. Imprima o carnê com os valores reajustados.
+              </p>
+              <DialogFooter className="gap-2 flex-col sm:flex-row">
+                <Button variant="outline" onClick={fecharReajusteDialog} className="flex-1">
+                  Fechar
+                </Button>
+                <Button
+                  className="flex-1 bg-amber-600 hover:bg-amber-700 gap-2"
+                  onClick={() => imprimirCarneReajustado(reajusteSuccessRange.de, reajusteSuccessRange.ate)}
+                >
+                  <FileText className="h-4 w-4" />
+                  Imprimir Carnê Reajustado
+                </Button>
+              </DialogFooter>
             </div>
+          ) : (
+            <>
+              <div className="space-y-4 py-2">
+                {/* Cliente */}
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
+                  <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Cliente</p>
+                    <p className="font-semibold text-sm">{clienteSelecionado?.nome}</p>
+                  </div>
+                </div>
 
-            {/* Percentual */}
-            <div>
-              <Label htmlFor="reajuste-pct" className="text-sm font-medium">
-                Percentual de Reajuste (%)
-              </Label>
-              <div className="flex items-center gap-3 mt-1.5">
-                <Input
-                  id="reajuste-pct"
-                  type="number"
-                  min="0.01"
-                  max="100"
-                  step="0.01"
-                  value={reajustePercentual}
-                  onChange={(e) => { setReajustePercentual(e.target.value); setReajusteConfirmado(false); }}
-                  className="w-32"
-                  placeholder="5.00"
-                />
-                <span className="text-sm text-muted-foreground">%</span>
-                <div className="flex gap-1 ml-auto">
-                  {[5, 7, 10, 15].map((v) => (
-                    <Button key={v} type="button" variant="outline" size="sm" className="text-xs h-7 px-2"
-                      onClick={() => { setReajustePercentual(String(v)); setReajusteConfirmado(false); }}>
-                      {v}%
+                {/* Intervalo de parcelas por ano */}
+                <div>
+                  <Label className="text-sm font-medium">Intervalo de parcelas</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">
+                    Selecione o ano do carnê ou defina um intervalo manual
+                  </p>
+                  {/* Botões de atalho por ano */}
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={reajusteDe === 1 && reajusteAte === 9999 ? "default" : "outline"}
+                      className="text-xs h-7 px-3"
+                      onClick={() => { setReajusteDe(1); setReajusteAte(9999); setReajusteConfirmado(false); }}
+                    >
+                      Todos ({parcelasAbertasSemEntrada.length})
                     </Button>
-                  ))}
+                    {anosDisponiveis.map(({ ano, de, ate, count }) => (
+                      <Button
+                        key={ano}
+                        type="button"
+                        size="sm"
+                        variant={reajusteDe === de && reajusteAte === ate ? "default" : "outline"}
+                        className={cn(
+                          "text-xs h-7 px-3",
+                          reajusteDe === de && reajusteAte === ate
+                            ? "bg-amber-600 hover:bg-amber-700 border-amber-600"
+                            : "border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                        )}
+                        onClick={() => { setReajusteDe(de); setReajusteAte(ate); setReajusteConfirmado(false); }}
+                      >
+                        Ano {ano} ({count})
+                      </Button>
+                    ))}
+                  </div>
+                  {/* Inputs manuais */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-xs text-muted-foreground whitespace-nowrap">Da parcela</Label>
+                      <Input
+                        type="number"
+                        min="1"
+                        max="9999"
+                        value={reajusteDe}
+                        onChange={(e) => { setReajusteDe(Math.max(1, Number(e.target.value))); setReajusteConfirmado(false); }}
+                        className="w-20 h-7 text-xs"
+                      />
+                    </div>
+                    <span className="text-muted-foreground text-xs">até</span>
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        type="number"
+                        min="1"
+                        max="9999"
+                        value={reajusteAte >= 9999 ? "" : reajusteAte}
+                        placeholder="fim"
+                        onChange={(e) => { setReajusteAte(e.target.value ? Number(e.target.value) : 9999); setReajusteConfirmado(false); }}
+                        className="w-20 h-7 text-xs"
+                      />
+                      <Label className="text-xs text-muted-foreground whitespace-nowrap">(vazio = sem limite)</Label>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Preview */}
-            {Number(reajustePercentual) > 0 && (
-              <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 space-y-1.5 text-sm">
-                <p className="font-semibold text-amber-800 dark:text-amber-300 text-xs uppercase tracking-wide">Prévia do reajuste</p>
-                <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                  <span>Parcelas em aberto</span>
-                  <span className="font-medium">
-                    {pagamentosAbertosFiltered.filter(p => p.situacao === "aberto").length} parcelas
-                  </span>
+                {/* Percentual */}
+                <div>
+                  <Label htmlFor="reajuste-pct" className="text-sm font-medium">
+                    Percentual de Reajuste (%)
+                  </Label>
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <Input
+                      id="reajuste-pct"
+                      type="number"
+                      min="0.01"
+                      max="100"
+                      step="0.01"
+                      value={reajustePercentual}
+                      onChange={(e) => { setReajustePercentual(e.target.value); setReajusteConfirmado(false); }}
+                      className="w-28"
+                      placeholder="5.00"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                    <div className="flex gap-1 ml-auto">
+                      {[5, 7, 10, 15].map((v) => (
+                        <Button key={v} type="button" variant="outline" size="sm" className="text-xs h-7 px-2"
+                          onClick={() => { setReajustePercentual(String(v)); setReajusteConfirmado(false); }}>
+                          {v}%
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                  <span>Reajuste</span>
-                  <span className="font-medium">+{reajustePercentual}%</span>
-                </div>
-                <div className="flex justify-between border-t border-amber-200 dark:border-amber-700 pt-1.5">
-                  <span className="font-semibold text-amber-800 dark:text-amber-300">Total em aberto após reajuste</span>
-                  <span className="font-bold text-amber-800 dark:text-amber-300">
-                    {formatCurrency(totalAberto * (1 + Number(reajustePercentual) / 100))}
-                  </span>
-                </div>
-              </div>
-            )}
 
-            {/* Confirmação */}
-            {!reajusteConfirmado && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>Esta ação <strong>não pode ser desfeita</strong>. Os valores das parcelas em aberto serão alterados permanentemente.</span>
-              </div>
-            )}
+                {/* Preview */}
+                {Number(reajustePercentual) > 0 && (
+                  <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 space-y-1.5 text-sm">
+                    <p className="font-semibold text-amber-800 dark:text-amber-300 text-xs uppercase tracking-wide">Prévia do reajuste</p>
+                    <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                      <span>
+                        Intervalo:{" "}
+                        {reajusteDe === 1 && reajusteAte === 9999
+                          ? "todas as parcelas"
+                          : reajusteAte === 9999
+                          ? `parcela ${reajusteDe} em diante`
+                          : `parcelas ${reajusteDe} a ${reajusteAte}`}
+                      </span>
+                      <span className="font-medium">{parcelasNoReajusteRange.length} parcelas</span>
+                    </div>
+                    <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                      <span>Reajuste</span>
+                      <span className="font-medium">+{reajustePercentual}%</span>
+                    </div>
+                    <div className="flex justify-between border-t border-amber-200 dark:border-amber-700 pt-1.5">
+                      <span className="font-semibold text-amber-800 dark:text-amber-300">Total no intervalo após reajuste</span>
+                      <span className="font-bold text-amber-800 dark:text-amber-300">
+                        {formatCurrency(totalNoReajusteRange * (1 + Number(reajustePercentual) / 100))}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
-            {reajusteConfirmado && (
-              <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 text-xs text-green-800 dark:text-green-300">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>Confirmado. Clique em <strong>Aplicar Reajuste</strong> para prosseguir.</span>
+                {/* Aviso / Confirmação */}
+                {!reajusteConfirmado ? (
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>Esta ação <strong>não pode ser desfeita</strong>. Os valores das parcelas selecionadas serão alterados permanentemente.</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 text-xs text-green-800 dark:text-green-300">
+                    <CheckCircle2 className="h-4 w-4 shrink-0" />
+                    <span>Confirmado. Clique em <strong>Aplicar Reajuste</strong> para prosseguir.</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
 
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setReajusteOpen(false)} disabled={reajusteMutation.isPending}>
-              Cancelar
-            </Button>
-            {!reajusteConfirmado ? (
-              <Button
-                variant="destructive"
-                onClick={() => setReajusteConfirmado(true)}
-                disabled={!Number(reajustePercentual) || Number(reajustePercentual) <= 0}
-              >
-                Confirmar Reajuste
-              </Button>
-            ) : (
-              <Button
-                className="bg-amber-600 hover:bg-amber-700"
-                onClick={() => {
-                  if (!clienteSelecionado) return;
-                  reajusteMutation.mutate({ id_cliente: clienteSelecionado.id_cliente, percentual: Number(reajustePercentual) });
-                }}
-                disabled={reajusteMutation.isPending}
-              >
-                {reajusteMutation.isPending ? "Aplicando..." : "Aplicar Reajuste"}
-              </Button>
-            )}
-          </DialogFooter>
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={fecharReajusteDialog} disabled={reajusteMutation.isPending}>
+                  Cancelar
+                </Button>
+                {!reajusteConfirmado ? (
+                  <Button
+                    variant="destructive"
+                    onClick={() => setReajusteConfirmado(true)}
+                    disabled={
+                      !Number(reajustePercentual) ||
+                      Number(reajustePercentual) <= 0 ||
+                      parcelasNoReajusteRange.length === 0
+                    }
+                  >
+                    Confirmar Reajuste
+                    {parcelasNoReajusteRange.length > 0 && ` (${parcelasNoReajusteRange.length} parcelas)`}
+                  </Button>
+                ) : (
+                  <Button
+                    className="bg-amber-600 hover:bg-amber-700 gap-2"
+                    onClick={() => {
+                      if (!clienteSelecionado) return;
+                      reajusteMutation.mutate({
+                        id_cliente: clienteSelecionado.id_cliente,
+                        percentual: Number(reajustePercentual),
+                        parcela_de: reajusteDe,
+                        parcela_ate: reajusteAte,
+                      });
+                    }}
+                    disabled={reajusteMutation.isPending}
+                  >
+                    {reajusteMutation.isPending ? (
+                      <><RefreshCw className="h-4 w-4 animate-spin" /> Aplicando...</>
+                    ) : (
+                      <><TrendingUp className="h-4 w-4" /> Aplicar Reajuste</>
+                    )}
+                  </Button>
+                )}
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

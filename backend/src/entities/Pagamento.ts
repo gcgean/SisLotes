@@ -76,6 +76,9 @@ export class Pagamento {
   @Column({ type: "decimal", precision: 12, scale: 2, default: 0 })
   juros!: string;
 
+  @Column({ type: "boolean", name: "reajustado", default: false })
+  reajustado!: boolean;
+
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 

@@ -233,7 +233,9 @@ pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) =>
   const schema = z.object({
     id_cliente: z.number().int().positive(),
     percentual: z.number().positive().max(100),
-    id_venda: z.number().int().positive().optional(), // opcional: reajustar só uma venda
+    id_venda: z.number().int().positive().optional(),
+    parcela_de: z.number().int().min(0).optional(), // número da parcela inicial (inclusive)
+    parcela_ate: z.number().int().min(0).optional(), // número da parcela final (inclusive)
   });
 
   const parse = schema.safeParse(req.body);
@@ -241,7 +243,7 @@ pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) =>
     return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
   }
 
-  const { id_cliente, percentual, id_venda } = parse.data;
+  const { id_cliente, percentual, id_venda, parcela_de, parcela_ate } = parse.data;
   const id_empresa = req.user?.id_empresa;
 
   if (!id_empresa) {
@@ -262,10 +264,18 @@ pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) =>
     qb.andWhere("p.id_venda = :id_venda", { id_venda });
   }
 
+  // Filtro por intervalo de número de parcela
+  if (typeof parcela_de === "number") {
+    qb.andWhere("p.numero_parcela >= :parcela_de", { parcela_de });
+  }
+  if (typeof parcela_ate === "number") {
+    qb.andWhere("p.numero_parcela <= :parcela_ate", { parcela_ate });
+  }
+
   const parcelas = await qb.getMany();
 
   if (parcelas.length === 0) {
-    return res.status(404).json({ error: "Nenhuma parcela em aberto encontrada para este cliente." });
+    return res.status(404).json({ error: "Nenhuma parcela em aberto encontrada para este intervalo." });
   }
 
   const fator = 1 + percentual / 100;
@@ -274,6 +284,7 @@ pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) =>
   for (const p of parcelas) {
     const valorAtual = Number(p.valor);
     p.valor = (valorAtual * fator).toFixed(2);
+    p.reajustado = true;
     atualizadas.push(p);
   }
 
@@ -282,6 +293,7 @@ pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) =>
   return res.json({
     total_parcelas: atualizadas.length,
     percentual,
+    parcelas_ids: atualizadas.map((p) => p.id_pagamento),
     mensagem: `${atualizadas.length} parcela(s) reajustada(s) em ${percentual}%.`,
   });
 });
