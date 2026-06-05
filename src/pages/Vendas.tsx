@@ -1759,32 +1759,9 @@ const Vendas = () => {
                   </Label>
                 </div>
 
-                {/* Botões de documento — mesmo padrão da consulta de clientes */}
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">Documentos (opcional — pode gerar após registrar)</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button type="button" variant="outline" className="gap-2 justify-start"
-                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); if (!usarTimbradoVenda) setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-contrato-sem-timbrado")), 100); }}>
-                      <FileText className="h-4 w-4" /> Contrato
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-2 justify-start"
-                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); if (!usarTimbradoVenda) setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-contrato-sem-timbrado")), 100); }}>
-                      <FileCheck className="h-4 w-4" /> Contrato À Vista
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-2 justify-start"
-                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbradoVenda ? "abrir-recibo-quitacao" : "abrir-recibo-sem-timbrado")), 100); }}>
-                      <Receipt className="h-4 w-4" /> Recibo de Quitação
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-2 justify-start"
-                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbradoVenda ? "abrir-minuta" : "abrir-minuta-sem-timbrado")), 100); }}>
-                      <FileSignature className="h-4 w-4" /> Minuta
-                    </Button>
-                    <Button type="button" variant="outline" className="gap-2 justify-start col-span-2"
-                      onClick={() => { setNovaVendaAberto(false); setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbradoVenda ? "abrir-termo-transferencia" : "abrir-termo-sem-timbrado")), 100); }}>
-                      <ArrowRightLeft className="h-4 w-4" /> Termo de Transferência
-                    </Button>
-                  </div>
-                </div>
+                <p className="text-xs text-muted-foreground text-center">
+                  Após registrar, você poderá imprimir os documentos da venda.
+                </p>
               </div>
             )}
           </div>
