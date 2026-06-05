@@ -1248,15 +1248,21 @@ const Vendas = () => {
     [todosLotes, selectedLoteamento]
   );
 
-  const clientesFiltrados = useMemo(() =>
-    clientes.filter((c) =>
+  const clientesFiltrados = useMemo(() => {
+    // Deduplica por id_cliente antes de filtrar (evita duplicatas vindas da API)
+    const vistos = new Set<number>();
+    const unicos = clientes.filter((c) => {
+      if (vistos.has(c.id_cliente)) return false;
+      vistos.add(c.id_cliente);
+      return true;
+    });
+    return unicos.filter((c) =>
       !clienteSearch.trim() ||
       c.nome.toLowerCase().includes(clienteSearch.toLowerCase()) ||
       (c.cpf && c.cpf.includes(clienteSearch)) ||
       (c.cnpj && c.cnpj.includes(clienteSearch))
-    ),
-    [clientes, clienteSearch]
-  );
+    );
+  }, [clientes, clienteSearch]);
 
   const valorParcela = Number(valorParcelaVenda) > 0 ? Number(valorParcelaVenda) : 0;
   const totalParcelado = Number(numParcelas) * valorParcela;
@@ -1603,12 +1609,12 @@ const Vendas = () => {
                 )}
 
                 <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                  {clientesFiltrados.length === 0 ? (
+                  {clientesFiltrados.filter((c) => c.id_cliente !== selectedCliente?.id_cliente).length === 0 ? (
                     <div className="text-center py-6 text-sm text-muted-foreground">
-                      {clienteSearch.trim() ? "Nenhum cliente encontrado" : "Digite o nome para buscar"}
+                      {clienteSearch.trim() && !selectedCliente ? "Nenhum cliente encontrado" : selectedCliente ? "Cliente selecionado acima" : "Digite o nome para buscar"}
                     </div>
                   ) : (
-                    clientesFiltrados.map((c) => (
+                    clientesFiltrados.filter((c) => c.id_cliente !== selectedCliente?.id_cliente).map((c) => (
                       <button
                         key={c.id_cliente}
                         type="button"
