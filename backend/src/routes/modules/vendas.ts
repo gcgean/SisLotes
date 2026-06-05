@@ -427,6 +427,138 @@ vendasRouter.post("/historico", requireAuth, requirePermission("vendas_cadastrar
   }
 });
 
+// ─── PATCH /:id/editar — Edição segura (bloqueia se há parcelas pagas) ─────────
+vendasRouter.patch("/:id/editar", requireAuth, requirePermission("vendas_alterar"), async (req: AuthRequest, res) => {
+  const { id } = req.params;
+  const schema = z.object({
+    data_venda: z.string().optional(),
+    valor_entrada: z.number().nonnegative().optional(),
+    parcelas: z.number().int().positive().optional(),
+    valor_parcela: z.number().positive().optional(),
+  });
+
+  const parse = schema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+
+  const id_empresa = req.user?.id_empresa;
+  const vendaRepo = AppDataSource.getRepository(Venda);
+  const pagRepo = AppDataSource.getRepository(Pagamento);
+
+  const whereVenda: Record<string, unknown> = { id_venda: Number(id) };
+  if (id_empresa) whereVenda.id_empresa = id_empresa;
+  const venda = await vendaRepo.findOne({ where: whereVenda });
+  if (!venda) return res.status(404).json({ error: "Venda não encontrada" });
+  if (venda.status !== "aberta") {
+    return res.status(400).json({ error: "Apenas vendas com status 'aberta' podem ser editadas." });
+  }
+
+  // Bloqueia se existir qualquer parcela mensal (numero_parcela > 0) já paga
+  const pagPagosQb = pagRepo
+    .createQueryBuilder("p")
+    .where("p.id_venda = :id_venda", { id_venda: Number(id) })
+    .andWhere("p.situacao = 'pago'")
+    .andWhere("p.numero_parcela > 0");
+  if (id_empresa) pagPagosQb.andWhere("p.id_empresa = :id_empresa", { id_empresa });
+  const qtdPagas = await pagPagosQb.getCount();
+
+  if (qtdPagas > 0) {
+    return res.status(409).json({
+      error: "tem_parcelas_pagas",
+      message: `Esta venda possui ${qtdPagas} parcela(s) já paga(s). Cancele os pagamentos antes de editar a venda.`,
+    });
+  }
+
+  const { data_venda, valor_entrada, parcelas: novaQtdParcelas, valor_parcela } = parse.data;
+
+  const queryRunner = AppDataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+
+  try {
+    // 1. Data da venda
+    if (data_venda) {
+      const iso = normalizeIsoDate(data_venda);
+      if (!iso) { await queryRunner.rollbackTransaction(); return res.status(400).json({ error: "Data inválida" }); }
+      venda.data_venda = iso;
+    }
+
+    // 2. Valor da entrada — atualiza parcela 0 (entrada)
+    if (valor_entrada !== undefined) {
+      venda.valor_entrada = valor_entrada.toFixed(2);
+      const entradaPag = await pagRepo.findOne({ where: { id_venda: Number(id), numero_parcela: 0 } });
+      if (entradaPag) {
+        entradaPag.valor = valor_entrada.toFixed(2);
+        entradaPag.valor_pago = valor_entrada.toFixed(2);
+        await queryRunner.manager.save(entradaPag);
+      }
+    }
+
+    // 3. Valor da parcela — atualiza todas as parcelas abertas (numero_parcela > 0)
+    const novoValorParcela = valor_parcela ?? Number(venda.valor_parcela);
+    if (valor_parcela !== undefined) {
+      venda.valor_parcela = valor_parcela.toFixed(2);
+      await queryRunner.manager
+        .createQueryBuilder()
+        .update(Pagamento)
+        .set({ valor: valor_parcela.toFixed(2) })
+        .where("id_venda = :id_venda", { id_venda: Number(id) })
+        .andWhere("situacao = 'aberto'")
+        .andWhere("numero_parcela > 0")
+        .execute();
+    }
+
+    // 4. Quantidade de parcelas
+    if (novaQtdParcelas !== undefined && novaQtdParcelas !== venda.parcelas) {
+      const oldQtd = venda.parcelas;
+      if (novaQtdParcelas > oldQtd) {
+        // Adiciona parcelas novas no final
+        const dataBase = new Date((venda.data_venda ?? data_venda!) + "T12:00:00");
+        const novasParcelas: Pagamento[] = [];
+        for (let i = oldQtd + 1; i <= novaQtdParcelas; i++) {
+          const vencDate = new Date(dataBase);
+          vencDate.setMonth(vencDate.getMonth() + i);
+          novasParcelas.push(queryRunner.manager.create(Pagamento, {
+            id_venda: Number(id),
+            numero_parcela: i,
+            tipo: "boleto",
+            situacao: "aberto",
+            vencimento: vencDate.toISOString().slice(0, 10),
+            valor: novoValorParcela.toFixed(2),
+            multa: "0.00",
+            juros: "0.00",
+            id_empresa: id_empresa ?? 1,
+          }));
+        }
+        await queryRunner.manager.save(novasParcelas);
+      } else {
+        // Remove parcelas abertas além do novo limite
+        const parcelasExcedentes = await pagRepo
+          .createQueryBuilder("p")
+          .where("p.id_venda = :id_venda", { id_venda: Number(id) })
+          .andWhere("p.numero_parcela > :limite", { limite: novaQtdParcelas })
+          .andWhere("p.situacao = 'aberto'")
+          .getMany();
+        if (parcelasExcedentes.length > 0) {
+          await queryRunner.manager.remove(parcelasExcedentes);
+        }
+      }
+      venda.parcelas = novaQtdParcelas;
+    }
+
+    await queryRunner.manager.save(venda);
+    await queryRunner.commitTransaction();
+
+    await AuditoriaService.registrarVenda(req, "UPDATE", venda.id_venda, "Venda editada", parse.data);
+    return res.json({ success: true });
+  } catch (error) {
+    await queryRunner.rollbackTransaction();
+    console.error("[PATCH /api/vendas/:id/editar]", error);
+    return res.status(500).json({ error: "Erro ao editar venda" });
+  } finally {
+    await queryRunner.release();
+  }
+});
+
 vendasRouter.patch("/:id/cancelar", requireAuth, requirePermission("vendas_alterar"), async (req: AuthRequest, res) => {
   const { id } = req.params;
 

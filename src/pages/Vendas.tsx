@@ -212,6 +212,7 @@ const Vendas = () => {
   const [editEntrada, setEditEntrada] = useState("0");
   const [editParcelas, setEditParcelas] = useState("12");
   const [editValorParcela, setEditValorParcela] = useState("0");
+  const [vendaParaEditar, setVendaParaEditar] = useState<VendaListItem | null>(null);
 
   // ── detail / baixa
   const [vendaDetalhe, setVendaDetalhe] = useState<VendaDetalhe | null>(null);
@@ -688,30 +689,34 @@ const Vendas = () => {
   // ─── Mutation: editar venda ────────────────────────────────────────────────
   const editarVendaMutation = useMutation({
     mutationFn: async () => {
-      if (!vendaCriada) throw new Error("Venda não encontrada");
+      const alvoId = vendaParaEditar?.id_venda ?? vendaCriada?.id_venda;
+      if (!alvoId) throw new Error("Venda não encontrada");
       const body = {
         data_venda: editDataVenda,
         valor_entrada: Number(editEntrada),
         parcelas: Number(editParcelas),
         valor_parcela: Number(editValorParcela),
-        porcentagem: 0,
-        salario_minimo_base: null,
       };
-      const r = await fetch(`/api/vendas/${vendaCriada.id_venda}`, {
-        method: "PUT",
+      const r = await fetch(`/api/vendas/${alvoId}/editar`, {
+        method: "PATCH",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify(body),
       });
-      if (!r.ok) throw new Error("Erro ao alterar venda");
+      if (!r.ok) {
+        const err = await r.json().catch(() => ({})) as { message?: string };
+        throw new Error(err.message ?? "Erro ao alterar venda");
+      }
       return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vendas"] });
+      queryClient.refetchQueries({ queryKey: ["vendas"] });
       setEditarVendaAberto(false);
+      setVendaParaEditar(null);
       toast({ title: "Venda alterada com sucesso!" });
     },
     onError: (err) => {
-      toast({ title: "Erro ao alterar venda", description: err instanceof Error ? err.message : "", variant: "destructive" });
+      toast({ title: "Não foi possível editar", description: err instanceof Error ? err.message : "", variant: "destructive" });
     },
   });
 
@@ -1340,6 +1345,25 @@ const Vendas = () => {
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8" title="Ver detalhes" onClick={() => abrirDetalhe(v)}>
                           <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost" size="icon"
+                          className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30"
+                          title={v.status !== "aberta" ? "Só é possível editar vendas abertas" : "Editar venda"}
+                          disabled={v.status !== "aberta"}
+                          onClick={() => {
+                            // Converte DD/MM/YYYY → YYYY-MM-DD para o input date
+                            const partes = v.data_venda.split("/");
+                            const iso = partes.length === 3 ? `${partes[2]}-${partes[1]}-${partes[0]}` : new Date().toISOString().split("T")[0];
+                            setVendaParaEditar(v);
+                            setEditDataVenda(iso);
+                            setEditEntrada(String(v.valor_entrada));
+                            setEditParcelas(String(v.parcelas));
+                            setEditValorParcela(String(v.valor_parcela ?? 0));
+                            setEditarVendaAberto(true);
+                          }}
+                        >
+                          <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost" size="icon"
@@ -2672,16 +2696,30 @@ const Vendas = () => {
       {/* ═══════════════════════════════════════════════════════════════════════
           DIALOG — EDITAR VENDA
       ═══════════════════════════════════════════════════════════════════════ */}
-      <Dialog open={editarVendaAberto} onOpenChange={setEditarVendaAberto}>
+      <Dialog open={editarVendaAberto} onOpenChange={(o) => { if (!editarVendaMutation.isPending) { setEditarVendaAberto(o); if (!o) setVendaParaEditar(null); } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Pencil className="h-5 w-5 text-primary" />
-              Alterar Venda #{vendaCriada?.id_venda}
+              <Pencil className="h-5 w-5 text-blue-600" />
+              Editar Venda #{vendaParaEditar?.id_venda ?? vendaCriada?.id_venda}
             </DialogTitle>
-            <DialogDescription>Edite os dados da venda registrada.</DialogDescription>
+            <DialogDescription>
+              {vendaParaEditar
+                ? `${vendaParaEditar.cliente} — ${vendaParaEditar.lote}`
+                : "Edite os dados da venda registrada."}
+            </DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-2 gap-4 py-2">
+
+          {/* Aviso de segurança */}
+          <div className="flex items-start gap-2 px-1 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 text-xs text-amber-700 dark:text-amber-400">
+            <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>
+              A edição só é permitida se <strong>nenhuma parcela</strong> mensal estiver paga.
+              Alterações no valor e quantidade de parcelas afetam <strong>todas as parcelas em aberto</strong>.
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 py-1">
             <div className="col-span-2 space-y-1.5">
               <Label>Data da Venda</Label>
               <Input type="date" value={editDataVenda} onChange={(e) => setEditDataVenda(e.target.value)} />
@@ -2696,11 +2734,13 @@ const Vendas = () => {
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label>Valor da Parcela (R$)</Label>
-              <Input type="number" min="0" step="0.01" value={editValorParcela} onChange={(e) => setEditValorParcela(e.target.value)} />
+              <Input type="number" min="0.01" step="0.01" value={editValorParcela} onChange={(e) => setEditValorParcela(e.target.value)} />
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setEditarVendaAberto(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setEditarVendaAberto(false); setVendaParaEditar(null); }} disabled={editarVendaMutation.isPending}>
+              Cancelar
+            </Button>
             <Button
               onClick={() => editarVendaMutation.mutate()}
               disabled={editarVendaMutation.isPending}
