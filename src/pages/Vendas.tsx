@@ -178,6 +178,8 @@ const Vendas = () => {
   // ── list state
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "ativas" | VendaStatus>("ativas");
+  const [filterLoteamento, setFilterLoteamento] = useState<string>("all");
+  const [filterLote, setFilterLote] = useState<string>("all");
 
   // ── nova venda dialog
   const [novaVendaAberto, setNovaVendaAberto] = useState(false);
@@ -1260,6 +1262,16 @@ const Vendas = () => {
   const totalParcelado = Number(numParcelas) * valorParcela;
   const totalContrato = Number(valorEntrada) + totalParcelado;
 
+  // Opções derivadas das vendas carregadas
+  const loteamentosDisponiveis = useMemo(() =>
+    Array.from(new Set(vendas.map((v) => v.loteamento).filter(Boolean))).sort(),
+    [vendas]
+  );
+  const lotesFiltro = useMemo(() => {
+    const base = filterLoteamento === "all" ? vendas : vendas.filter((v) => v.loteamento === filterLoteamento);
+    return Array.from(new Set(base.map((v) => v.lote).filter(Boolean))).sort();
+  }, [vendas, filterLoteamento]);
+
   const vendaFiltrada = vendas.filter((v) => {
     const matchSearch =
       v.cliente.toLowerCase().includes(search.toLowerCase()) ||
@@ -1269,7 +1281,9 @@ const Vendas = () => {
       filterStatus === "all" ? true :
       filterStatus === "ativas" ? v.status !== "cancelada" :
       v.status === filterStatus;
-    return matchSearch && matchStatus;
+    const matchLoteamento = filterLoteamento === "all" || v.loteamento === filterLoteamento;
+    const matchLote = filterLote === "all" || v.lote === filterLote;
+    return matchSearch && matchStatus && matchLoteamento && matchLote;
   });
 
   // ─── Render ─────────────────────────────────────────────────────────────────
@@ -1297,15 +1311,41 @@ const Vendas = () => {
         </div>
 
         {/* Filtros */}
-        <div className="flex flex-col md:flex-row gap-3">
-          <div className="relative flex-1 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por cliente, lote ou loteamento..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9"
-            />
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col md:flex-row gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por cliente, lote ou loteamento..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            {/* Filtro por loteamento */}
+            <Select value={filterLoteamento} onValueChange={(v) => { setFilterLoteamento(v); setFilterLote("all"); }}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Loteamento" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os loteamentos</SelectItem>
+                {loteamentosDisponiveis.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Filtro por lote */}
+            <Select value={filterLote} onValueChange={setFilterLote} disabled={lotesFiltro.length === 0}>
+              <SelectTrigger className="w-[160px]">
+                <SelectValue placeholder="Lote" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos os lotes</SelectItem>
+                {lotesFiltro.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex flex-wrap gap-2">
             {(["ativas", "aberta", "quitada", "cancelada", "all"] as const).map((s) => (
@@ -2082,7 +2122,7 @@ const Vendas = () => {
                 variant="outline"
                 className="gap-2"
                 onClick={() => abrirCarneRange("detalhe")}
-                disabled={!vendaDetalhe}
+                disabled={!vendaDetalhe || vendaDetalheInfo?.status === "cancelada"}
               >
                 <Printer className="h-4 w-4" />
                 Imprimir Carnê
