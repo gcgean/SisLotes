@@ -471,13 +471,11 @@ const Vendas = () => {
         return;
       }
 
+      const msg = typeof errData?.error === "string" ? errData.error : "Erro desconhecido";
+      const det = typeof errData?.detail === "string" ? errData.detail : null;
       toast({
         title: "Erro ao registrar venda",
-        description: typeof errData?.error === "string"
-          ? errData.error
-          : errData?.error instanceof Error
-            ? errData.error.message
-            : "Erro desconhecido",
+        description: det ? `${msg}: ${det}` : msg,
         variant: "destructive",
       });
     },

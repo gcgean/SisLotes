@@ -304,10 +304,10 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
   } catch (error) {
     await queryRunner.rollbackTransaction();
     console.error("[POST /api/vendas] Erro:", error);
-    const detail = error instanceof Error ? error.message : "Erro interno";
+    const detail = error instanceof Error ? `${error.message} | ${error.stack?.split("\n")[1]?.trim()}` : String(error);
     return res.status(500).json({
       error: "Erro ao criar venda",
-      ...(process.env.NODE_ENV !== "production" ? { detail } : {}),
+      detail,
     });
   } finally {
     await queryRunner.release();
