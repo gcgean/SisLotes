@@ -180,6 +180,11 @@ const Pagamentos = () => {
   const [reajusteAplicado, setReajusteAplicado] = useState(false);
   const [reajusteSuccessRange, setReajusteSuccessRange] = useState<{ de: number; ate: number; total: number; percentual: string } | null>(null);
 
+  // ── Impressão de carnê geral ──
+  const [carneOpen, setCarneOpen] = useState(false);
+  const [carneDe, setCarneDe] = useState<number>(1);
+  const [carneAte, setCarneAte] = useState<number>(9999);
+
   // ── Estorno de pagamento ──
   const [estornoConfirm, setEstornoConfirm] = useState<Pagamento | null>(null);
 
@@ -521,9 +526,18 @@ const Pagamentos = () => {
     setReajusteSuccessRange(null);
   }
 
-  // ─── Impressão de carnê das parcelas reajustadas ─────────────────────────
+  // ─── Impressão de carnê (geral e reajustado) ─────────────────────────────
+
+  function imprimirCarne(de: number, ate: number) {
+    gerarHTMLCarne(de, ate, false);
+    setCarneOpen(false);
+  }
 
   function imprimirCarneReajustado(de: number, ate: number) {
+    gerarHTMLCarne(de, ate, true);
+  }
+
+  function gerarHTMLCarne(de: number, ate: number, apenasReajustadas: boolean) {
     const parcelasParaImprimir = pagamentosAbertos
       .filter(p => p.tipo !== "entrada" && p.numero_parcela > 0 && p.numero_parcela >= de && p.numero_parcela <= ate)
       .sort((a, b) => a.numero_parcela - b.numero_parcela);
@@ -575,7 +589,7 @@ const Pagamentos = () => {
       <div class="lbl">Vencimento</div>
       <div class="val-lg">${p.vencimento}</div>
     </div>
-    <div class="badge-reaj">✓ REAJUSTADO</div>
+    ${(apenasReajustadas || p.reajustado) ? `<div class="badge-reaj">✓ REAJUSTADO</div>` : `<div></div>`}
     <div style="text-align:right;">
       <div class="lbl">Valor</div>
       <div class="val-valor">${valorFmt}</div>
@@ -599,7 +613,7 @@ const Pagamentos = () => {
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Carnê Reajustado — ${nomeCliente}</title>
+<title>${apenasReajustadas ? "Carnê Reajustado" : "Carnê"} — ${nomeCliente}</title>
 <style>
 @page{size:A4 portrait;margin:10mm 12mm}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -708,6 +722,9 @@ ${allPagesHTML}
   const parcelasNoReajusteRange = parcelasAbertasSemEntrada.filter(
     (p) => p.numero_parcela >= reajusteDe && p.numero_parcela <= reajusteAte
   );
+  const parcelasNoCarneRange = parcelasAbertasSemEntrada.filter(
+    (p) => p.numero_parcela >= carneDe && p.numero_parcela <= carneAte
+  );
   const totalNoReajusteRange = parcelasNoReajusteRange.reduce((s, p) => s + p.valor, 0);
   const totalAberto = pagamentosAbertosFiltered.reduce((s, p) => s + p.valor, 0);
   const totalAtrasado = atrasadas.reduce((s, p) => s + p.valor, 0);
@@ -787,15 +804,26 @@ ${allPagesHTML}
               <p className="text-xs text-muted-foreground">
                 Exibindo parcelas de: <span className="font-semibold text-foreground">{clienteSelecionado.nome}</span>
               </p>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2 text-amber-700 border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                onClick={() => { setReajusteConfirmado(false); setReajusteAplicado(false); setReajusteSuccessRange(null); setReajusteOpen(true); }}
-              >
-                <TrendingUp className="h-3.5 w-3.5" />
-                Reajuste Anual
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => { setCarneDe(1); setCarneAte(9999); setCarneOpen(true); }}
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Imprimir Carnê
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-amber-700 border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                  onClick={() => { setReajusteConfirmado(false); setReajusteAplicado(false); setReajusteSuccessRange(null); setReajusteOpen(true); }}
+                >
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  Reajuste Anual
+                </Button>
+              </div>
             </div>
           )}
         </div>
@@ -1248,6 +1276,86 @@ ${allPagesHTML}
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* ─── Dialog: Imprimir Carnê ─── */}
+      <Dialog open={carneOpen} onOpenChange={(o) => { if (!o) setCarneOpen(false); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Printer className="h-5 w-5 text-primary" />
+              Imprimir Carnê
+            </DialogTitle>
+            <DialogDescription>
+              Selecione o intervalo de parcelas em aberto para impressão.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {/* Cliente */}
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
+              <User className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div>
+                <p className="text-xs text-muted-foreground">Cliente</p>
+                <p className="font-semibold text-sm">{clienteSelecionado?.nome}</p>
+              </div>
+            </div>
+            {/* Intervalo por ano */}
+            <div>
+              <Label className="text-sm font-medium">Intervalo de parcelas</Label>
+              <p className="text-xs text-muted-foreground mt-0.5 mb-2">Selecione o ano do carnê ou defina um intervalo manual</p>
+              <div className="flex flex-wrap gap-2 mb-3">
+                <Button
+                  size="sm" type="button"
+                  variant={carneDe === 1 && carneAte === 9999 ? "default" : "outline"}
+                  onClick={() => { setCarneDe(1); setCarneAte(9999); }}
+                >
+                  Todos ({parcelasAbertasSemEntrada.length})
+                </Button>
+                {anosDisponiveis.map(({ ano, de, ate, count }) => (
+                  <Button
+                    key={ano} size="sm" type="button"
+                    variant={carneDe === de && carneAte === ate ? "default" : "outline"}
+                    onClick={() => { setCarneDe(de); setCarneAte(ate); }}
+                  >
+                    Ano {ano} ({count})
+                  </Button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Label className="text-xs text-muted-foreground">Da parcela</Label>
+                  <Input type="number" min={1} value={carneDe} onChange={(e) => setCarneDe(Number(e.target.value) || 1)} className="mt-1 h-8" />
+                </div>
+                <span className="text-muted-foreground mt-5">até</span>
+                <div className="flex-1">
+                  <Label className="text-xs text-muted-foreground">(vazio = sem limite)</Label>
+                  <Input type="number" min={1} value={carneAte >= 9999 ? "" : carneAte} onChange={(e) => setCarneAte(e.target.value ? Number(e.target.value) : 9999)} className="mt-1 h-8" />
+                </div>
+              </div>
+            </div>
+            {/* Prévia */}
+            <div className="rounded-lg bg-muted/40 border p-3 space-y-1.5 text-sm">
+              <p className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">Prévia</p>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">
+                  {carneDe === 1 && carneAte === 9999 ? "Todas as parcelas" : carneAte === 9999 ? `Parcela ${carneDe} em diante` : `Parcelas ${carneDe} a ${carneAte}`}
+                </span>
+                <span className="font-medium">{parcelasNoCarneRange.length} parcelas</span>
+              </div>
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setCarneOpen(false)}>Cancelar</Button>
+            <Button
+              className="gap-2"
+              onClick={() => imprimirCarne(carneDe, carneAte)}
+              disabled={parcelasNoCarneRange.length === 0}
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir ({parcelasNoCarneRange.length} parcelas)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={reajusteOpen} onOpenChange={(o) => { if (!reajusteMutation.isPending) { if (!o) fecharReajusteDialog(); } }}>
         <DialogContent className="sm:max-w-lg" onInteractOutside={(e) => e.preventDefault()}>
           <DialogHeader>
@@ -1441,7 +1549,16 @@ ${allPagesHTML}
                 )}
               </div>
 
-              <DialogFooter className="gap-2">
+              <DialogFooter className="gap-2 flex-wrap">
+                <Button
+                  variant="outline"
+                  className="gap-2 mr-auto"
+                  onClick={() => imprimirCarne(reajusteDe, reajusteAte)}
+                  disabled={parcelasNoReajusteRange.length === 0}
+                >
+                  <Printer className="h-4 w-4" />
+                  Imprimir Carnê
+                </Button>
                 <Button variant="outline" onClick={fecharReajusteDialog} disabled={reajusteMutation.isPending}>
                   Cancelar
                 </Button>
