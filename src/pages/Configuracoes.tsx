@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plus, Edit, Trash2, Shield, Building2, Upload, X, FileText, RotateCcw, AlertCircle } from "lucide-react";
+import { Plus, Edit, Trash2, Shield, Building2, Upload, X, FileText, RotateCcw, AlertCircle, ToggleLeft, ToggleRight } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +42,7 @@ interface Conta {
   agencia: string;
   conta: string;
   convenio?: string | null;
+  ativo: boolean;
 }
 
 interface Empresa {
@@ -160,6 +161,7 @@ const Configuracoes = () => {
   const [dialogContaAberto, setDialogContaAberto] = useState(false);
   const [contaSelecionada, setContaSelecionada] = useState<Conta | null>(null);
   const [modoConta, setModoConta] = useState<"create" | "edit">("create");
+  const [filtroContas, setFiltroContas] = useState<"ativas" | "inativas" | "todas">("ativas");
   const [confirmarExclusaoUsuario, setConfirmarExclusaoUsuario] = useState<Usuario | null>(null);
   const [confirmarExclusaoConta, setConfirmarExclusaoConta] = useState<Conta | null>(null);
   const [minhaEmpresa, setMinhaEmpresa] = useState<MinhaEmpresaData>(MINHA_EMPRESA_EMPTY);
@@ -490,6 +492,25 @@ const Configuracoes = () => {
     },
     onError: () => {
       toast({ title: "Erro ao excluir conta", variant: "destructive" });
+    },
+  });
+
+  const toggleAtivoContaMutation = useMutation({
+    mutationFn: async ({ id, ativo }: { id: number; ativo: boolean }) => {
+      const response = await fetch(`/api/contas/${id}/ativo`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ ativo }),
+      });
+      if (!response.ok) throw new Error("Erro ao alterar status da conta");
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["contas"] });
+      queryClient.invalidateQueries({ queryKey: ["contas-bancarias"] });
+      toast({ title: vars.ativo ? "Conta ativada com sucesso" : "Conta desativada com sucesso" });
+    },
+    onError: () => {
+      toast({ title: "Erro ao alterar status da conta", variant: "destructive" });
     },
   });
 
@@ -956,68 +977,123 @@ const Configuracoes = () => {
 
           {/* CONTAS BANCÁRIAS */}
           <TabsContent value="contas" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
-                {loadingContas
-                  ? "Carregando contas..."
-                  : contas && contas.length > 0
-                  ? `${contas.length} conta(s) cadastradas`
-                  : "Nenhuma conta cadastrada"}
-              </p>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              {/* Filtro ativas/inativas/todas */}
+              <div className="flex items-center gap-1 bg-muted rounded-lg p-1">
+                {(["ativas", "inativas", "todas"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setFiltroContas(f)}
+                    className={`px-3 py-1 rounded-md text-xs font-medium transition-colors capitalize ${
+                      filtroContas === f
+                        ? "bg-background shadow text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {f === "ativas" ? "Ativas" : f === "inativas" ? "Inativas" : "Todas"}
+                    {contas && (
+                      <span className="ml-1 text-muted-foreground">
+                        ({f === "ativas"
+                          ? contas.filter((c) => c.ativo).length
+                          : f === "inativas"
+                          ? contas.filter((c) => !c.ativo).length
+                          : contas.length})
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
               <Button size="sm" className="gap-2" onClick={abrirNovaConta}>
                 <Plus className="h-4 w-4" />
                 Nova Conta
               </Button>
             </div>
 
-            <div className="glass-card rounded-lg overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/50">
-                      <th className="text-left px-5 py-3 font-medium text-muted-foreground">Identificação</th>
-                      <th className="text-left px-5 py-3 font-medium text-muted-foreground">Titular</th>
-                      <th className="text-left px-5 py-3 font-medium text-muted-foreground">Agência</th>
-                      <th className="text-left px-5 py-3 font-medium text-muted-foreground">Conta</th>
-                      <th className="text-left px-5 py-3 font-medium text-muted-foreground">Convênio</th>
-                      <th className="text-right px-5 py-3 font-medium text-muted-foreground">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {contas?.map((conta) => (
-                      <tr key={conta.id_conta} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-5 py-3 font-medium">{conta.apelido}</td>
-                        <td className="px-5 py-3 text-muted-foreground">{conta.titular}</td>
-                        <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.agencia}</td>
-                        <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.conta}</td>
-                        <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.convenio || "—"}</td>
-                        <td className="px-5 py-3">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => abrirEdicaoConta(conta)}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive"
-                              onClick={() => excluirConta(conta)}
-                              disabled={excluirContaMutation.isPending}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            {(() => {
+              const contasFiltradas = contas?.filter((c) =>
+                filtroContas === "ativas" ? c.ativo : filtroContas === "inativas" ? !c.ativo : true
+              ) ?? [];
+              return (
+                <div className="glass-card rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Identificação</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Titular</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Agência</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Conta</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Convênio</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Status</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {loadingContas ? (
+                          <tr>
+                            <td colSpan={7} className="px-5 py-8 text-center text-muted-foreground text-xs">
+                              Carregando contas...
+                            </td>
+                          </tr>
+                        ) : contasFiltradas.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} className="px-5 py-8 text-center text-muted-foreground text-xs">
+                              Nenhuma conta {filtroContas !== "todas" ? filtroContas : "cadastrada"}.
+                            </td>
+                          </tr>
+                        ) : (
+                          contasFiltradas.map((conta) => (
+                            <tr key={conta.id_conta} className={`hover:bg-muted/30 transition-colors ${!conta.ativo ? "opacity-60" : ""}`}>
+                              <td className="px-5 py-3 font-medium">{conta.apelido}</td>
+                              <td className="px-5 py-3 text-muted-foreground">{conta.titular}</td>
+                              <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.agencia}</td>
+                              <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.conta}</td>
+                              <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.convenio || "—"}</td>
+                              <td className="px-5 py-3">
+                                <Badge variant={conta.ativo ? "default" : "secondary"} className="text-xs">
+                                  {conta.ativo ? "Ativa" : "Inativa"}
+                                </Badge>
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={`h-8 w-8 ${conta.ativo ? "text-muted-foreground" : "text-green-600"}`}
+                                    title={conta.ativo ? "Desativar conta" : "Ativar conta"}
+                                    onClick={() => toggleAtivoContaMutation.mutate({ id: conta.id_conta, ativo: !conta.ativo })}
+                                    disabled={toggleAtivoContaMutation.isPending}
+                                  >
+                                    {conta.ativo ? <ToggleRight className="h-4 w-4" /> : <ToggleLeft className="h-4 w-4" />}
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => abrirEdicaoConta(conta)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-destructive"
+                                    onClick={() => excluirConta(conta)}
+                                    disabled={excluirContaMutation.isPending}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              );
+            })()}
 
             <Dialog open={dialogContaAberto} onOpenChange={setDialogContaAberto}>
               <DialogContent className="max-w-md">

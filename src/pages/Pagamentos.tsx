@@ -69,6 +69,7 @@ interface ContaApi {
   agencia: string;
   conta: string;
   convenio?: string | null;
+  ativo: boolean;
 }
 
 // EmpresaInfo importada de @/utils/reciboParcela (ReciboEmpresa)
@@ -229,7 +230,7 @@ const Pagamentos = () => {
 
   // ─── Query: Contas Bancárias ─────────────────────────────────────────────
 
-  const { data: contasBancarias = [] } = useQuery<ContaApi[]>({
+  const { data: contasBancariasAll = [] } = useQuery<ContaApi[]>({
     queryKey: ["contas-bancarias"],
     queryFn: async () => {
       const res = await fetch("/api/contas", { headers: getAuthHeaders() });
@@ -237,6 +238,8 @@ const Pagamentos = () => {
       return res.json() as Promise<ContaApi[]>;
     },
   });
+  // Apenas contas ativas são exibidas no dropdown de baixa
+  const contasBancarias = contasBancariasAll.filter((c) => c.ativo);
 
   // ─── Query: Dados da Empresa ─────────────────────────────────────────────
 

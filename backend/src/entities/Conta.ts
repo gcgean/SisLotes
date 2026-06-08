@@ -24,6 +24,9 @@ export class Conta {
   @Column({ type: "varchar", length: 30, nullable: true })
   convenio?: string | null;
 
+  @Column({ type: "boolean", default: true })
+  ativo!: boolean;
+
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 
