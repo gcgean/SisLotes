@@ -596,7 +596,14 @@ const Pagamentos = () => {
 
     for (const [loteKey, loteParcelas] of byLote) {
       const loteamento = loteParcelas[0]?.loteamento ?? "";
-      const totalParcelasLote = loteParcelas[0]?.parcelas ?? 0;
+      // Calcula o total de parcelas regulares pelo maior numero_parcela
+      // (ignora entrada para não contaminar o denominador, ex: 12 parcelas + 1 entrada ≠ 13)
+      const todasParcelasLote = pagamentosAbertos.filter(
+        p => p.lote === loteKey && p.tipo !== "entrada" && p.numero_parcela > 0
+      );
+      const totalParcelasLote = todasParcelasLote.length > 0
+        ? Math.max(...todasParcelasLote.map(p => p.numero_parcela))
+        : (loteParcelas[0]?.parcelas ?? 0);
 
       for (let i = 0; i < loteParcelas.length; i += 3) {
         const slice = loteParcelas.slice(i, i + 3);
