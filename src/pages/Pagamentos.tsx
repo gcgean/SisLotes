@@ -127,10 +127,20 @@ const getDiasAtraso = (vencimentoStr: string) => {
   return Math.max(0, Math.floor((hoje.getTime() - venc.getTime()) / (1000 * 60 * 60 * 24)));
 };
 
-const calcularEncargos = (valor: number, diasAtraso: number) => {
-  if (diasAtraso <= 0) return { multa: 0, juros: 0, total: valor };
-  const multa = valor * 0.02;
-  const juros = valor * 0.002 * diasAtraso;
+interface EmpresaEncargos {
+  multa_percentual: number;   // ex: 2 = 2%
+  juros_percentual_dia: number; // ex: 0.2 = 0,2%/dia
+  carencia_dias: number;
+}
+
+const calcularEncargos = (valor: number, diasAtraso: number, config?: EmpresaEncargos) => {
+  const multaPerc = (config?.multa_percentual ?? 2) / 100;
+  const jurosPercDia = (config?.juros_percentual_dia ?? 0.2) / 100;
+  const carencia = config?.carencia_dias ?? 0;
+  const diasEfetivos = Math.max(0, diasAtraso - carencia);
+  if (diasEfetivos <= 0) return { multa: 0, juros: 0, total: valor };
+  const multa = valor * multaPerc;
+  const juros = valor * jurosPercDia * diasEfetivos;
   return { multa, juros, total: valor + multa + juros };
 };
 
@@ -165,6 +175,9 @@ const Pagamentos = () => {
   // ── Dialog de baixa ──
   const [baixaOpen, setBaixaOpen] = useState(false);
   const [baixaData, setBaixaData] = useState(todayStr());
+  const [baixaDispensarMulta, setBaixaDispensarMulta] = useState(false);
+  const [baixaDispensarJuros, setBaixaDispensarJuros] = useState(false);
+  const [baixaDesconto, setBaixaDesconto] = useState("");
   const [baixaContaId, setBaixaContaId] = useState("");
 
   // ── Dialog de recibo (reimprimir do histórico) ──
@@ -227,14 +240,20 @@ const Pagamentos = () => {
 
   // ─── Query: Dados da Empresa ─────────────────────────────────────────────
 
-  const { data: empresaInfo } = useQuery<ReciboEmpresa | null>({
+  const { data: empresaInfo } = useQuery<ReciboEmpresa & { multa_percentual?: string; juros_percentual_dia?: string; carencia_dias?: number } | null>({
     queryKey: ["empresa-info"],
     queryFn: async () => {
       const res = await fetch("/api/empresas/minha", { headers: getAuthHeaders() });
       if (!res.ok) return null;
-      return res.json() as Promise<ReciboEmpresa>;
+      return res.json();
     },
   });
+
+  const encargosConfig: EmpresaEncargos = {
+    multa_percentual: empresaInfo?.multa_percentual ? Number(empresaInfo.multa_percentual) : 2,
+    juros_percentual_dia: empresaInfo?.juros_percentual_dia ? Number(empresaInfo.juros_percentual_dia) : 0.2,
+    carencia_dias: empresaInfo?.carencia_dias ?? 0,
+  };
 
   // ─── Query: parcelas ABERTAS do cliente (sem filtro de data) ─────────────
 
@@ -325,7 +344,7 @@ const Pagamentos = () => {
   // ─── Mutação de baixa ────────────────────────────────────────────────────
 
   const baixaMutation = useMutation({
-    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number | null }) => {
+    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number | null; multa_override?: number; juros_override?: number; desconto?: number }) => {
       const res = await fetch(`/api/pagamentos/${payload.id_pagamento}/baixa`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -333,6 +352,9 @@ const Pagamentos = () => {
           pago_data: payload.pago_data,
           valor_pago: payload.valor_pago,
           id_conta: payload.id_conta,
+          multa_override: payload.multa_override,
+          juros_override: payload.juros_override,
+          desconto: payload.desconto,
         }),
       });
       if (!res.ok) throw new Error("Erro ao baixar pagamento");
@@ -390,6 +412,9 @@ const Pagamentos = () => {
     }
     setBaixaData(todayStr());
     setBaixaContaId("");
+    setBaixaDispensarMulta(false);
+    setBaixaDispensarJuros(false);
+    setBaixaDesconto("");
     setBaixaOpen(true);
   }
 
@@ -402,24 +427,31 @@ const Pagamentos = () => {
 
     const contaSelecionada = contasBancarias.find((c) => String(c.id_conta) === baixaContaId) ?? null;
     const parcSelecionadas = pagamentosAbertosFiltered.filter((p) => selecionados.has(p.id));
+    const descontoVal = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
 
     try {
       for (const parc of parcSelecionadas) {
         const dias = getDiasAtraso(parc.vencimento);
-        const { multa, juros, total } = calcularEncargos(parc.valor, dias);
+        const enc = calcularEncargos(parc.valor, dias, encargosConfig);
+        const multaFinal = baixaDispensarMulta ? 0 : enc.multa;
+        const jurosFinal = baixaDispensarJuros ? 0 : enc.juros;
+        const totalFinal = Math.max(0, parc.valor + multaFinal + jurosFinal - descontoVal);
         await baixaMutation.mutateAsync({
           id_pagamento: parc.id,
           pago_data: pagoIso,
-          valor_pago: total,
+          valor_pago: totalFinal,
           id_conta: contaSelecionada ? contaSelecionada.id_conta : null,
+          multa_override: multaFinal,
+          juros_override: jurosFinal,
+          desconto: descontoVal,
         });
         // Gera recibo para cada parcela recebida
         gerarReciboParcela(
           parc,
           baixaData,
-          total,
-          multa,
-          juros,
+          totalFinal,
+          multaFinal,
+          jurosFinal,
           contaSelecionada?.apelido ?? "",
           empresaInfo ?? null
         );
@@ -502,7 +534,7 @@ const Pagamentos = () => {
           (parseBrDate(pag.pago_data).getTime() - parseBrDate(pag.vencimento).getTime()) / (1000 * 60 * 60 * 24)
         ))
       : 0;
-    const { multa, juros } = calcularEncargos(pag.valor, dias);
+    const { multa, juros } = calcularEncargos(pag.valor, dias, encargosConfig);
     gerarReciboParcela(
       pag,
       pag.pago_data ?? "—",
@@ -733,7 +765,7 @@ ${allPagesHTML}
   const parcSelecionadas = pagamentosAbertosFiltered.filter((p) => selecionados.has(p.id));
   const totalSelecionado = parcSelecionadas.reduce((s, p) => {
     const dias = getDiasAtraso(p.vencimento);
-    const { total } = calcularEncargos(p.valor, dias);
+    const { total } = calcularEncargos(p.valor, dias, encargosConfig);
     return s + total;
   }, 0);
 
@@ -1026,7 +1058,7 @@ ${allPagesHTML}
                       ) : (
                         pagamentosAbertosFiltered.map((pag) => {
                           const dias = getDiasAtraso(pag.vencimento);
-                          const enc = calcularEncargos(pag.valor, dias);
+                          const enc = calcularEncargos(pag.valor, dias, encargosConfig);
                           const isAtrasada = pag.situacao === "atrasado";
                           const isSel = selecionados.has(pag.id);
                           return (
@@ -1612,75 +1644,140 @@ ${allPagesHTML}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4">
-            {/* Lista de parcelas selecionadas */}
-            <div className="glass-card rounded-lg divide-y divide-border max-h-52 overflow-y-auto">
-              {parcSelecionadas.map((p) => {
-                const dias = getDiasAtraso(p.vencimento);
-                const enc = calcularEncargos(p.valor, dias);
-                return (
-                  <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
-                    <div>
-                      <span className="font-medium">
-                        {p.numero_parcela === 0 || p.tipo === "entrada"
-                          ? "Entrada"
-                          : `Parcela ${p.numero_parcela}/${p.parcelas}`}
+          {(() => {
+            const descontoVal = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
+            const totalBaixa = parcSelecionadas.reduce((acc, p) => {
+              const dias = getDiasAtraso(p.vencimento);
+              const enc = calcularEncargos(p.valor, dias, encargosConfig);
+              const multaF = baixaDispensarMulta ? 0 : enc.multa;
+              const jurosF = baixaDispensarJuros ? 0 : enc.juros;
+              return acc + p.valor + multaF + jurosF;
+            }, 0);
+            const totalFinal = Math.max(0, totalBaixa - descontoVal);
+            const temAtraso = parcSelecionadas.some(p => getDiasAtraso(p.vencimento) > encargosConfig.carencia_dias);
+
+            return (
+              <div className="space-y-4">
+                {/* Lista de parcelas */}
+                <div className="glass-card rounded-lg divide-y divide-border max-h-44 overflow-y-auto">
+                  {parcSelecionadas.map((p) => {
+                    const dias = getDiasAtraso(p.vencimento);
+                    const enc = calcularEncargos(p.valor, dias, encargosConfig);
+                    const multaF = baixaDispensarMulta ? 0 : enc.multa;
+                    const jurosF = baixaDispensarJuros ? 0 : enc.juros;
+                    const subtotal = p.valor + multaF + jurosF;
+                    return (
+                      <div key={p.id} className="flex items-center justify-between px-4 py-2.5 text-sm">
+                        <div>
+                          <span className="font-medium">
+                            {p.numero_parcela === 0 || p.tipo === "entrada" ? "Entrada" : `Parcela ${p.numero_parcela}/${p.parcelas}`}
+                          </span>
+                          <span className="text-muted-foreground ml-2 text-xs">venc. {p.vencimento}</span>
+                          {dias > encargosConfig.carencia_dias && (
+                            <span className="text-destructive ml-2 text-xs">({dias} dias atraso)</span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-semibold">{formatCurrency(subtotal)}</p>
+                          {enc.multa > 0 || enc.juros > 0 ? (
+                            <p className="text-xs text-muted-foreground">
+                              {formatCurrency(p.valor)}
+                              {enc.multa > 0 && !baixaDispensarMulta && ` + M:${formatCurrency(enc.multa)}`}
+                              {enc.juros > 0 && !baixaDispensarJuros && ` + J:${formatCurrency(enc.juros)}`}
+                            </p>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Encargos — só mostra se houver atraso */}
+                {temAtraso && (
+                  <div className="rounded-lg border border-border p-3 space-y-2">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Encargos por Atraso</p>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" id="disp-multa" checked={baixaDispensarMulta}
+                          onChange={(e) => setBaixaDispensarMulta(e.target.checked)}
+                          className="rounded" />
+                        <Label htmlFor="disp-multa" className="text-sm cursor-pointer">
+                          Dispensar Multa ({encargosConfig.multa_percentual}%)
+                        </Label>
+                      </div>
+                      <span className={`text-xs ${baixaDispensarMulta ? "line-through text-muted-foreground" : "text-destructive font-medium"}`}>
+                        {formatCurrency(parcSelecionadas.reduce((a, p) => {
+                          const dias = getDiasAtraso(p.vencimento);
+                          return a + calcularEncargos(p.valor, dias, encargosConfig).multa;
+                        }, 0))}
                       </span>
-                      <span className="text-muted-foreground ml-2 text-xs">venc. {p.vencimento}</span>
-                      {dias > 0 && (
-                        <span className="text-destructive ml-2 text-xs">({dias} dias atraso)</span>
-                      )}
                     </div>
-                    <div className="text-right">
-                      <p className="font-semibold">{formatCurrency(enc.total)}</p>
-                      {dias > 0 && (
-                        <p className="text-xs text-muted-foreground">original: {formatCurrency(p.valor)}</p>
-                      )}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" id="disp-juros" checked={baixaDispensarJuros}
+                          onChange={(e) => setBaixaDispensarJuros(e.target.checked)}
+                          className="rounded" />
+                        <Label htmlFor="disp-juros" className="text-sm cursor-pointer">
+                          Dispensar Juros ({encargosConfig.juros_percentual_dia}%/dia)
+                        </Label>
+                      </div>
+                      <span className={`text-xs ${baixaDispensarJuros ? "line-through text-muted-foreground" : "text-destructive font-medium"}`}>
+                        {formatCurrency(parcSelecionadas.reduce((a, p) => {
+                          const dias = getDiasAtraso(p.vencimento);
+                          return a + calcularEncargos(p.valor, dias, encargosConfig).juros;
+                        }, 0))}
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                )}
 
-            {/* Total */}
-            <div className="flex justify-between items-center px-1 font-semibold text-base border-t border-border pt-2">
-              <span>Total a Receber</span>
-              <span className="text-primary">{formatCurrency(totalSelecionado)}</span>
-            </div>
+                {/* Desconto */}
+                <div className="flex items-center gap-3">
+                  <Label className="text-xs whitespace-nowrap">Desconto (R$)</Label>
+                  <Input
+                    type="number" min="0" step="0.01"
+                    value={baixaDesconto}
+                    onChange={(e) => setBaixaDesconto(e.target.value)}
+                    placeholder="0,00"
+                    className="h-8"
+                  />
+                </div>
 
-            {/* Campos */}
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs">Data do Recebimento</Label>
-                <Input
-                  value={baixaData}
-                  onChange={(e) => setBaixaData(e.target.value)}
-                  placeholder="dd/mm/aaaa"
-                />
+                {/* Total */}
+                <div className="flex justify-between items-center px-1 font-bold text-base border-t border-border pt-2">
+                  <span>Total a Receber</span>
+                  <span className="text-primary">{formatCurrency(totalFinal)}</span>
+                </div>
+
+                {/* Campos */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Data do Recebimento</Label>
+                    <Input value={baixaData} onChange={(e) => setBaixaData(e.target.value)} placeholder="dd/mm/aaaa" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Conta Bancária</Label>
+                    <Select value={baixaContaId} onValueChange={setBaixaContaId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Conta (opcional)" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {contasBancarias.length === 0 ? (
+                          <SelectItem value="__none" disabled>Nenhuma conta</SelectItem>
+                        ) : (
+                          contasBancarias.map((c) => (
+                            <SelectItem key={c.id_conta} value={String(c.id_conta)}>
+                              {c.apelido} — {c.titular}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs">Conta Bancária</Label>
-                <Select value={baixaContaId} onValueChange={setBaixaContaId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a conta (opcional)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {contasBancarias.length === 0 ? (
-                      <SelectItem value="__none" disabled>
-                        Nenhuma conta cadastrada
-                      </SelectItem>
-                    ) : (
-                      contasBancarias.map((c) => (
-                        <SelectItem key={c.id_conta} value={String(c.id_conta)}>
-                          {c.apelido} — {c.titular}
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setBaixaOpen(false)}>

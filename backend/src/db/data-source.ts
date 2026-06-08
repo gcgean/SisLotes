@@ -36,6 +36,7 @@ import { FixAllSequences1700000000018 } from "../migrations/1700000000018-FixAll
 import { CreateSugestoes1700000000019 } from "../migrations/1700000000019-CreateSugestoes";
 import { AddReajustadoToPagamentos1700000000020 } from "../migrations/1700000000020-AddReajustadoToPagamentos";
 import { FixVendaLoteUniqueConstraint1700000000021 } from "../migrations/1700000000021-FixVendaLoteUniqueConstraint";
+import { AddEncargosToEmpresa1700000000022 } from "../migrations/1700000000022-AddEncargosToEmpresa";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -69,6 +70,7 @@ export const AppDataSource = new DataSource({
     CreateSugestoes1700000000019,
     AddReajustadoToPagamentos1700000000020,
     FixVendaLoteUniqueConstraint1700000000021,
+    AddEncargosToEmpresa1700000000022,
   ],
   synchronize: false,
   logging: false,

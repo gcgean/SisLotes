@@ -91,6 +91,18 @@ export class Empresa {
   @Column({ type: "timestamp", name: "ultimo_acesso", nullable: true })
   ultimo_acesso?: Date | null;
 
+  /** Percentual de multa por atraso (ex: 2.00 = 2%) */
+  @Column({ type: "decimal", precision: 5, scale: 2, name: "multa_percentual", default: 2.00 })
+  multa_percentual!: string;
+
+  /** Percentual de juros por dia de atraso (ex: 0.2000 = 0,2%/dia) */
+  @Column({ type: "decimal", precision: 5, scale: 4, name: "juros_percentual_dia", default: 0.2000 })
+  juros_percentual_dia!: string;
+
+  /** Dias de carência antes de cobrar multa/juros */
+  @Column({ type: "integer", name: "carencia_dias", default: 0 })
+  carencia_dias!: number;
+
   /** Modelo personalizado do contrato (HTML com placeholders {{variavel}}) */
   @Column({ type: "text", name: "modelo_contrato", nullable: true })
   modelo_contrato?: string | null;

@@ -24,6 +24,9 @@ const empresaBodySchema = z.object({
   email: z.string().max(200).optional(),
   site: z.string().max(200).optional(),
   salario_minimo: z.number().nonnegative().optional().nullable(),
+  multa_percentual: z.number().min(0).max(100).optional(),
+  juros_percentual_dia: z.number().min(0).max(100).optional(),
+  carencia_dias: z.number().int().min(0).optional(),
   logo: z.string().optional().nullable(),
   modelo_contrato: z.string().optional().nullable(),
   ativo: z.boolean().optional(),
@@ -90,6 +93,9 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
     logo,
     modelo_contrato,
     salario_minimo,
+    multa_percentual,
+    juros_percentual_dia,
+    carencia_dias,
     hub_customer_id: _hub_customer_id,
     hub_product_code: _hub_product_code,
     hub_license_status: _hub_license_status,
@@ -116,6 +122,11 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
     empresa.salario_minimo = salario_minimo != null ? String(salario_minimo) : null;
   }
 
+  // Encargos
+  if (multa_percentual !== undefined) empresa.multa_percentual = String(multa_percentual);
+  if (juros_percentual_dia !== undefined) empresa.juros_percentual_dia = String(juros_percentual_dia);
+  if (carencia_dias !== undefined) empresa.carencia_dias = carencia_dias;
+
   const saved = await repo.save(empresa);
   return res.json(saved);
 });
@@ -138,6 +149,9 @@ empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
 
   const {
     salario_minimo: smNum,
+    multa_percentual: multaNum,
+    juros_percentual_dia: jurosNum,
+    carencia_dias: carenciaNum,
     hub_expires_at,
     ...restData
   } = parseResult.data;
@@ -146,6 +160,9 @@ empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
     ...restData,
     hub_expires_at: hub_expires_at ? new Date(hub_expires_at) : null,
     salario_minimo: smNum != null ? String(smNum) : null,
+    multa_percentual: multaNum != null ? String(multaNum) : "2.00",
+    juros_percentual_dia: jurosNum != null ? String(jurosNum) : "0.2000",
+    carencia_dias: carenciaNum ?? 0,
     ativo: true,
   });
   const saved = await repo.save(empresa);

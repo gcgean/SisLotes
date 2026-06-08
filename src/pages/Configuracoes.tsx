@@ -64,6 +64,9 @@ interface MinhaEmpresaData {
   email: string;
   site: string;
   salario_minimo: string;
+  multa_percentual: string;
+  juros_percentual_dia: string;
+  carencia_dias: string;
   logo: string | null;
   modelo_contrato: string | null;
 }
@@ -71,8 +74,9 @@ interface MinhaEmpresaData {
 const MINHA_EMPRESA_EMPTY: MinhaEmpresaData = {
   nome_fantasia: "", razao_social: "", cnpj: "", ie: "",
   endereco: "", bairro: "", cidade: "", estado: "", cep: "",
-  telefone: "", email: "", site: "", salario_minimo: "", logo: null,
-  modelo_contrato: null,
+  telefone: "", email: "", site: "", salario_minimo: "",
+  multa_percentual: "2", juros_percentual_dia: "0.2", carencia_dias: "0",
+  logo: null, modelo_contrato: null,
 };
 
 type UsuarioPermissaoKey =
@@ -240,6 +244,9 @@ const Configuracoes = () => {
         email: minhaEmpresaData.email ?? "",
         site: minhaEmpresaData.site ?? "",
         salario_minimo: minhaEmpresaData.salario_minimo ? String(minhaEmpresaData.salario_minimo) : "",
+        multa_percentual: minhaEmpresaData.multa_percentual ? String(minhaEmpresaData.multa_percentual) : "2",
+        juros_percentual_dia: minhaEmpresaData.juros_percentual_dia ? String(minhaEmpresaData.juros_percentual_dia) : "0.2",
+        carencia_dias: minhaEmpresaData.carencia_dias != null ? String(minhaEmpresaData.carencia_dias) : "0",
         logo: minhaEmpresaData.logo ?? null,
         modelo_contrato: minhaEmpresaData.modelo_contrato ?? null,
       });
@@ -589,6 +596,7 @@ const Configuracoes = () => {
 
   const salvarMinhaEmpresaMutation = useMutation({
     mutationFn: async () => {
+      const parseNum = (v: string, def = 0) => { const n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? def : n; };
       const body = {
         ...minhaEmpresa,
         salario_minimo: (() => {
@@ -596,6 +604,9 @@ const Configuracoes = () => {
           const parsed = parseFloat(raw);
           return !isNaN(parsed) ? parsed : null;
         })(),
+        multa_percentual: parseNum(minhaEmpresa.multa_percentual, 2),
+        juros_percentual_dia: parseNum(minhaEmpresa.juros_percentual_dia, 0.2),
+        carencia_dias: Math.max(0, Math.round(parseNum(minhaEmpresa.carencia_dias, 0))),
       };
       const r = await fetch("/api/empresas/minha", {
         method: "PUT",
@@ -883,14 +894,50 @@ const Configuracoes = () => {
                     <div className="space-y-2">
                       <Label>Valor do Salário Mínimo (R$)</Label>
                       <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
+                        type="number" min="0" step="0.01"
                         value={minhaEmpresa.salario_minimo}
                         onChange={(e) => setEmpresaField("salario_minimo", e.target.value)}
                         placeholder="0,00"
                       />
                       <p className="text-xs text-muted-foreground">Base para cálculo das parcelas de venda</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Encargos por atraso */}
+                <div className="border-t border-border pt-4">
+                  <p className="text-sm font-semibold mb-1">Encargos por Atraso</p>
+                  <p className="text-xs text-muted-foreground mb-3">Aplicados automaticamente no recebimento de parcelas em atraso</p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label>Multa (%)</Label>
+                      <Input
+                        type="number" min="0" max="100" step="0.01"
+                        value={minhaEmpresa.multa_percentual}
+                        onChange={(e) => setEmpresaField("multa_percentual", e.target.value)}
+                        placeholder="2"
+                      />
+                      <p className="text-xs text-muted-foreground">Percentual único sobre o valor (ex: 2%)</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Juros ao Dia (%)</Label>
+                      <Input
+                        type="number" min="0" max="100" step="0.0001"
+                        value={minhaEmpresa.juros_percentual_dia}
+                        onChange={(e) => setEmpresaField("juros_percentual_dia", e.target.value)}
+                        placeholder="0.2"
+                      />
+                      <p className="text-xs text-muted-foreground">Percentual por dia de atraso (ex: 0,2%/dia)</p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Dias de Carência</Label>
+                      <Input
+                        type="number" min="0" step="1"
+                        value={minhaEmpresa.carencia_dias}
+                        onChange={(e) => setEmpresaField("carencia_dias", e.target.value)}
+                        placeholder="0"
+                      />
+                      <p className="text-xs text-muted-foreground">Dias após vencimento sem cobrança de encargos</p>
                     </div>
                   </div>
                 </div>

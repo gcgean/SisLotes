@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
+import { Empresa } from "../../entities/Empresa";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 
 export const pagamentosRouter = Router();
@@ -12,6 +13,10 @@ const baixaSchema = z.object({
   pago_data: z.string(),
   valor_pago: z.number().positive(),
   id_conta: z.number().int().positive().optional().nullable(),
+  // Encargos calculados/ajustados pelo frontend (dispensar = 0)
+  multa_override: z.number().min(0).optional().nullable(),
+  juros_override: z.number().min(0).optional().nullable(),
+  desconto: z.number().min(0).optional().nullable(),
 });
 
 const listPagamentosQuerySchema = z.object({
@@ -129,10 +134,11 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
     return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
   }
 
-  const { pago_data, valor_pago, id_conta } = parseResult.data;
+  const { pago_data, valor_pago, id_conta, multa_override, juros_override, desconto } = parseResult.data;
 
   const pagamentoRepo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);
+  const empresaRepo = AppDataSource.getRepository(Empresa);
 
   const where: Record<string, unknown> = { id_pagamento: Number(id) };
 
@@ -150,22 +156,28 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
     return res.status(409).json({ error: "Este pagamento já foi baixado.", situacao: "pago", pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago });
   }
 
+  // Busca configurações de encargos da empresa
+  const empresa = req.user?.id_empresa
+    ? await empresaRepo.findOne({ where: { id_empresa: req.user.id_empresa } })
+    : null;
+  const multaPerc = empresa ? Number(empresa.multa_percentual) / 100 : 0.02;
+  const jurosPercDia = empresa ? Number(empresa.juros_percentual_dia) / 100 : 0.002;
+  const carenciaDias = empresa ? empresa.carencia_dias : 0;
+
   const vencimentoDate = new Date(pagamento.vencimento);
   const pagoDate = new Date(pago_data);
   const diffMs = pagoDate.getTime() - vencimentoDate.getTime();
   const dias_atraso = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
-
-  let multa = 0;
-  let juros = 0;
+  const dias_efetivos = Math.max(0, dias_atraso - carenciaDias);
 
   const valor = Number(pagamento.valor);
 
-  if (dias_atraso > 0) {
-    multa = valor * 0.02;
-    juros = valor * 0.002 * dias_atraso;
-  }
+  // Se frontend enviou override, usa; senão calcula com config da empresa
+  let multa = multa_override != null ? multa_override : (dias_efetivos > 0 ? valor * multaPerc : 0);
+  let juros = juros_override != null ? juros_override : (dias_efetivos > 0 ? valor * jurosPercDia * dias_efetivos : 0);
+  const descontoVal = desconto ?? 0;
 
-  const valorTotalCalculado = valor + multa + juros;
+  const valorTotalCalculado = valor + multa + juros - descontoVal;
 
   pagamento.situacao = "pago";
   pagamento.pago_data = pago_data;
