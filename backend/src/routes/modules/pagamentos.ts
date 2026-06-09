@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
+import { In } from "typeorm";
 import { AppDataSource } from "../../db/data-source";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
@@ -220,30 +221,27 @@ pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res)
   const repo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);
 
-  const where: Record<string, unknown> = {};
-  if (req.user?.id_empresa) where.id_empresa = req.user.id_empresa;
+  // Busca por IDs; filtra pela empresa do usuário para segurança multi-tenant
+  const pagamentos = await repo.findBy({ id_pagamento: In(ids) });
+  const idEmpresa = req.user?.id_empresa;
+  const pagamentosDaEmpresa = idEmpresa
+    ? pagamentos.filter((p) => Number(p.id_empresa) === Number(idEmpresa))
+    : pagamentos;
 
-  // Busca apenas pagamentos da empresa do usuário (segurança multi-tenant)
-  const pagamentos = await repo
-    .createQueryBuilder("p")
-    .where("p.id_pagamento IN (:...ids)", { ids })
-    .andWhere("p.id_empresa = :id_empresa", { id_empresa: req.user?.id_empresa ?? 0 })
-    .getMany();
-
-  if (pagamentos.length === 0) {
-    return res.status(404).json({ error: "Nenhum pagamento encontrado" });
+  if (pagamentosDaEmpresa.length === 0) {
+    return res.json({ deletados: 0 });
   }
 
-  await repo.remove(pagamentos);
+  await repo.remove(pagamentosDaEmpresa);
 
   await logRepo.save(logRepo.create({
     id_usuario: req.user?.id_usuario ?? 1,
     servico: "pagamento_bulk_delete",
-    url: "/api/pagamentos/bulk",
-    log: `${pagamentos.length} pagamento(s) excluído(s): [${ids.join(",")}]`,
+    url: "/api/pagamentos/bulk-delete",
+    log: `${pagamentosDaEmpresa.length} pagamento(s) excluído(s): [${pagamentosDaEmpresa.map(p => p.id_pagamento).join(",")}]`,
   }));
 
-  return res.json({ deletados: pagamentos.length });
+  return res.json({ deletados: pagamentosDaEmpresa.length });
 });
 
 // ─── POST /:id/estornar — Cancelar pagamento e voltar para aberto ─────────────
