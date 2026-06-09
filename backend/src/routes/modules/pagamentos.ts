@@ -208,6 +208,44 @@ pagamentosRouter.post("/retorno", (_req, res) => {
   return res.status(200).json({ message: "Retorno processado (stub)" });
 });
 
+// ─── DELETE /bulk — Excluir múltiplos pagamentos ──────────────────────────────
+pagamentosRouter.delete("/bulk", requireAuth, async (req: AuthRequest, res) => {
+  const schema = z.object({ ids: z.array(z.number().int().positive()).min(1) });
+  const parse = schema.safeParse(req.body);
+  if (!parse.success) {
+    return res.status(400).json({ error: "IDs inválidos", issues: parse.error.issues });
+  }
+
+  const { ids } = parse.data;
+  const repo = AppDataSource.getRepository(Pagamento);
+  const logRepo = AppDataSource.getRepository(Log);
+
+  const where: Record<string, unknown> = {};
+  if (req.user?.id_empresa) where.id_empresa = req.user.id_empresa;
+
+  // Busca apenas pagamentos da empresa do usuário (segurança multi-tenant)
+  const pagamentos = await repo
+    .createQueryBuilder("p")
+    .where("p.id_pagamento IN (:...ids)", { ids })
+    .andWhere("p.id_empresa = :id_empresa", { id_empresa: req.user?.id_empresa ?? 0 })
+    .getMany();
+
+  if (pagamentos.length === 0) {
+    return res.status(404).json({ error: "Nenhum pagamento encontrado" });
+  }
+
+  await repo.remove(pagamentos);
+
+  await logRepo.save(logRepo.create({
+    id_usuario: req.user?.id_usuario ?? 1,
+    servico: "pagamento_bulk_delete",
+    url: "/api/pagamentos/bulk",
+    log: `${pagamentos.length} pagamento(s) excluído(s): [${ids.join(",")}]`,
+  }));
+
+  return res.json({ deletados: pagamentos.length });
+});
+
 // ─── POST /:id/estornar — Cancelar pagamento e voltar para aberto ─────────────
 pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;

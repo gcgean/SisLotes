@@ -43,6 +43,7 @@ import {
   TrendingUp,
   FileText,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -86,7 +87,9 @@ interface PagamentoApi {
   multa?: string | null;
   juros?: string | null;
   reajustado?: boolean;
+  id_venda?: number;
   venda?: {
+    id_venda: number;
     parcelas: number;
     cliente?: { nome: string };
     lote?: {
@@ -99,6 +102,7 @@ interface PagamentoApi {
 
 interface Pagamento {
   id: number;
+  id_venda?: number;
   cliente: string;
   lote: string;
   loteamento: string;
@@ -184,6 +188,9 @@ const Pagamentos = () => {
   // ── Dialog de recibo (reimprimir do histórico) ──
   const [reciboDialogOpen, setReciboDialogOpen] = useState(false);
   const [pagamentoParaRecibo, setPagamentoParaRecibo] = useState<Pagamento | null>(null);
+
+  // ── Confirmação de exclusão em lote ──
+  const [confirmarExcluirTodos, setConfirmarExcluirTodos] = useState(false);
 
   // ── Dialog de reajuste anual ──
   const [reajusteOpen, setReajusteOpen] = useState(false);
@@ -318,6 +325,7 @@ const Pagamentos = () => {
 
           return {
             id: p.id_pagamento,
+            id_venda: p.id_venda ?? p.venda?.id_venda,
             cliente: p.venda?.cliente?.nome ?? "",
             lote: p.venda?.lote ? `Quadra ${p.venda.lote.quadra} - Lote ${p.venda.lote.lote}` : "",
             loteamento: p.venda?.lote?.loteamento?.nome ?? "",
@@ -354,6 +362,7 @@ const Pagamentos = () => {
         .filter((p) => p.situacao === "pago")
         .map<Pagamento>((p) => ({
           id: p.id_pagamento,
+          id_venda: p.id_venda ?? p.venda?.id_venda,
           cliente: p.venda?.cliente?.nome ?? "",
           lote: p.venda?.lote ? `Quadra ${p.venda.lote.quadra} - Lote ${p.venda.lote.lote}` : "",
           loteamento: p.venda?.lote?.loteamento?.nome ?? "",
@@ -498,6 +507,27 @@ const Pagamentos = () => {
       // erro já tratado no onError
     }
   }
+
+  const excluirLoteMutation = useMutation({
+    mutationFn: async (ids: number[]) => {
+      const res = await fetch("/api/pagamentos/bulk", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({ ids }),
+      });
+      if (!res.ok) throw new Error("Erro ao excluir lançamentos");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["pagamentos-abertos"] });
+      queryClient.invalidateQueries({ queryKey: ["pagamentos-pagos"] });
+      toast({ title: `${data.deletados} lançamento(s) excluído(s) com sucesso` });
+      setConfirmarExcluirTodos(false);
+    },
+    onError: () => {
+      toast({ title: "Erro ao excluir lançamentos", variant: "destructive" });
+    },
+  });
 
   const reajusteMutation = useMutation({
     mutationFn: async ({
@@ -915,6 +945,15 @@ ${allPagesHTML}
                 <Button
                   variant="outline"
                   size="sm"
+                  className="gap-2 text-destructive border-destructive/40 hover:bg-destructive/10"
+                  onClick={() => setConfirmarExcluirTodos(true)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Excluir Lançamentos
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   className="gap-2 text-amber-700 border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/30"
                   onClick={() => { setReajusteConfirmado(false); setReajusteAplicado(false); setReajusteSuccessRange(null); setReajusteOpen(true); }}
                 >
@@ -1099,6 +1138,7 @@ ${allPagesHTML}
                     <thead>
                       <tr className="border-b border-border bg-muted/30">
                         <th className="px-5 py-3 w-10"></th>
+                        <th className="text-left px-3 py-3 font-medium text-muted-foreground">Venda</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Loteamento</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Lote</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Parcela</th>
@@ -1142,6 +1182,9 @@ ${allPagesHTML}
                                   checked={isSel}
                                   onChange={() => toggleSelecionado(pag.id)}
                                 />
+                              </td>
+                              <td className="px-3 py-3 text-muted-foreground text-xs font-mono whitespace-nowrap">
+                                {pag.id_venda ? `#${pag.id_venda}` : "—"}
                               </td>
                               <td className="px-5 py-3 text-muted-foreground text-xs">{pag.loteamento || "—"}</td>
                               <td className="px-5 py-3 text-muted-foreground">{pag.lote}</td>
@@ -1229,6 +1272,7 @@ ${allPagesHTML}
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-border bg-muted/30">
+                        <th className="text-left px-3 py-3 font-medium text-muted-foreground">Venda</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Loteamento</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Lote</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Parcela</th>
@@ -1256,6 +1300,9 @@ ${allPagesHTML}
                       ) : (
                         pagamentosPagosFiltered.map((pag) => (
                           <tr key={pag.id} className="hover:bg-muted/20 transition-colors">
+                            <td className="px-3 py-3 text-muted-foreground text-xs font-mono whitespace-nowrap">
+                              {pag.id_venda ? `#${pag.id_venda}` : "—"}
+                            </td>
                             <td className="px-5 py-3 text-muted-foreground text-xs">{pag.loteamento || "—"}</td>
                             <td className="px-5 py-3 text-muted-foreground">{pag.lote}</td>
                             <td className="px-5 py-3 text-muted-foreground">
@@ -1332,6 +1379,43 @@ ${allPagesHTML}
           </div>
         )}
       </div>
+
+      {/* ─── AlertDialog de confirmação de exclusão em lote ─── */}
+      <AlertDialog open={confirmarExcluirTodos} onOpenChange={setConfirmarExcluirTodos}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-5 w-5" />
+              Excluir todos os lançamentos
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-2">
+              <span className="block">
+                Esta ação irá excluir <strong>todos</strong> os lançamentos (abertos e pagos) de{" "}
+                <strong>{clienteSelecionado?.nome}</strong> permanentemente.
+              </span>
+              <span className="block text-destructive font-medium">
+                Esta operação não pode ser desfeita.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                const todosIds = [
+                  ...pagamentosAbertos.map((p) => p.id),
+                  ...pagamentosPagos.map((p) => p.id),
+                ];
+                if (todosIds.length > 0) excluirLoteMutation.mutate(todosIds);
+              }}
+              disabled={excluirLoteMutation.isPending}
+            >
+              {excluirLoteMutation.isPending ? "Excluindo..." : "Sim, excluir tudo"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ─── Dialog de Reajuste Anual ─── */}
       {/* ─── AlertDialog de confirmação de estorno ─── */}
