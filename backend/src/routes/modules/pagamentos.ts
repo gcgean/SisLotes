@@ -218,30 +218,28 @@ pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res)
   }
 
   const { ids } = parse.data;
-  const repo = AppDataSource.getRepository(Pagamento);
-  const logRepo = AppDataSource.getRepository(Log);
+  const idEmpresa = Number(req.user?.id_empresa ?? 0);
 
-  // Busca por IDs; filtra pela empresa do usuário para segurança multi-tenant
-  const pagamentos = await repo.findBy({ id_pagamento: In(ids) });
-  const idEmpresa = req.user?.id_empresa;
-  const pagamentosDaEmpresa = idEmpresa
-    ? pagamentos.filter((p) => Number(p.id_empresa) === Number(idEmpresa))
-    : pagamentos;
+  try {
+    const result = await AppDataSource.query(
+      `DELETE FROM pagamentos WHERE id_pagamento = ANY($1::int[]) AND id_empresa = $2`,
+      [ids, idEmpresa]
+    );
+    const deletados = result.rowCount ?? ids.length;
 
-  if (pagamentosDaEmpresa.length === 0) {
-    return res.json({ deletados: 0 });
+    const logRepo = AppDataSource.getRepository(Log);
+    await logRepo.save(logRepo.create({
+      id_usuario: req.user?.id_usuario ?? 1,
+      servico: "pagamento_bulk_delete",
+      url: "/api/pagamentos/bulk-delete",
+      log: `${deletados} pagamento(s) excluído(s): [${ids.join(",")}]`,
+    }));
+
+    return res.json({ deletados });
+  } catch (err) {
+    console.error("bulk-delete error:", err);
+    return res.status(500).json({ error: "Erro interno ao excluir lançamentos" });
   }
-
-  await repo.remove(pagamentosDaEmpresa);
-
-  await logRepo.save(logRepo.create({
-    id_usuario: req.user?.id_usuario ?? 1,
-    servico: "pagamento_bulk_delete",
-    url: "/api/pagamentos/bulk-delete",
-    log: `${pagamentosDaEmpresa.length} pagamento(s) excluído(s): [${pagamentosDaEmpresa.map(p => p.id_pagamento).join(",")}]`,
-  }));
-
-  return res.json({ deletados: pagamentosDaEmpresa.length });
 });
 
 // ─── POST /:id/estornar — Cancelar pagamento e voltar para aberto ─────────────
