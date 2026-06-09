@@ -204,6 +204,38 @@ const Pagamentos = () => {
 
   // ─── Busca de clientes (autocomplete) ────────────────────────────────────
 
+  // Detecta se é busca por número de carnê (somente dígitos, ≥ 4 chars)
+  const isCarneBusca = /^\d+$/.test(searchCliente.trim()) && searchCliente.trim().length >= 4;
+
+  // Extrai id_venda do número de documento do carnê
+  // Formato: {venda_id padded 6}{parcela padded 2} → ex: "00157801" → venda 1578
+  const idVendaBusca = isCarneBusca
+    ? (() => {
+        const s = searchCliente.trim();
+        // se 8 dígitos → remove os 2 últimos (numero parcela)
+        const part = s.length >= 8 ? s.slice(0, s.length - 2) : s;
+        return parseInt(part, 10) || null;
+      })()
+    : null;
+
+  const { data: clienteDoCarneRaw } = useQuery<ClienteApi | null>({
+    queryKey: ["venda-carne-busca", idVendaBusca],
+    queryFn: async () => {
+      if (!idVendaBusca) return null;
+      const res = await fetch(`/api/vendas/${idVendaBusca}`, { headers: getAuthHeaders() });
+      if (!res.ok) return null;
+      const venda = await res.json();
+      if (!venda?.cliente) return null;
+      return {
+        id_cliente: venda.cliente.id_cliente,
+        nome: venda.cliente.nome,
+        cpf: venda.cliente.cpf ?? null,
+      } as ClienteApi;
+    },
+    enabled: isCarneBusca && !clienteSelecionado && !!idVendaBusca,
+  });
+  const clienteDoCarne = clienteDoCarneRaw ?? null;
+
   const { data: clientes = [] } = useQuery<ClienteApi[]>({
     queryKey: ["clientes-busca", searchCliente],
     queryFn: async () => {
@@ -214,7 +246,7 @@ const Pagamentos = () => {
       const json = await res.json();
       return (json.data ?? json) as ClienteApi[];
     },
-    enabled: searchCliente.trim().length >= 2 && !clienteSelecionado,
+    enabled: !isCarneBusca && searchCliente.trim().length >= 2 && !clienteSelecionado,
   });
 
   // Fechar sugestões ao clicar fora
@@ -800,7 +832,7 @@ ${allPagesHTML}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Digite o nome do cliente..."
+                placeholder="Nome do cliente ou nº do carnê..."
                 value={searchCliente}
                 onChange={(e) => {
                   setSearchCliente(e.target.value);
@@ -821,8 +853,8 @@ ${allPagesHTML}
               )}
             </div>
 
-            {/* Sugestões */}
-            {showSugestoes && !clienteSelecionado && clientes.length > 0 && (
+            {/* Sugestões — busca por nome */}
+            {showSugestoes && !clienteSelecionado && !isCarneBusca && clientes.length > 0 && (
               <div className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
                 {clientes.map((c) => (
                   <button
@@ -837,6 +869,30 @@ ${allPagesHTML}
                     </div>
                   </button>
                 ))}
+              </div>
+            )}
+
+            {/* Sugestões — busca por número de carnê */}
+            {showSugestoes && !clienteSelecionado && isCarneBusca && (
+              <div className="absolute z-50 mt-1 w-full bg-popover border border-border rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                {clienteDoCarne ? (
+                  <button
+                    className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-muted/50 text-left transition-colors"
+                    onClick={() => selecionarCliente(clienteDoCarne)}
+                  >
+                    <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium">{clienteDoCarne.nome}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Venda #{idVendaBusca} · {clienteDoCarne.cpf ? `CPF: ${clienteDoCarne.cpf}` : ""}
+                      </p>
+                    </div>
+                  </button>
+                ) : idVendaBusca ? (
+                  <div className="px-4 py-3 text-xs text-muted-foreground">
+                    Nenhuma venda encontrada para o nº {searchCliente.trim()}
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

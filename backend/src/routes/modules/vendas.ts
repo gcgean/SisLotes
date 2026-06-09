@@ -138,7 +138,7 @@ vendasRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
 
   const venda = await repo.findOne({
     where,
-    relations: ["pagamentos"],
+    relations: ["pagamentos", "cliente", "lote", "lote.loteamento"],
   });
 
   if (!venda) {
