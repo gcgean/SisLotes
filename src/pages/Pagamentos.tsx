@@ -510,12 +510,15 @@ const Pagamentos = () => {
 
   const excluirLoteMutation = useMutation({
     mutationFn: async (ids: number[]) => {
-      const res = await fetch("/api/pagamentos/bulk", {
-        method: "DELETE",
+      const res = await fetch("/api/pagamentos/bulk-delete", {
+        method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
         body: JSON.stringify({ ids }),
       });
-      if (!res.ok) throw new Error("Erro ao excluir lançamentos");
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err?.error ?? "Erro ao excluir lançamentos");
+      }
       return res.json();
     },
     onSuccess: (data) => {

@@ -208,8 +208,8 @@ pagamentosRouter.post("/retorno", (_req, res) => {
   return res.status(200).json({ message: "Retorno processado (stub)" });
 });
 
-// ─── DELETE /bulk — Excluir múltiplos pagamentos ──────────────────────────────
-pagamentosRouter.delete("/bulk", requireAuth, async (req: AuthRequest, res) => {
+// ─── POST /bulk-delete — Excluir múltiplos pagamentos ────────────────────────
+pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res) => {
   const schema = z.object({ ids: z.array(z.number().int().positive()).min(1) });
   const parse = schema.safeParse(req.body);
   if (!parse.success) {
