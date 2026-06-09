@@ -845,9 +845,14 @@ const Vendas = () => {
   }
 
   function abrirCarneRange(modo: "venda" | "detalhe") {
-    const total = modo === "venda"
-      ? (vendaCriada?.pagamentos?.length ?? 0)
-      : (vendaDetalhe?.pagamentos?.length ?? 0);
+    const pagamentos = modo === "venda"
+      ? (vendaCriada?.pagamentos ?? [])
+      : (vendaDetalhe?.pagamentos ?? []);
+    // Conta apenas parcelas regulares (exclui entrada)
+    const regulares = pagamentos.filter((p) => p.tipo !== "entrada" && p.numero_parcela > 0);
+    const total = regulares.length > 0
+      ? Math.max(...regulares.map((p) => p.numero_parcela))
+      : 0;
     setCarneModo(modo);
     setCarneTotalParcelas(total);
     setCarneDe(1);
@@ -884,9 +889,13 @@ const Vendas = () => {
     const jurosPct = Number(vendaCriada.porcentagem) || 1;
     const instrucoes = `Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.`;
 
-    const todasParcelas = [...(vendaCriada.pagamentos ?? [])].sort((a, b) => a.numero_parcela - b.numero_parcela);
+    const todasParcelas = [...(vendaCriada.pagamentos ?? [])]
+      .filter((p) => p.tipo !== "entrada" && p.numero_parcela > 0)
+      .sort((a, b) => a.numero_parcela - b.numero_parcela);
     const parcelas = todasParcelas.filter((p) => p.numero_parcela >= de && p.numero_parcela <= ate);
-    const totalParcelas = todasParcelas.length;
+    const totalParcelas = todasParcelas.length > 0
+      ? Math.max(...todasParcelas.map((p) => p.numero_parcela))
+      : 0;
 
     function buildCarne(p: typeof parcelas[0], via: string): string {
       const docNum = `${String(vendaCriada!.id_venda).padStart(6, "0")}${String(p.numero_parcela).padStart(2, "0")}`;
@@ -1059,12 +1068,15 @@ const Vendas = () => {
     const loteamentoNome = vendaDetalheInfo.loteamento;
     const quadraNum = vendaDetalhe.lote?.quadra ?? "";
     const loteNum = vendaDetalhe.lote?.lote ?? "";
-    const totalParcelas = vendaDetalhe.pagamentos.length;
-
     const jurosPct = Number(vendaDetalheInfo.porcentagem) || 1;
     const instrucoes = `Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.`;
 
-    const todasParcelas = [...vendaDetalhe.pagamentos].sort((a, b) => a.numero_parcela - b.numero_parcela);
+    const todasParcelas = [...vendaDetalhe.pagamentos]
+      .filter((p) => p.tipo !== "entrada" && p.numero_parcela > 0)
+      .sort((a, b) => a.numero_parcela - b.numero_parcela);
+    const totalParcelas = todasParcelas.length > 0
+      ? Math.max(...todasParcelas.map((p) => p.numero_parcela))
+      : 0;
     const parcelas = todasParcelas.filter((p) => p.numero_parcela >= de && p.numero_parcela <= ate);
 
     function buildCarne(p: typeof parcelas[0], via: string): string {
