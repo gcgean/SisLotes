@@ -183,6 +183,7 @@ const Pagamentos = () => {
   const [baixaDispensarMulta, setBaixaDispensarMulta] = useState(false);
   const [baixaDispensarJuros, setBaixaDispensarJuros] = useState(false);
   const [baixaDesconto, setBaixaDesconto] = useState("");
+  const [baixaDescontoTipo, setBaixaDescontoTipo] = useState<"valor" | "percentual">("valor");
   const [baixaContaId, setBaixaContaId] = useState("");
 
   // ── Dialog de recibo (reimprimir do histórico) ──
@@ -459,6 +460,7 @@ const Pagamentos = () => {
     setBaixaDispensarMulta(false);
     setBaixaDispensarJuros(false);
     setBaixaDesconto("");
+    setBaixaDescontoTipo("valor");
     setBaixaOpen(true);
   }
 
@@ -471,7 +473,15 @@ const Pagamentos = () => {
 
     const contaSelecionada = contasBancarias.find((c) => String(c.id_conta) === baixaContaId) ?? null;
     const parcSelecionadas = pagamentosAbertosFiltered.filter((p) => selecionados.has(p.id));
-    const descontoVal = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
+    const descontoRaw = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
+    const totalBaixaConf = parcSelecionadas.reduce((acc, p) => {
+      const dias = getDiasAtraso(p.vencimento);
+      const enc = calcularEncargos(p.valor, dias, encargosConfig);
+      return acc + p.valor + (baixaDispensarMulta ? 0 : enc.multa) + (baixaDispensarJuros ? 0 : enc.juros);
+    }, 0);
+    const descontoVal = baixaDescontoTipo === "percentual"
+      ? totalBaixaConf * (Math.min(descontoRaw, 100) / 100)
+      : descontoRaw;
 
     try {
       for (const parc of parcSelecionadas) {
@@ -1798,7 +1808,6 @@ ${allPagesHTML}
           </DialogHeader>
 
           {(() => {
-            const descontoVal = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
             const totalBaixa = parcSelecionadas.reduce((acc, p) => {
               const dias = getDiasAtraso(p.vencimento);
               const enc = calcularEncargos(p.valor, dias, encargosConfig);
@@ -1806,6 +1815,10 @@ ${allPagesHTML}
               const jurosF = baixaDispensarJuros ? 0 : enc.juros;
               return acc + p.valor + multaF + jurosF;
             }, 0);
+            const descontoRaw = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
+            const descontoVal = baixaDescontoTipo === "percentual"
+              ? totalBaixa * (Math.min(descontoRaw, 100) / 100)
+              : descontoRaw;
             const totalFinal = Math.max(0, totalBaixa - descontoVal);
             const temAtraso = parcSelecionadas.some(p => getDiasAtraso(p.vencimento) > encargosConfig.carencia_dias);
 
@@ -1886,14 +1899,33 @@ ${allPagesHTML}
 
                 {/* Desconto */}
                 <div className="flex items-center gap-3">
-                  <Label className="text-xs whitespace-nowrap">Desconto (R$)</Label>
-                  <Input
-                    type="number" min="0" step="0.01"
-                    value={baixaDesconto}
-                    onChange={(e) => setBaixaDesconto(e.target.value)}
-                    placeholder="0,00"
-                    className="h-8"
-                  />
+                  <Label className="text-xs whitespace-nowrap">Desconto</Label>
+                  <div className="flex flex-1 gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={baixaDescontoTipo === "valor" ? "default" : "outline"}
+                      className="h-8 px-2 text-xs"
+                      onClick={() => { setBaixaDescontoTipo("valor"); setBaixaDesconto(""); }}
+                    >R$</Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={baixaDescontoTipo === "percentual" ? "default" : "outline"}
+                      className="h-8 px-2 text-xs"
+                      onClick={() => { setBaixaDescontoTipo("percentual"); setBaixaDesconto(""); }}
+                    >%</Button>
+                    <Input
+                      type="number"
+                      min="0"
+                      step={baixaDescontoTipo === "percentual" ? "0.1" : "0.01"}
+                      max={baixaDescontoTipo === "percentual" ? "100" : undefined}
+                      value={baixaDesconto}
+                      onChange={(e) => setBaixaDesconto(e.target.value)}
+                      placeholder={baixaDescontoTipo === "percentual" ? "0%" : "0,00"}
+                      className="h-8"
+                    />
+                  </div>
                 </div>
 
                 {/* Total */}
