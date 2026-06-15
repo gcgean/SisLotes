@@ -200,7 +200,12 @@ const Pagamentos = () => {
   const [reajusteDe, setReajusteDe] = useState<number>(1);
   const [reajusteAte, setReajusteAte] = useState<number>(9999);
   const [reajusteAplicado, setReajusteAplicado] = useState(false);
-  const [reajusteSuccessRange, setReajusteSuccessRange] = useState<{ de: number; ate: number; total: number; percentual: string } | null>(null);
+  const [reajusteSuccessRange, setReajusteSuccessRange] = useState<{ de: number; ate: number; total: number; percentual: string; label?: string } | null>(null);
+  const [reajusteIntervalTipo, setReajusteIntervalTipo] = useState<"parcela" | "data">("parcela");
+  const [reajusteDataDe, setReajusteDataDe] = useState("");
+  const [reajusteDataAte, setReajusteDataAte] = useState("");
+  const [reajusteEscopo, setReajusteEscopo] = useState<"cliente" | "loteamento" | "todos">("cliente");
+  const [reajusteLoteamentoId, setReajusteLoteamentoId] = useState<number | null>(null);
 
   // ── Impressão de carnê geral ──
   const [carneOpen, setCarneOpen] = useState(false);
@@ -548,15 +553,29 @@ const Pagamentos = () => {
       percentual,
       parcela_de,
       parcela_ate,
+      data_de,
+      data_ate,
+      escopo,
+      id_loteamento,
     }: {
-      id_cliente: number;
+      id_cliente?: number;
       percentual: number;
       parcela_de: number;
       parcela_ate: number;
+      data_de?: string;
+      data_ate?: string;
+      escopo: "cliente" | "loteamento" | "todos";
+      id_loteamento?: number;
     }) => {
-      const body: Record<string, unknown> = { id_cliente, percentual };
-      if (parcela_de > 1) body.parcela_de = parcela_de;
-      if (parcela_ate < 9999) body.parcela_ate = parcela_ate;
+      const body: Record<string, unknown> = { percentual, escopo };
+      if (id_cliente) body.id_cliente = id_cliente;
+      if (id_loteamento) body.id_loteamento = id_loteamento;
+      if (data_de) body.data_de = data_de;
+      if (data_ate) body.data_ate = data_ate;
+      if (!data_de && !data_ate) {
+        if (parcela_de > 1) body.parcela_de = parcela_de;
+        if (parcela_ate < 9999) body.parcela_ate = parcela_ate;
+      }
       const res = await fetch("/api/pagamentos/reajuste", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -569,12 +588,14 @@ const Pagamentos = () => {
       return res.json() as Promise<{ total_parcelas: number; percentual: number; mensagem: string }>;
     },
     onSuccess: (data) => {
-      // Refetch imediato para pegar os novos valores no carnê
       queryClient.invalidateQueries({ queryKey: ["pagamentos-abertos"] });
       queryClient.refetchQueries({ queryKey: ["pagamentos-abertos", clienteSelecionado?.id_cliente] });
       setReajusteConfirmado(false);
       setReajusteAplicado(true);
-      setReajusteSuccessRange({ de: reajusteDe, ate: reajusteAte, total: data.total_parcelas, percentual: reajustePercentual });
+      const successLabel = reajusteIntervalTipo === "data" && (reajusteDataDe || reajusteDataAte)
+        ? `vencimento ${reajusteDataDe || "início"}${reajusteDataAte ? ` a ${reajusteDataAte}` : " em diante"}`
+        : undefined;
+      setReajusteSuccessRange({ de: reajusteDe, ate: reajusteAte, total: data.total_parcelas, percentual: reajustePercentual, label: successLabel });
       setReajustePercentual("5");
       toast({ title: "Reajuste aplicado!", description: data.mensagem });
     },
@@ -634,6 +655,11 @@ const Pagamentos = () => {
     setReajusteDe(1);
     setReajusteAte(9999);
     setReajusteSuccessRange(null);
+    setReajusteIntervalTipo("parcela");
+    setReajusteDataDe("");
+    setReajusteDataAte("");
+    setReajusteEscopo("cliente");
+    setReajusteLoteamentoId(null);
   }
 
   // ─── Impressão de carnê (geral e reajustado) ─────────────────────────────
@@ -836,9 +862,28 @@ ${allPagesHTML}
     return { ano, de, ate, count };
   }).filter((a) => a.count > 0);
 
-  const parcelasNoReajusteRange = parcelasAbertasSemEntrada.filter(
-    (p) => p.numero_parcela >= reajusteDe && p.numero_parcela <= reajusteAte
-  );
+  // Loteamentos distintos das parcelas abertas do cliente atual
+  const loteamentosDoCliente = (() => {
+    const seen = new Map<number, string>();
+    pagamentosAbertos.forEach((p) => {
+      const lot = p.venda?.lote?.loteamento;
+      if (lot) seen.set(lot.id_loteamento, lot.nome);
+    });
+    return Array.from(seen.entries()).map(([id, nome]) => ({ id, nome }));
+  })();
+
+  const parcelasNoReajusteRange = reajusteIntervalTipo === "data"
+    ? parcelasAbertasSemEntrada.filter((p) => {
+        const v = p.vencimento;
+        const de = reajusteDataDe ? toIsoDateFromBR(reajusteDataDe) : null;
+        const ate = reajusteDataAte ? toIsoDateFromBR(reajusteDataAte) : null;
+        if (de && v < de) return false;
+        if (ate && v > ate) return false;
+        return true;
+      })
+    : parcelasAbertasSemEntrada.filter(
+        (p) => p.numero_parcela >= reajusteDe && p.numero_parcela <= reajusteAte
+      );
   const parcelasNoCarneRange = parcelasAbertasSemEntrada.filter(
     (p) => p.numero_parcela >= carneDe && p.numero_parcela <= carneAte
   );
@@ -1572,11 +1617,13 @@ ${allPagesHTML}
                   <p className="font-semibold text-green-800 dark:text-green-300 text-base">Reajuste aplicado com sucesso!</p>
                   <p className="text-sm text-green-700 dark:text-green-400 mt-1">
                     {reajusteSuccessRange.total} parcela(s) reajustadas
-                    {reajusteSuccessRange.ate < 9999
-                      ? ` (parcelas ${reajusteSuccessRange.de} a ${reajusteSuccessRange.ate})`
-                      : reajusteSuccessRange.de > 1
-                        ? ` (a partir da parcela ${reajusteSuccessRange.de})`
-                        : " (todas as parcelas em aberto)"}
+                    {reajusteSuccessRange.label
+                      ? ` (${reajusteSuccessRange.label})`
+                      : reajusteSuccessRange.ate < 9999
+                        ? ` (parcelas ${reajusteSuccessRange.de} a ${reajusteSuccessRange.ate})`
+                        : reajusteSuccessRange.de > 1
+                          ? ` (a partir da parcela ${reajusteSuccessRange.de})`
+                          : " (todas as parcelas em aberto)"}
                     {" "}em <strong>+{reajusteSuccessRange.percentual}%</strong>.
                   </p>
                 </div>
@@ -1609,71 +1656,136 @@ ${allPagesHTML}
                   </div>
                 </div>
 
-                {/* Intervalo de parcelas por ano */}
+                {/* ── Tipo de Intervalo ── */}
                 <div>
                   <Label className="text-sm font-medium">Intervalo de parcelas</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-                    Selecione o ano do carnê ou defina um intervalo manual
-                  </p>
-                  {/* Botões de atalho por ano */}
-                  <div className="flex flex-wrap gap-1.5 mb-3">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={reajusteDe === 1 && reajusteAte === 9999 ? "default" : "outline"}
+                  <div className="flex gap-1.5 mt-1.5 mb-3">
+                    <Button type="button" size="sm"
+                      variant={reajusteIntervalTipo === "parcela" ? "default" : "outline"}
                       className="text-xs h-7 px-3"
-                      onClick={() => { setReajusteDe(1); setReajusteAte(9999); setReajusteConfirmado(false); }}
+                      onClick={() => { setReajusteIntervalTipo("parcela"); setReajusteConfirmado(false); }}
                     >
-                      Todos ({parcelasAbertasSemEntrada.length})
+                      Por número de parcela
                     </Button>
-                    {anosDisponiveis.map(({ ano, de, ate, count }) => (
+                    <Button type="button" size="sm"
+                      variant={reajusteIntervalTipo === "data" ? "default" : "outline"}
+                      className="text-xs h-7 px-3"
+                      onClick={() => { setReajusteIntervalTipo("data"); setReajusteConfirmado(false); }}
+                    >
+                      Por data de vencimento
+                    </Button>
+                  </div>
+
+                  {reajusteIntervalTipo === "parcela" ? (
+                    <>
+                      {/* Botões de atalho por ano */}
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        <Button
+                          type="button" size="sm"
+                          variant={reajusteDe === 1 && reajusteAte === 9999 ? "default" : "outline"}
+                          className="text-xs h-7 px-3"
+                          onClick={() => { setReajusteDe(1); setReajusteAte(9999); setReajusteConfirmado(false); }}
+                        >
+                          Todos ({parcelasAbertasSemEntrada.length})
+                        </Button>
+                        {anosDisponiveis.map(({ ano, de, ate, count }) => (
+                          <Button
+                            key={ano} type="button" size="sm"
+                            variant={reajusteDe === de && reajusteAte === ate ? "default" : "outline"}
+                            className={cn(
+                              "text-xs h-7 px-3",
+                              reajusteDe === de && reajusteAte === ate
+                                ? "bg-amber-600 hover:bg-amber-700 border-amber-600"
+                                : "border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
+                            )}
+                            onClick={() => { setReajusteDe(de); setReajusteAte(ate); setReajusteConfirmado(false); }}
+                          >
+                            Ano {ano} ({count})
+                          </Button>
+                        ))}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground whitespace-nowrap">Da parcela</Label>
+                        <Input type="number" min="1" max="9999"
+                          value={reajusteDe}
+                          onChange={(e) => { setReajusteDe(Math.max(1, Number(e.target.value))); setReajusteConfirmado(false); }}
+                          className="w-20 h-7 text-xs"
+                        />
+                        <span className="text-muted-foreground text-xs">até</span>
+                        <Input type="number" min="1" max="9999"
+                          value={reajusteAte >= 9999 ? "" : reajusteAte}
+                          placeholder="fim"
+                          onChange={(e) => { setReajusteAte(e.target.value ? Number(e.target.value) : 9999); setReajusteConfirmado(false); }}
+                          className="w-20 h-7 text-xs"
+                        />
+                        <Label className="text-xs text-muted-foreground whitespace-nowrap">(vazio = sem limite)</Label>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-muted-foreground whitespace-nowrap">De</Label>
+                      <Input
+                        placeholder="dd/mm/aaaa"
+                        value={reajusteDataDe}
+                        onChange={(e) => { setReajusteDataDe(e.target.value); setReajusteConfirmado(false); }}
+                        className="w-32 h-7 text-xs"
+                      />
+                      <span className="text-muted-foreground text-xs">até</span>
+                      <Input
+                        placeholder="dd/mm/aaaa"
+                        value={reajusteDataAte}
+                        onChange={(e) => { setReajusteDataAte(e.target.value); setReajusteConfirmado(false); }}
+                        className="w-32 h-7 text-xs"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* ── Escopo de clientes ── */}
+                <div>
+                  <Label className="text-sm font-medium">Aplicar para</Label>
+                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                    {(["cliente", "loteamento", "todos"] as const).map((e) => (
                       <Button
-                        key={ano}
-                        type="button"
-                        size="sm"
-                        variant={reajusteDe === de && reajusteAte === ate ? "default" : "outline"}
-                        className={cn(
-                          "text-xs h-7 px-3",
-                          reajusteDe === de && reajusteAte === ate
-                            ? "bg-amber-600 hover:bg-amber-700 border-amber-600"
-                            : "border-amber-300 text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30"
-                        )}
-                        onClick={() => { setReajusteDe(de); setReajusteAte(ate); setReajusteConfirmado(false); }}
+                        key={e} type="button" size="sm"
+                        variant={reajusteEscopo === e ? "default" : "outline"}
+                        className="text-xs h-7 px-3"
+                        onClick={() => { setReajusteEscopo(e); setReajusteConfirmado(false); }}
                       >
-                        Ano {ano} ({count})
+                        {e === "cliente" ? "Este cliente" : e === "loteamento" ? "Este loteamento" : "Todos os clientes"}
                       </Button>
                     ))}
                   </div>
-                  {/* Inputs manuais */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5">
-                      <Label className="text-xs text-muted-foreground whitespace-nowrap">Da parcela</Label>
-                      <Input
-                        type="number"
-                        min="1"
-                        max="9999"
-                        value={reajusteDe}
-                        onChange={(e) => { setReajusteDe(Math.max(1, Number(e.target.value))); setReajusteConfirmado(false); }}
-                        className="w-20 h-7 text-xs"
-                      />
+                  {reajusteEscopo === "loteamento" && loteamentosDoCliente.length > 1 && (
+                    <div className="mt-2">
+                      <Select
+                        value={reajusteLoteamentoId ? String(reajusteLoteamentoId) : ""}
+                        onValueChange={(v) => { setReajusteLoteamentoId(Number(v)); setReajusteConfirmado(false); }}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecione o loteamento" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {loteamentosDoCliente.map((lot) => (
+                            <SelectItem key={lot.id} value={String(lot.id)}>{lot.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                    <span className="text-muted-foreground text-xs">até</span>
-                    <div className="flex items-center gap-1.5">
-                      <Input
-                        type="number"
-                        min="1"
-                        max="9999"
-                        value={reajusteAte >= 9999 ? "" : reajusteAte}
-                        placeholder="fim"
-                        onChange={(e) => { setReajusteAte(e.target.value ? Number(e.target.value) : 9999); setReajusteConfirmado(false); }}
-                        className="w-20 h-7 text-xs"
-                      />
-                      <Label className="text-xs text-muted-foreground whitespace-nowrap">(vazio = sem limite)</Label>
-                    </div>
-                  </div>
+                  )}
+                  {reajusteEscopo === "loteamento" && loteamentosDoCliente.length === 1 && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Loteamento: <strong>{loteamentosDoCliente[0].nome}</strong>
+                    </p>
+                  )}
+                  {reajusteEscopo !== "cliente" && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">
+                      A prévia abaixo considera apenas as parcelas do cliente selecionado.
+                    </p>
+                  )}
                 </div>
 
-                {/* Percentual */}
+                {/* ── Percentual ── */}
                 <div>
                   <Label htmlFor="reajuste-pct" className="text-sm font-medium">
                     Percentual de Reajuste (%)
@@ -1709,11 +1821,13 @@ ${allPagesHTML}
                     <div className="flex justify-between text-amber-700 dark:text-amber-400">
                       <span>
                         Intervalo:{" "}
-                        {reajusteDe === 1 && reajusteAte === 9999
-                          ? "todas as parcelas"
-                          : reajusteAte === 9999
-                          ? `parcela ${reajusteDe} em diante`
-                          : `parcelas ${reajusteDe} a ${reajusteAte}`}
+                        {reajusteIntervalTipo === "data"
+                          ? `vencimento ${reajusteDataDe || "início"}${reajusteDataAte ? ` a ${reajusteDataAte}` : " em diante"}`
+                          : reajusteDe === 1 && reajusteAte === 9999
+                            ? "todas as parcelas"
+                            : reajusteAte === 9999
+                              ? `parcela ${reajusteDe} em diante`
+                              : `parcelas ${reajusteDe} a ${reajusteAte}`}
                       </span>
                       <span className="font-medium">{parcelasNoReajusteRange.length} parcelas</span>
                     </div>
@@ -1760,26 +1874,39 @@ ${allPagesHTML}
                 {!reajusteConfirmado ? (
                   <Button
                     variant="destructive"
-                    onClick={() => setReajusteConfirmado(true)}
+                    onClick={() => {
+                      if (reajusteEscopo === "loteamento" && loteamentosDoCliente.length === 1 && !reajusteLoteamentoId) {
+                        setReajusteLoteamentoId(loteamentosDoCliente[0].id);
+                      }
+                      setReajusteConfirmado(true);
+                    }}
                     disabled={
                       !Number(reajustePercentual) ||
                       Number(reajustePercentual) <= 0 ||
-                      parcelasNoReajusteRange.length === 0
+                      (reajusteEscopo === "cliente" && parcelasNoReajusteRange.length === 0) ||
+                      (reajusteEscopo === "loteamento" && loteamentosDoCliente.length > 1 && !reajusteLoteamentoId)
                     }
                   >
                     Confirmar Reajuste
-                    {parcelasNoReajusteRange.length > 0 && ` (${parcelasNoReajusteRange.length} parcelas)`}
+                    {reajusteEscopo === "cliente" && parcelasNoReajusteRange.length > 0 && ` (${parcelasNoReajusteRange.length} parcelas)`}
                   </Button>
                 ) : (
                   <Button
                     className="bg-amber-600 hover:bg-amber-700 gap-2"
                     onClick={() => {
-                      if (!clienteSelecionado) return;
+                      const dataDe = reajusteIntervalTipo === "data" && reajusteDataDe ? toIsoDateFromBR(reajusteDataDe) : undefined;
+                      const dataAte = reajusteIntervalTipo === "data" && reajusteDataAte ? toIsoDateFromBR(reajusteDataAte) : undefined;
                       reajusteMutation.mutate({
-                        id_cliente: clienteSelecionado.id_cliente,
+                        id_cliente: reajusteEscopo === "cliente" ? clienteSelecionado?.id_cliente : undefined,
                         percentual: Number(reajustePercentual),
                         parcela_de: reajusteDe,
                         parcela_ate: reajusteAte,
+                        data_de: dataDe ?? undefined,
+                        data_ate: dataAte ?? undefined,
+                        escopo: reajusteEscopo,
+                        id_loteamento: reajusteEscopo === "loteamento"
+                          ? (reajusteLoteamentoId ?? loteamentosDoCliente[0]?.id ?? undefined)
+                          : undefined,
                       });
                     }}
                     disabled={reajusteMutation.isPending}

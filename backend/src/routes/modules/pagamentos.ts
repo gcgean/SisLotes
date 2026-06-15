@@ -277,11 +277,18 @@ pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res
 // ─── POST /reajuste — Reajuste percentual em parcelas em aberto ───────────────
 pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) => {
   const schema = z.object({
-    id_cliente: z.number().int().positive(),
+    id_cliente: z.number().int().positive().optional(),
     percentual: z.number().positive().max(100),
     id_venda: z.number().int().positive().optional(),
-    parcela_de: z.number().int().min(0).optional(), // número da parcela inicial (inclusive)
-    parcela_ate: z.number().int().min(0).optional(), // número da parcela final (inclusive)
+    // intervalo por número de parcela
+    parcela_de: z.number().int().min(0).optional(),
+    parcela_ate: z.number().int().min(0).optional(),
+    // intervalo por data de vencimento (YYYY-MM-DD)
+    data_de: z.string().optional(),
+    data_ate: z.string().optional(),
+    // escopo de clientes
+    escopo: z.enum(["cliente", "loteamento", "todos"]).default("cliente"),
+    id_loteamento: z.number().int().positive().optional(),
   });
 
   const parse = schema.safeParse(req.body);
@@ -289,22 +296,36 @@ pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) =>
     return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
   }
 
-  const { id_cliente, percentual, id_venda, parcela_de, parcela_ate } = parse.data;
+  const { id_cliente, percentual, id_venda, parcela_de, parcela_ate, data_de, data_ate, escopo, id_loteamento } = parse.data;
   const id_empresa = req.user?.id_empresa;
 
   if (!id_empresa) {
     return res.status(400).json({ error: "Empresa não definida" });
   }
+  if (escopo === "cliente" && !id_cliente) {
+    return res.status(400).json({ error: "id_cliente obrigatório para escopo 'cliente'" });
+  }
+  if (escopo === "loteamento" && !id_loteamento) {
+    return res.status(400).json({ error: "id_loteamento obrigatório para escopo 'loteamento'" });
+  }
 
   const repo = AppDataSource.getRepository(Pagamento);
 
-  // Busca parcelas em aberto do cliente (filtra por empresa para segurança)
   const qb = repo
     .createQueryBuilder("p")
     .leftJoin("p.venda", "v")
+    .leftJoin("v.lote", "lot")
+    .leftJoin("lot.loteamento", "loteamento")
     .where("p.id_empresa = :id_empresa", { id_empresa })
     .andWhere("p.situacao = 'aberto'")
-    .andWhere("v.id_cliente = :id_cliente", { id_cliente });
+    .andWhere("p.tipo != 'entrada'");
+
+  if (escopo === "cliente") {
+    qb.andWhere("v.id_cliente = :id_cliente", { id_cliente });
+  } else if (escopo === "loteamento") {
+    qb.andWhere("loteamento.id_loteamento = :id_loteamento", { id_loteamento });
+  }
+  // escopo "todos" → sem filtro de cliente/loteamento
 
   if (id_venda) {
     qb.andWhere("p.id_venda = :id_venda", { id_venda });
@@ -316,6 +337,14 @@ pagamentosRouter.post("/reajuste", requireAuth, async (req: AuthRequest, res) =>
   }
   if (typeof parcela_ate === "number") {
     qb.andWhere("p.numero_parcela <= :parcela_ate", { parcela_ate });
+  }
+
+  // Filtro por data de vencimento
+  if (data_de) {
+    qb.andWhere("p.vencimento >= :data_de", { data_de });
+  }
+  if (data_ate) {
+    qb.andWhere("p.vencimento <= :data_ate", { data_ate });
   }
 
   const parcelas = await qb.getMany();

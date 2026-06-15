@@ -203,6 +203,8 @@ const Vendas = () => {
 
   // ── contrato dialog
   const [contratoDialogAberto, setContratoDialogAberto] = useState(false);
+  // quando o documento foi aberto a partir do dialog de detalhe, volta para ele ao fechar
+  const [voltarDetalheAposDoc, setVoltarDetalheAposDoc] = useState(false);
 
   // ── editar vencimento de parcela
   const [vencimentoEditando, setVencimentoEditando] = useState<number | null>(null); // id_pagamento
@@ -839,6 +841,7 @@ const Vendas = () => {
     setVendaCriadaCliente({ id: vendaDetalhe.id_cliente, nome: vendaDetalheInfo.cliente });
     setVendaCriada(vendaDetalhe);
     setDialogDetalheAberto(false);
+    setVoltarDetalheAposDoc(true);
     setContratoDialogAberto(true);
     const ev = evento ?? (usarTimbrado ? null : "abrir-contrato-sem-timbrado");
     if (ev) setTimeout(() => window.dispatchEvent(new CustomEvent(ev)), 150);
@@ -1917,25 +1920,25 @@ const Vendas = () => {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <Button type="button" variant="outline" className="gap-2 justify-start"
+                <Button type="button" variant="outline" className="gap-2 justify-start h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => { setContratoDialogAberto(true); if (!usarTimbradoVenda) setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-contrato-sem-timbrado")), 100); }}>
-                  <FileText className="h-4 w-4" /> Contrato
+                  <FileText className="h-4 w-4 shrink-0" /> Contrato
                 </Button>
-                <Button type="button" variant="outline" className="gap-2 justify-start"
+                <Button type="button" variant="outline" className="gap-2 justify-start h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => { setContratoDialogAberto(true); if (!usarTimbradoVenda) setTimeout(() => window.dispatchEvent(new CustomEvent("abrir-contrato-sem-timbrado")), 100); }}>
-                  <FileCheck className="h-4 w-4" /> Contrato À Vista
+                  <FileCheck className="h-4 w-4 shrink-0" /> Contrato À Vista
                 </Button>
-                <Button type="button" variant="outline" className="gap-2 justify-start"
+                <Button type="button" variant="outline" className="gap-2 justify-start h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => { setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbradoVenda ? "abrir-recibo-quitacao" : "abrir-recibo-sem-timbrado")), 100); }}>
-                  <Receipt className="h-4 w-4" /> Recibo de Quitação
+                  <Receipt className="h-4 w-4 shrink-0" /> Recibo de Quitação
                 </Button>
-                <Button type="button" variant="outline" className="gap-2 justify-start"
+                <Button type="button" variant="outline" className="gap-2 justify-start h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => { setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbradoVenda ? "abrir-minuta" : "abrir-minuta-sem-timbrado")), 100); }}>
-                  <FileSignature className="h-4 w-4" /> Minuta
+                  <FileSignature className="h-4 w-4 shrink-0" /> Minuta
                 </Button>
-                <Button type="button" variant="outline" className="gap-2 justify-start col-span-2"
+                <Button type="button" variant="outline" className="gap-2 justify-start col-span-2 h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => { setContratoDialogAberto(true); setTimeout(() => window.dispatchEvent(new CustomEvent(usarTimbradoVenda ? "abrir-termo-transferencia" : "abrir-termo-sem-timbrado")), 100); }}>
-                  <ArrowRightLeft className="h-4 w-4" /> Termo de Transferência
+                  <ArrowRightLeft className="h-4 w-4 shrink-0" /> Termo de Transferência
                 </Button>
               </div>
             </div>
@@ -2087,25 +2090,25 @@ const Vendas = () => {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <Button type="button" variant="outline" className="gap-2 justify-start"
+                <Button type="button" variant="outline" className="gap-2 justify-start h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => abrirDocumentoDetalhe(usarTimbradoDetalhe ? null : "abrir-contrato-sem-timbrado", usarTimbradoDetalhe)}>
-                  <FileText className="h-4 w-4" /> Contrato
+                  <FileText className="h-4 w-4 shrink-0" /> Contrato
                 </Button>
-                <Button type="button" variant="outline" className="gap-2 justify-start"
+                <Button type="button" variant="outline" className="gap-2 justify-start h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => abrirDocumentoDetalhe(usarTimbradoDetalhe ? null : "abrir-contrato-sem-timbrado", usarTimbradoDetalhe)}>
-                  <FileCheck className="h-4 w-4" /> Contrato À Vista
+                  <FileCheck className="h-4 w-4 shrink-0" /> Contrato À Vista
                 </Button>
-                <Button type="button" variant="outline" className="gap-2 justify-start"
+                <Button type="button" variant="outline" className="gap-2 justify-start h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => abrirDocumentoDetalhe(usarTimbradoDetalhe ? "abrir-recibo-quitacao" : "abrir-recibo-sem-timbrado", usarTimbradoDetalhe)}>
-                  <Receipt className="h-4 w-4" /> Recibo de Quitação
+                  <Receipt className="h-4 w-4 shrink-0" /> Recibo de Quitação
                 </Button>
-                <Button type="button" variant="outline" className="gap-2 justify-start"
+                <Button type="button" variant="outline" className="gap-2 justify-start h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => abrirDocumentoDetalhe(usarTimbradoDetalhe ? "abrir-minuta" : "abrir-minuta-sem-timbrado", usarTimbradoDetalhe)}>
-                  <FileSignature className="h-4 w-4" /> Minuta
+                  <FileSignature className="h-4 w-4 shrink-0" /> Minuta
                 </Button>
-                <Button type="button" variant="outline" className="gap-2 justify-start col-span-2"
+                <Button type="button" variant="outline" className="gap-2 justify-start col-span-2 h-auto min-h-9 py-2 whitespace-normal text-left text-sm"
                   onClick={() => abrirDocumentoDetalhe(usarTimbradoDetalhe ? "abrir-termo-transferencia" : "abrir-termo-sem-timbrado", usarTimbradoDetalhe)}>
-                  <ArrowRightLeft className="h-4 w-4" /> Termo de Transferência
+                  <ArrowRightLeft className="h-4 w-4 shrink-0" /> Termo de Transferência
                 </Button>
               </div>
             </div>
@@ -2822,7 +2825,13 @@ const Vendas = () => {
       {contratoDialogAberto && vendaCriadaCliente && (
         <ContratoDialog
           open={contratoDialogAberto}
-          onClose={() => setContratoDialogAberto(false)}
+          onClose={() => {
+            setContratoDialogAberto(false);
+            if (voltarDetalheAposDoc) {
+              setVoltarDetalheAposDoc(false);
+              setDialogDetalheAberto(true);
+            }
+          }}
           idCliente={vendaCriadaCliente.id}
           nomeCliente={vendaCriadaCliente.nome}
           idVenda={vendaCriada?.id_venda}
