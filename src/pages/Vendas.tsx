@@ -90,6 +90,7 @@ interface Pagamento {
   valor_pago: string | null;
   multa: string;
   juros: string;
+  reajustado?: boolean;
 }
 
 interface VendaDetalhe {
@@ -863,34 +864,131 @@ const Vendas = () => {
     setCarneRangeAberto(true);
   }
 
-  function imprimirCarne(de = 1, ate = Infinity) {
-    if (!vendaCriada) return;
-    const win = window.open("", "", "width=900,height=700");
+  // ── Gerador padrão de carnê (mesmo layout da tela de Pagamentos) ──
+  function gerarHTMLCarnePadrao(opts: {
+    idVenda: number;
+    nomeCliente: string;
+    loteamentoNome: string;
+    loteLabel: string;
+    parcelas: Pagamento[];
+    totalParcelas: number;
+  }) {
+    const win = window.open("", "_blank", "width=900,height=700");
     if (!win) {
-      toast({ title: "Bloqueador de pop-ups ativado", variant: "destructive" });
+      toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
       return;
     }
 
-    const nomeEmpresa = empresaConfig?.nome_fantasia || "EMPRESA";
-    const telefone = empresaConfig?.telefone || "";
-    const enderecoEmpresa = [
-      empresaConfig?.endereco,
-      empresaConfig?.bairro,
-      [empresaConfig?.cidade, empresaConfig?.estado].filter(Boolean).join(" - "),
-    ].filter(Boolean).join(", ");
-    const cnpjEmpresa = empresaConfig?.cnpj || "";
+    const emp = empresaConfig;
+    const { idVenda, nomeCliente, loteamentoNome, loteLabel, parcelas, totalParcelas } = opts;
 
-    const clienteNome = vendaCriada.cliente?.nome || "indefinido";
-    const quadraNum = vendaCriada.lote?.quadra ?? "";
-    const loteNum = vendaCriada.lote?.lote ?? "";
-    const loteamentoNome = vendaCriada.lote?.loteamento?.nome || "indefinido";
-    const loteamentoCidade = [
-      vendaCriada.lote?.loteamento?.cidade,
-      vendaCriada.lote?.loteamento?.estado,
-    ].filter(Boolean).join(" - ");
+    let allPagesHTML = "";
+    for (let i = 0; i < parcelas.length; i += 3) {
+      const slice = parcelas.slice(i, i + 3);
+      const carnesHtml = slice.map((p) => {
+        const valorFmt = fmtCurrency(p.valor);
+        const parcelaLabel = `${p.numero_parcela}/${totalParcelas}`;
+        const isPago = p.situacao === "pago";
+        const badge = isPago
+          ? `<div class="badge-pago">✓ PAGO</div>`
+          : (p.reajustado ? `<div class="badge-reaj">✓ REAJUSTADO</div>` : `<div></div>`);
+        return `<div class="carne-item${isPago ? " pago" : ""}">
+  <div class="carne-top">
+    <div class="info-block">
+      <div class="lbl">Loteamento</div>
+      <div class="val">${loteamentoNome}</div>
+      <div class="sub">${loteLabel}</div>
+    </div>
+    <div style="text-align:right;">
+      <div class="lbl">Parcela</div>
+      <div class="parcela-num">${parcelaLabel}</div>
+    </div>
+  </div>
+  <div class="carne-mid">
+    <div class="lbl">Cliente</div>
+    <div class="val">${nomeCliente}</div>
+  </div>
+  <div class="carne-bot">
+    <div>
+      <div class="lbl">Vencimento</div>
+      <div class="val-lg">${fmtDate(p.vencimento)}</div>
+    </div>
+    ${badge}
+    <div style="text-align:right;">
+      <div class="lbl">Valor</div>
+      <div class="val-valor">${valorFmt}</div>
+    </div>
+  </div>
+</div>`;
+      }).join('');
+      allPagesHTML += `<div class="page">${carnesHtml}</div>`;
+    }
 
-    const jurosPct = Number(vendaCriada.porcentagem) || 1;
-    const instrucoes = `Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.`;
+    const empresaHeader = emp
+      ? `<div class="emp-header">
+          <div class="emp-nome">${emp.nome_fantasia}</div>
+          ${emp.cnpj ? `<div class="emp-det">CNPJ: ${emp.cnpj}</div>` : ""}
+          ${emp.telefone ? `<div class="emp-det">Tel: ${emp.telefone}</div>` : ""}
+        </div>`
+      : "";
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Carnê — Venda #${idVenda}</title>
+<style>
+@page{size:A4 portrait;margin:10mm 12mm}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;font-size:9pt}
+.emp-header{text-align:center;padding-bottom:4px;margin-bottom:6px;border-bottom:2px solid #333}
+.emp-nome{font-size:11pt;font-weight:700}
+.emp-det{font-size:8pt;color:#555}
+.page{width:100%;height:277mm;display:flex;flex-direction:column;gap:5mm;page-break-after:always}
+.page:last-child{page-break-after:avoid}
+.carne-item{flex:1;border:2px solid #222;border-radius:3px;padding:8px 12px;display:flex;flex-direction:column;justify-content:space-between;position:relative}
+.carne-item.pago{opacity:.65}
+.carne-top{display:flex;justify-content:space-between;align-items:flex-start}
+.carne-mid{border-top:1px solid #ddd;border-bottom:1px solid #ddd;padding:4px 0}
+.carne-bot{display:flex;justify-content:space-between;align-items:flex-end;padding-top:4px}
+.lbl{font-size:6.5pt;color:#777;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px}
+.val{font-size:8.5pt;font-weight:600}
+.sub{font-size:7.5pt;color:#555}
+.val-lg{font-size:10pt;font-weight:700}
+.val-valor{font-size:13pt;font-weight:700}
+.parcela-num{font-size:14pt;font-weight:700}
+.badge-reaj{font-size:7pt;font-weight:700;color:#b45309;background:#fef3c7;padding:2px 6px;border-radius:3px;letter-spacing:.5px;align-self:center}
+.badge-pago{font-size:7pt;font-weight:700;color:#15803d;background:#dcfce7;padding:2px 6px;border-radius:3px;letter-spacing:.5px;align-self:center}
+</style>
+</head>
+<body>
+${empresaHeader}
+${allPagesHTML}
+<script>
+(function(){
+  var d=document.createElement('div');
+  d.style.cssText='position:absolute;left:-9999px;width:1mm;height:1mm';
+  document.body.appendChild(d);
+  var px1mm=d.getBoundingClientRect().height;
+  document.body.removeChild(d);
+  document.querySelectorAll('.page').forEach(function(pg){
+    var its=pg.querySelectorAll('.carne-item');
+    var gaps=(its.length-1)*5*px1mm;
+    var h=Math.floor((277*px1mm-gaps)/its.length);
+    its.forEach(function(it){it.style.height=h+'px';it.style.flex='none';});
+  });
+  window.print();
+})();
+</script>
+</body>
+</html>`;
+
+    win.document.write(html);
+    win.document.close();
+  }
+
+  function imprimirCarne(de = 1, ate = Infinity) {
+    if (!vendaCriada) return;
 
     const todasParcelas = [...(vendaCriada.pagamentos ?? [])]
       .filter((p) => p.tipo !== "entrada" && p.numero_parcela > 0)
@@ -900,179 +998,26 @@ const Vendas = () => {
       ? Math.max(...todasParcelas.map((p) => p.numero_parcela))
       : 0;
 
-    function buildCarne(p: typeof parcelas[0], via: string): string {
-      const docNum = `${String(vendaCriada!.id_venda).padStart(6, "0")}${String(p.numero_parcela).padStart(2, "0")}`;
-      return `
-        <div class="carne">
-          <div class="header">
-            <div class="empresa-nome">${nomeEmpresa}</div>
-            ${cnpjEmpresa ? `<div class="empresa-sub">CNPJ: ${cnpjEmpresa}</div>` : ""}
-            ${enderecoEmpresa ? `<div class="empresa-sub">${enderecoEmpresa}${telefone ? ` · Tel: ${telefone}` : ""}</div>` : ""}
-            <div class="via-label">${via}</div>
-          </div>
-
-          <div class="field-row">
-            <div class="field full">
-              <span class="flabel">CLIENTE</span>
-              <span class="fvalue">${clienteNome}</span>
-            </div>
-          </div>
-
-          <div class="field-row grid3">
-            <div class="field">
-              <span class="flabel">LOTE</span>
-              <span class="fvalue">${loteNum} — ${loteamentoNome}</span>
-            </div>
-            <div class="field">
-              <span class="flabel">QUADRA</span>
-              <span class="fvalue">${quadraNum}</span>
-            </div>
-            <div class="field">
-              <span class="flabel">PARCELA</span>
-              <span class="fvalue bold">${String(p.numero_parcela).padStart(2, "0")} / ${String(totalParcelas).padStart(2, "0")}</span>
-            </div>
-          </div>
-
-          <div class="field-row grid3">
-            <div class="field">
-              <span class="flabel">DOCUMENTO</span>
-              <span class="fvalue">${docNum}</span>
-            </div>
-            <div class="field">
-              <span class="flabel">VENCIMENTO</span>
-              <span class="fvalue">${fmtDate(p.vencimento)}</span>
-            </div>
-            <div class="field">
-              <span class="flabel">VALOR</span>
-              <span class="fvalue bold">${fmtCurrency(p.valor)}</span>
-            </div>
-          </div>
-
-          <div class="field-row">
-            <div class="field full">
-              <span class="flabel">ENDEREÇO DO LOTEAMENTO</span>
-              <span class="fvalue">${loteamentoCidade || loteamentoNome}</span>
-            </div>
-          </div>
-
-          <div class="instrucoes">${instrucoes}</div>
-
-          <div class="calc-section">
-            <div class="calc-row"><span class="calc-label">(+) Juros</span><span class="calc-line"></span></div>
-            <div class="calc-row"><span class="calc-label">(+) Multa</span><span class="calc-line"></span></div>
-            <div class="calc-row total-row"><span class="calc-label bold">(=) Valor Cobrado</span><span class="calc-line"></span></div>
-          </div>
-
-          <div class="barcode-area">
-            <div class="barcode">*${docNum}*</div>
-            <div class="barcode-num">${docNum}</div>
-          </div>
-        </div>
-      `;
+    if (parcelas.length === 0) {
+      toast({ title: "Nenhuma parcela no intervalo", variant: "destructive" });
+      return;
     }
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Carnê - Venda #${vendaCriada.id_venda}</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          @page { size: A4; margin: 10mm; }
-          body { font-family: Arial, sans-serif; background: white; }
-          .row-pair {
-            height: 91mm; /* ajustado via JS após load */
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            margin-bottom: 5mm;
-            page-break-inside: avoid;
-          }
-          .row-pair:nth-child(3n) { page-break-after: always; margin-bottom: 0; }
-          .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; display: flex; flex-direction: column; height: 100%; }
-          .header { border-bottom: 1.5px solid #222; margin-bottom: 4px; padding-bottom: 3px; text-align: center; }
-          .empresa-nome { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-          .empresa-sub { font-size: 6.5px; color: #444; margin-top: 1px; }
-          .via-label { font-size: 6.5px; font-style: italic; color: #666; margin-top: 2px; }
-          .field-row { display: flex; gap: 4px; margin-bottom: 3px; }
-          .field-row.grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 4px; margin-bottom: 3px; }
-          .field { display: flex; flex-direction: column; min-width: 0; }
-          .field.full { flex: 1; }
-          .flabel { font-weight: bold; font-size: 6px; color: #555; text-transform: uppercase; margin-bottom: 1px; }
-          .fvalue { font-size: 7.5px; border-bottom: 1px solid #aaa; padding-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .fvalue.bold { font-weight: bold; font-size: 8.5px; }
-          .instrucoes { font-size: 6px; color: #555; border: 0.5px solid #ccc; padding: 2px 4px; margin: 3px 0; line-height: 1.4; }
-          .calc-section { margin: 3px 0; }
-          .calc-row { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 2px; }
-          .calc-label { font-size: 6.5px; white-space: nowrap; min-width: 85px; }
-          .calc-label.bold { font-weight: bold; }
-          .calc-line { flex: 1; border-bottom: 1px solid #333; height: 9px; }
-          .total-row .calc-line { border-bottom: 2px solid #000; }
-          .barcode-area { text-align: center; margin-top: auto; padding-top: 3px; border-top: 1px solid #ddd; }
-          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 34px; line-height: 1; }
-          .barcode-num { font-size: 6.5px; letter-spacing: 2px; margin-top: 1px; font-family: 'Courier New', monospace; }
-        </style>
-      </head>
-      <body>
-        ${parcelas.map((p) => `
-          <div class="row-pair">
-            ${buildCarne(p, "1ª Via — Cliente")}
-            ${buildCarne(p, "2ª Via — Empresa")}
-          </div>
-        `).join("")}
-        <script>
-          function ajustarAlturas() {
-            // Mede a altura real da página e distribui 3 linhas perfeitamente
-            var mmPx = document.createElement('div');
-            mmPx.style.cssText = 'position:absolute;left:-9999px;width:100mm;height:1mm';
-            document.body.appendChild(mmPx);
-            var px1mm = mmPx.getBoundingClientRect().height;
-            document.body.removeChild(mmPx);
-            var paginaH = 277 * px1mm; // 297mm - 2x10mm margem
-            var rows = document.querySelectorAll('.row-pair');
-            var altH = Math.floor(paginaH / 3);
-            rows.forEach(function(r) { r.style.height = altH + 'px'; });
-          }
-          function imprimir() { ajustarAlturas(); setTimeout(function() { window.print(); }, 100); }
-          if (document.fonts) {
-            document.fonts.ready.then(function() { setTimeout(imprimir, 150); });
-          } else {
-            setTimeout(imprimir, 600);
-          }
-        </script>
-      </body>
-      </html>
-    `;
-    win.document.write(html);
-    win.document.close();
+    const quadraNum = vendaCriada.lote?.quadra ?? "";
+    const loteNum = vendaCriada.lote?.lote ?? "";
+
+    gerarHTMLCarnePadrao({
+      idVenda: vendaCriada.id_venda,
+      nomeCliente: vendaCriada.cliente?.nome || "indefinido",
+      loteamentoNome: vendaCriada.lote?.loteamento?.nome || "indefinido",
+      loteLabel: `Quadra ${quadraNum} · Lote ${loteNum}`,
+      parcelas,
+      totalParcelas,
+    });
   }
 
   function imprimirCarneDetalhe(de = 1, ate = Infinity) {
     if (!vendaDetalhe || !vendaDetalheInfo) return;
-    const win = window.open("", "", "width=900,height=700");
-    if (!win) {
-      toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
-      return;
-    }
-
-    const nomeEmpresa = empresaConfig?.nome_fantasia || "EMPRESA";
-    const telefone = empresaConfig?.telefone || "";
-    const enderecoEmpresa = [
-      empresaConfig?.endereco,
-      empresaConfig?.bairro,
-      [empresaConfig?.cidade, empresaConfig?.estado].filter(Boolean).join(" - "),
-    ].filter(Boolean).join(", ");
-    const cnpjEmpresa = empresaConfig?.cnpj || "";
-
-    const clienteNome = vendaDetalheInfo.cliente;
-    const loteamentoNome = vendaDetalheInfo.loteamento;
-    const quadraNum = vendaDetalhe.lote?.quadra ?? "";
-    const loteNum = vendaDetalhe.lote?.lote ?? "";
-    const jurosPct = Number(vendaDetalheInfo.porcentagem) || 1;
-    const instrucoes = `Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.`;
 
     const todasParcelas = [...vendaDetalhe.pagamentos]
       .filter((p) => p.tipo !== "entrada" && p.numero_parcela > 0)
@@ -1082,159 +1027,22 @@ const Vendas = () => {
       : 0;
     const parcelas = todasParcelas.filter((p) => p.numero_parcela >= de && p.numero_parcela <= ate);
 
-    function buildCarne(p: typeof parcelas[0], via: string): string {
-      const docNum = `${String(vendaDetalheInfo!.id_venda).padStart(6, "0")}${String(p.numero_parcela).padStart(2, "0")}`;
-      const isPago = p.situacao === "pago";
-      return `
-        <div class="carne${isPago ? " pago" : ""}">
-          <div class="header">
-            <div class="empresa-nome">${nomeEmpresa}</div>
-            ${cnpjEmpresa ? `<div class="empresa-sub">CNPJ: ${cnpjEmpresa}</div>` : ""}
-            ${enderecoEmpresa ? `<div class="empresa-sub">${enderecoEmpresa}${telefone ? ` · Tel: ${telefone}` : ""}</div>` : ""}
-            <div class="via-label">${via}</div>
-          </div>
-
-          ${isPago ? `<div class="pago-overlay">PAGO</div>` : ""}
-
-          <div class="field-row">
-            <div class="field full">
-              <span class="flabel">CLIENTE</span>
-              <span class="fvalue">${clienteNome}</span>
-            </div>
-          </div>
-
-          <div class="field-row grid3">
-            <div class="field">
-              <span class="flabel">LOTE</span>
-              <span class="fvalue">${loteNum} — ${loteamentoNome}</span>
-            </div>
-            <div class="field">
-              <span class="flabel">QUADRA</span>
-              <span class="fvalue">${quadraNum}</span>
-            </div>
-            <div class="field">
-              <span class="flabel">PARCELA</span>
-              <span class="fvalue bold">${String(p.numero_parcela).padStart(2, "0")} / ${String(totalParcelas).padStart(2, "0")}</span>
-            </div>
-          </div>
-
-          <div class="field-row grid3">
-            <div class="field">
-              <span class="flabel">DOCUMENTO</span>
-              <span class="fvalue">${docNum}</span>
-            </div>
-            <div class="field">
-              <span class="flabel">VENCIMENTO</span>
-              <span class="fvalue">${fmtDate(p.vencimento)}</span>
-            </div>
-            <div class="field">
-              <span class="flabel">VALOR</span>
-              <span class="fvalue bold">${fmtCurrency(p.valor)}</span>
-            </div>
-          </div>
-
-          <div class="field-row">
-            <div class="field full">
-              <span class="flabel">ENDEREÇO DO LOTEAMENTO</span>
-              <span class="fvalue">${vendaDetalhe!.lote?.loteamento?.cidade ? [vendaDetalhe!.lote!.loteamento!.cidade, vendaDetalhe!.lote!.loteamento!.estado].filter(Boolean).join(" - ") : loteamentoNome}</span>
-            </div>
-          </div>
-
-          <div class="instrucoes">${instrucoes}</div>
-
-          <div class="calc-section">
-            <div class="calc-row"><span class="calc-label">(+) Juros</span><span class="calc-line"></span></div>
-            <div class="calc-row"><span class="calc-label">(+) Multa</span><span class="calc-line"></span></div>
-            <div class="calc-row total-row"><span class="calc-label bold">(=) Valor Cobrado</span><span class="calc-line"></span></div>
-          </div>
-
-          <div class="barcode-area">
-            <div class="barcode">*${docNum}*</div>
-            <div class="barcode-num">${docNum}</div>
-          </div>
-        </div>
-      `;
+    if (parcelas.length === 0) {
+      toast({ title: "Nenhuma parcela no intervalo", variant: "destructive" });
+      return;
     }
 
-    const html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <title>Carnê - Venda #${vendaDetalheInfo.id_venda}</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com">
-        <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; box-sizing: border-box; }
-          @page { size: A4; margin: 10mm; }
-          body { font-family: Arial, sans-serif; background: white; }
-          .row-pair {
-            height: 91mm; /* ajustado via JS após load */
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 6px;
-            margin-bottom: 5mm;
-            page-break-inside: avoid;
-          }
-          .row-pair:nth-child(3n) { page-break-after: always; margin-bottom: 0; }
-          .carne { border: 1px dashed #555; padding: 6px 8px; background: white; font-size: 8px; position: relative; overflow: hidden; display: flex; flex-direction: column; height: 100%; }
-          .header { border-bottom: 1.5px solid #222; margin-bottom: 4px; padding-bottom: 3px; text-align: center; }
-          .empresa-nome { font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-          .empresa-sub { font-size: 6.5px; color: #444; margin-top: 1px; }
-          .via-label { font-size: 6.5px; font-style: italic; color: #666; margin-top: 2px; }
-          .pago.carne { opacity: 0.85; }
-          .pago-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 30px; font-weight: bold; color: rgba(22,163,74,0.25); border: 4px solid rgba(22,163,74,0.25); padding: 4px 10px; pointer-events: none; white-space: nowrap; }
-          .field-row { display: flex; gap: 4px; margin-bottom: 3px; }
-          .field-row.grid3 { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 4px; margin-bottom: 3px; }
-          .field { display: flex; flex-direction: column; min-width: 0; }
-          .field.full { flex: 1; }
-          .flabel { font-weight: bold; font-size: 6px; color: #555; text-transform: uppercase; margin-bottom: 1px; }
-          .fvalue { font-size: 7.5px; border-bottom: 1px solid #aaa; padding-bottom: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-          .fvalue.bold { font-weight: bold; font-size: 8.5px; }
-          .instrucoes { font-size: 6px; color: #555; border: 0.5px solid #ccc; padding: 2px 4px; margin: 3px 0; line-height: 1.4; }
-          .calc-section { margin: 3px 0; }
-          .calc-row { display: flex; align-items: flex-end; gap: 4px; margin-bottom: 2px; }
-          .calc-label { font-size: 6.5px; white-space: nowrap; min-width: 85px; }
-          .calc-label.bold { font-weight: bold; }
-          .calc-line { flex: 1; border-bottom: 1px solid #333; height: 9px; }
-          .total-row .calc-line { border-bottom: 2px solid #000; }
-          .barcode-area { text-align: center; margin-top: auto; padding-top: 3px; border-top: 1px solid #ddd; }
-          .barcode { font-family: 'Libre Barcode 39', cursive; font-size: 34px; line-height: 1; letter-spacing: 0; }
-          .barcode-num { font-size: 6.5px; letter-spacing: 2px; margin-top: 1px; font-family: 'Courier New', monospace; }
-        </style>
-      </head>
-      <body>
-        ${parcelas.map((p) => `
-          <div class="row-pair">
-            ${buildCarne(p, "1ª Via — Cliente")}
-            ${buildCarne(p, "2ª Via — Empresa")}
-          </div>
-        `).join("")}
-        <script>
-          function ajustarAlturas() {
-            var mmPx = document.createElement('div');
-            mmPx.style.cssText = 'position:absolute;left:-9999px;width:100mm;height:1mm';
-            document.body.appendChild(mmPx);
-            var px1mm = mmPx.getBoundingClientRect().height;
-            document.body.removeChild(mmPx);
-            var paginaH = 277 * px1mm;
-            var gapTotal = 2 * 5 * px1mm; // 2 gaps de 5mm entre os 3 pares
-            var rows = document.querySelectorAll('.row-pair');
-            var altH = Math.floor((paginaH - gapTotal) / 3);
-            rows.forEach(function(r) { r.style.height = altH + 'px'; });
-          }
-          function imprimir() { ajustarAlturas(); setTimeout(function() { window.print(); }, 100); }
-          if (document.fonts) {
-            document.fonts.ready.then(function() { setTimeout(imprimir, 150); });
-          } else {
-            setTimeout(imprimir, 600);
-          }
-        </script>
-      </body>
-      </html>
-    `;
-    win.document.write(html);
-    win.document.close();
+    const quadraNum = vendaDetalhe.lote?.quadra ?? "";
+    const loteNum = vendaDetalhe.lote?.lote ?? "";
+
+    gerarHTMLCarnePadrao({
+      idVenda: vendaDetalheInfo.id_venda,
+      nomeCliente: vendaDetalheInfo.cliente,
+      loteamentoNome: vendaDetalheInfo.loteamento,
+      loteLabel: `Quadra ${quadraNum} · Lote ${loteNum}`,
+      parcelas,
+      totalParcelas,
+    });
   }
 
   function abrirDetalhe(venda: VendaListItem) {

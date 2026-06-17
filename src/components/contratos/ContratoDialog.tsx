@@ -981,30 +981,30 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: Times New Roman, serif;
-      font-size: 12pt;
+      font-size: 11pt;
       color: #000;
       background: #fff;
-      padding: 20mm 25mm;
-      line-height: 1.5;
+      padding: 14mm 18mm;
+      line-height: 1.3;
     }
     .titulo {
       text-align: center;
       font-weight: bold;
       text-decoration: underline;
-      font-size: 13pt;
-      margin-bottom: 6px;
+      font-size: 12pt;
+      margin-bottom: 4px;
     }
     .subtitulo {
       text-align: center;
       font-weight: bold;
-      font-size: 12pt;
-      margin-bottom: 16px;
+      font-size: 11pt;
+      margin-bottom: 10px;
     }
-    .intro { text-align: justify; margin-bottom: 16px; }
-    .secao { font-weight: bold; margin-top: 14px; margin-bottom: 4px; }
-    p { margin-bottom: 8px; text-align: justify; }
+    .intro { text-align: justify; margin-bottom: 9px; }
+    .secao { font-weight: bold; margin-top: 9px; margin-bottom: 3px; }
+    p { margin-bottom: 5px; text-align: justify; }
     .bloco-assinaturas {
-      margin-top: 60px;
+      margin-top: 28px;
       page-break-inside: avoid;
     }
     .linha-assinatura {
@@ -1012,22 +1012,22 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       justify-content: space-between;
       align-items: flex-end;
       gap: 60px;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
     .assinatura {
       text-align: center;
       flex: 1;
     }
     .assinatura .espaco-assinar {
-      height: 90px;
+      height: 48px;
       border: 1px dashed #bbb;
       border-radius: 4px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       background: #fafafa;
     }
     .assinatura .linha {
       border-top: 1.5px solid #000;
-      margin-bottom: 6px;
+      margin-bottom: 5px;
     }
     .assinatura .label-ass {
       font-size: 10pt;
@@ -1038,16 +1038,16 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       font-size: 9pt;
       text-align: center;
       color: #444;
-      margin-top: 3px;
+      margin-top: 2px;
     }
     .bloco-testemunhas {
-      margin-top: 50px;
+      margin-top: 24px;
     }
     .bloco-testemunhas .titulo-test {
       font-size: 10pt;
       font-weight: bold;
       text-align: center;
-      margin-bottom: 24px;
+      margin-bottom: 14px;
       color: #555;
     }
     .btn-print {
@@ -1065,7 +1065,8 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     .btn-print:hover { background: #1e429f; }
     .conteudo:focus { outline: none; }
     @media print {
-      body { padding: 15mm 20mm; }
+      @page { size: A4; margin: 12mm 16mm; }
+      body { padding: 0; }
       .assinatura .espaco-assinar {
         /* mantém o espaço, apenas oculta a borda visual */
         border: none;
