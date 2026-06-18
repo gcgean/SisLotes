@@ -1003,10 +1003,15 @@ const Vendas = () => {
   }, [vendas, filterLoteamento]);
 
   const vendaFiltrada = vendas.filter((v) => {
+    const termo = search.toLowerCase().replace(/^#/, "");
+    const codigo = String(v.id_venda);
+    const codigoPad = codigo.padStart(6, "0");
     const matchSearch =
       v.cliente.toLowerCase().includes(search.toLowerCase()) ||
       v.lote.toLowerCase().includes(search.toLowerCase()) ||
-      v.loteamento.toLowerCase().includes(search.toLowerCase());
+      v.loteamento.toLowerCase().includes(search.toLowerCase()) ||
+      codigo.includes(termo) ||
+      codigoPad.includes(termo);
     const matchStatus =
       filterStatus === "all" ? true :
       filterStatus === "ativas" ? v.status !== "cancelada" :
@@ -1046,7 +1051,7 @@ const Vendas = () => {
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por cliente, lote ou loteamento..."
+                placeholder="Buscar por código, cliente, lote ou loteamento..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -1097,6 +1102,7 @@ const Vendas = () => {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/50">
+                  <th className="text-left px-5 py-3 font-medium text-muted-foreground">Código</th>
                   <th className="text-left px-5 py-3 font-medium text-muted-foreground">Cliente</th>
                   <th className="text-left px-5 py-3 font-medium text-muted-foreground">Lote</th>
                   <th className="text-left px-5 py-3 font-medium text-muted-foreground">Data</th>
@@ -1111,6 +1117,7 @@ const Vendas = () => {
               <tbody className="divide-y divide-border">
                 {vendaFiltrada.map((v) => (
                   <tr key={v.id_venda} className="hover:bg-muted/30 transition-colors cursor-pointer" onClick={() => abrirDetalhe(v)}>
+                    <td className="px-5 py-3 font-mono text-muted-foreground">#{String(v.id_venda).padStart(6, "0")}</td>
                     <td className="px-5 py-3 font-medium">{v.cliente}</td>
                     <td className="px-5 py-3 text-muted-foreground">
                       <div>
