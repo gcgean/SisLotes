@@ -595,6 +595,13 @@ vendasRouter.patch("/:id/cancelar", requireAuth, requirePermission("vendas_alter
     });
   }
 
+  // Exclui as parcelas geradas para esta venda (neste ponto todas estão em aberto,
+  // pois parcelas pagas bloqueiam o cancelamento acima).
+  const parcelasExcluidas = await pagamentoRepo.delete({
+    id_venda: Number(id),
+    ...(req.user?.id_empresa ? { id_empresa: req.user.id_empresa } : {}),
+  });
+
   venda.status = "cancelada";
   await vendaRepo.save(venda);
 
@@ -603,7 +610,7 @@ vendasRouter.patch("/:id/cancelar", requireAuth, requirePermission("vendas_alter
     req,
     "UPDATE",
     venda.id_venda,
-    "Venda cancelada"
+    `Venda cancelada — ${parcelasExcluidas.affected ?? 0} parcela(s) excluída(s)`
   );
 
   return res.json({ success: true });
