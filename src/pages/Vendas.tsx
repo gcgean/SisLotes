@@ -1111,7 +1111,7 @@ const Vendas = () => {
                   <th className="text-left px-5 py-3 font-medium text-muted-foreground">Parcelas</th>
               <th className="text-left px-5 py-3 font-medium text-muted-foreground">Parcela</th>
                   <th className="text-left px-5 py-3 font-medium text-muted-foreground">Status</th>
-                  <th className="text-right px-5 py-3 font-medium text-muted-foreground">Ações</th>
+                  <th className="text-right px-5 py-3 font-medium text-muted-foreground sticky right-0 z-20 bg-muted border-l border-border">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -1133,7 +1133,7 @@ const Vendas = () => {
                     <td className="px-5 py-3">
                       <Badge variant={statusConfig[v.status].variant}>{statusConfig[v.status].label}</Badge>
                     </td>
-                    <td className="px-5 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-5 py-3 sticky right-0 z-10 bg-card border-l border-border" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" className="h-8 w-8" title="Ver detalhes" onClick={() => abrirDetalhe(v)}>
                           <Eye className="h-4 w-4" />
