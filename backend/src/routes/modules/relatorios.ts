@@ -71,6 +71,7 @@ relatoriosRouter.get(
       "p.situacao = 'pago'",
       "p.pago_data IS NOT NULL",
       "p.id_empresa = $1",
+      "v.status <> 'cancelada'",
     ];
 
     if (from) {
@@ -209,6 +210,7 @@ relatoriosRouter.get(
       "p.id_empresa = $1",
       "c.id_empresa = $1",
       "p.id_conta IS NOT NULL",
+      "v.status <> 'cancelada'",
     ];
 
     if (from) {
@@ -239,6 +241,7 @@ relatoriosRouter.get(
         SUM(COALESCE(p.valor_pago, p.valor)) AS total
       FROM pagamentos p
       JOIN contas c ON c.id_conta = p.id_conta
+      JOIN vendas v ON v.id_venda = p.id_venda
       ${whereClause}
       GROUP BY c.id_conta, c.apelido, c.titular, c.agencia, c.conta
       ORDER BY c.apelido ASC
@@ -298,12 +301,14 @@ relatoriosRouter.get(
         SUM(COALESCE(p.juros, 0) + COALESCE(p.multa, 0)) AS total
       FROM pagamentos p
       JOIN contas c ON c.id_conta = p.id_conta
+      JOIN vendas v ON v.id_venda = p.id_venda
       WHERE
         p.situacao = 'pago'
         AND p.pago_data IS NOT NULL
         AND p.id_empresa = $1
         AND p.id_conta = $2
         AND EXTRACT(YEAR FROM p.pago_data) = $3::int
+        AND v.status <> 'cancelada'
       GROUP BY
         c.id_conta,
         c.apelido,
@@ -418,7 +423,7 @@ relatoriosRouter.get(
 
     const params: unknown[] = [idEmpresa];
 
-    const conditions: string[] = ["p.situacao = 'aberto'", "p.vencimento < CURRENT_DATE", "p.id_empresa = $1"];
+    const conditions: string[] = ["p.situacao = 'aberto'", "p.vencimento < CURRENT_DATE", "p.id_empresa = $1", "v.status <> 'cancelada'"];
 
     if (from) {
       params.push(from);
@@ -678,24 +683,30 @@ relatoriosRouter.get(
         (
           SELECT COALESCE(SUM(COALESCE(p.valor_pago, p.valor)), 0)
           FROM pagamentos p
+          JOIN vendas v ON v.id_venda = p.id_venda
           WHERE
             p.id_empresa = $1
             AND p.situacao = 'pago'
+            AND v.status <> 'cancelada'
             AND p.pago_data >= date_trunc('month', CURRENT_DATE)
             AND p.pago_data < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')
         ) AS recebido_mes,
         (
           SELECT COUNT(*)
           FROM pagamentos p
+          JOIN vendas v ON v.id_venda = p.id_venda
           WHERE p.id_empresa = $1
             AND p.situacao = 'aberto'
+            AND v.status <> 'cancelada'
             AND p.vencimento < CURRENT_DATE
         ) AS titulos_atraso_qtd,
         (
           SELECT COALESCE(SUM(p.valor + COALESCE(p.multa, 0) + COALESCE(p.juros, 0)), 0)
           FROM pagamentos p
+          JOIN vendas v ON v.id_venda = p.id_venda
           WHERE p.id_empresa = $1
             AND p.situacao = 'aberto'
+            AND v.status <> 'cancelada'
             AND p.vencimento < CURRENT_DATE
         ) AS titulos_atraso_valor
     `;
@@ -754,6 +765,7 @@ relatoriosRouter.get(
       JOIN lotes l ON l.id_lote = v.id_lote
       LEFT JOIN pagamentos p ON p.id_venda = v.id_venda
       WHERE v.id_empresa = $1
+        AND v.status <> 'cancelada'
       GROUP BY v.id_venda, c.nome, l.quadra, l.lote, v.data_venda, v.valor_entrada
       ORDER BY v.data_venda DESC, v.id_venda DESC
       LIMIT 5
