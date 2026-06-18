@@ -103,7 +103,7 @@ export function gerarReciboParcela(
       border: none; border-radius: 6px; cursor: pointer;
     }
     .btn-print:hover { background: #1e429f; }
-    @media print { .btn-print { display: none; } }
+    @media print { @page { margin: 0; } body { padding: 15mm 20mm; } .btn-print { display: none; } }
   </style>
 </head>
 <body>

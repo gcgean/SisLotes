@@ -384,6 +384,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       text-align: center;
     }
     @media print {
+      @page { margin: 0; }
       body { padding: 15mm 20mm; }
       .btn-print { display: none; }
     }
@@ -597,6 +598,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       font-size: 10pt;
     }
     @media print {
+      @page { margin: 0; }
       body { padding: 15mm 20mm; }
       .btn-print { display: none; }
     }
@@ -784,6 +786,8 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
       cursor: pointer;
     }
     @media print {
+      @page { margin: 0; }
+      body { padding: 20mm 25mm; }
       .btn-print { display: none; }
     }
   </style>
@@ -927,7 +931,7 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     .btn-print { display: block; margin: 32px auto 0; padding: 10px 32px; background: #1a56db; color: #fff; font-size: 13pt; font-family: Arial, sans-serif; border: none; border-radius: 6px; cursor: pointer; }
     .btn-print:hover { background: #1e429f; }
     .conteudo:focus { outline: none; }
-    @media print { body { padding: 15mm 20mm; } .btn-print { display: none; } }
+    @media print { @page { margin: 0; } body { padding: 15mm 18mm; } .btn-print { display: none; } }
   </style>
 </head>
 <body>
@@ -1065,8 +1069,8 @@ export function ContratoDialog({ open, onClose, idCliente, nomeCliente, idVenda 
     .btn-print:hover { background: #1e429f; }
     .conteudo:focus { outline: none; }
     @media print {
-      @page { size: A4; margin: 12mm 16mm; }
-      body { padding: 0; }
+      @page { size: A4; margin: 0; }
+      body { padding: 12mm 16mm; }
       .assinatura .espaco-assinar {
         /* mantém o espaço, apenas oculta a borda visual */
         border: none;

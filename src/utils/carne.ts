@@ -116,8 +116,8 @@ export function imprimirCarneDetalhado(
 <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  @page { size: A4 portrait; margin: 8mm; }
-  body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #000; }
+  @page { size: A4 portrait; margin: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #000; padding: 8mm; }
   .page { height: 280mm; display: flex; flex-direction: column; gap: 4mm; page-break-after: always; }
   .page:last-child { page-break-after: avoid; }
   .row-pair { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
