@@ -55,7 +55,8 @@ export function gerarReciboParcela(
   multa: number,
   juros: number,
   contaNome: string,
-  empresa: ReciboEmpresa | null
+  empresa: ReciboEmpresa | null,
+  comTimbrado: boolean = true
 ) {
   const valorOriginal = pag.valor;
   const temEncargos = multa > 0 || juros > 0;
@@ -73,7 +74,7 @@ export function gerarReciboParcela(
     ? "Entrada"
     : `${pag.numero_parcela}/${pag.parcelas}`;
 
-  const timbrado = buildTimbrado(empresa);
+  const timbrado = comTimbrado ? buildTimbrado(empresa) : "";
 
   const htmlContent = `<!DOCTYPE html>
 <html lang="pt-BR">

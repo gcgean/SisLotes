@@ -54,6 +54,7 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { gerarReciboParcela, ReciboEmpresa } from "@/utils/reciboParcela";
+import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
 import { ContratoDialog } from "@/components/contratos/ContratoDialog";
 import { NovoClienteDialog, NovoClienteFormValues } from "@/components/clientes/NovoClienteDialog";
 import { NovoLoteDialog } from "@/components/lotes/NovoLoteDialog";
@@ -213,6 +214,7 @@ const Vendas = () => {
 
   // ── editar venda
   const [editarVendaAberto, setEditarVendaAberto] = useState(false);
+  const [confirmarSairEdicao, setConfirmarSairEdicao] = useState(false);
   const [editDataVenda, setEditDataVenda] = useState("");
   const [editEntrada, setEditEntrada] = useState("0");
   const [editParcelas, setEditParcelas] = useState("12");
@@ -459,7 +461,8 @@ const Vendas = () => {
           0,
           0,
           "",
-          empresaConfig ?? null
+          empresaConfig ?? null,
+          usarTimbradoVenda
         );
       }
 
@@ -864,129 +867,6 @@ const Vendas = () => {
     setCarneRangeAberto(true);
   }
 
-  // ── Gerador padrão de carnê (mesmo layout da tela de Pagamentos) ──
-  function gerarHTMLCarnePadrao(opts: {
-    idVenda: number;
-    nomeCliente: string;
-    loteamentoNome: string;
-    loteLabel: string;
-    parcelas: Pagamento[];
-    totalParcelas: number;
-  }) {
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
-      return;
-    }
-
-    const emp = empresaConfig;
-    const { idVenda, nomeCliente, loteamentoNome, loteLabel, parcelas, totalParcelas } = opts;
-
-    let allPagesHTML = "";
-    for (let i = 0; i < parcelas.length; i += 3) {
-      const slice = parcelas.slice(i, i + 3);
-      const carnesHtml = slice.map((p) => {
-        const valorFmt = fmtCurrency(p.valor);
-        const parcelaLabel = `${p.numero_parcela}/${totalParcelas}`;
-        const isPago = p.situacao === "pago";
-        const badge = isPago
-          ? `<div class="badge-pago">✓ PAGO</div>`
-          : (p.reajustado ? `<div class="badge-reaj">✓ REAJUSTADO</div>` : `<div></div>`);
-        return `<div class="carne-item${isPago ? " pago" : ""}">
-  <div class="carne-top">
-    <div class="info-block">
-      <div class="lbl">Loteamento</div>
-      <div class="val">${loteamentoNome}</div>
-      <div class="sub">${loteLabel}</div>
-    </div>
-    <div style="text-align:right;">
-      <div class="lbl">Parcela</div>
-      <div class="parcela-num">${parcelaLabel}</div>
-    </div>
-  </div>
-  <div class="carne-mid">
-    <div class="lbl">Cliente</div>
-    <div class="val">${nomeCliente}</div>
-  </div>
-  <div class="carne-bot">
-    <div>
-      <div class="lbl">Vencimento</div>
-      <div class="val-lg">${fmtDate(p.vencimento)}</div>
-    </div>
-    ${badge}
-    <div style="text-align:right;">
-      <div class="lbl">Valor</div>
-      <div class="val-valor">${valorFmt}</div>
-    </div>
-  </div>
-</div>`;
-      }).join('');
-      allPagesHTML += `<div class="page">${carnesHtml}</div>`;
-    }
-
-    const empresaHeader = emp
-      ? `<div class="emp-header">
-          <div class="emp-nome">${emp.nome_fantasia}</div>
-          ${emp.cnpj ? `<div class="emp-det">CNPJ: ${emp.cnpj}</div>` : ""}
-          ${emp.telefone ? `<div class="emp-det">Tel: ${emp.telefone}</div>` : ""}
-        </div>`
-      : "";
-
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Carnê — Venda #${idVenda}</title>
-<style>
-@page{size:A4 portrait;margin:10mm 12mm}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;font-size:9pt}
-.emp-header{text-align:center;padding-bottom:4px;margin-bottom:6px;border-bottom:2px solid #333}
-.emp-nome{font-size:11pt;font-weight:700}
-.emp-det{font-size:8pt;color:#555}
-.page{width:100%;height:277mm;display:flex;flex-direction:column;gap:5mm;page-break-after:always}
-.page:last-child{page-break-after:avoid}
-.carne-item{flex:1;border:2px solid #222;border-radius:3px;padding:8px 12px;display:flex;flex-direction:column;justify-content:space-between;position:relative}
-.carne-item.pago{opacity:.65}
-.carne-top{display:flex;justify-content:space-between;align-items:flex-start}
-.carne-mid{border-top:1px solid #ddd;border-bottom:1px solid #ddd;padding:4px 0}
-.carne-bot{display:flex;justify-content:space-between;align-items:flex-end;padding-top:4px}
-.lbl{font-size:6.5pt;color:#777;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px}
-.val{font-size:8.5pt;font-weight:600}
-.sub{font-size:7.5pt;color:#555}
-.val-lg{font-size:10pt;font-weight:700}
-.val-valor{font-size:13pt;font-weight:700}
-.parcela-num{font-size:14pt;font-weight:700}
-.badge-reaj{font-size:7pt;font-weight:700;color:#b45309;background:#fef3c7;padding:2px 6px;border-radius:3px;letter-spacing:.5px;align-self:center}
-.badge-pago{font-size:7pt;font-weight:700;color:#15803d;background:#dcfce7;padding:2px 6px;border-radius:3px;letter-spacing:.5px;align-self:center}
-</style>
-</head>
-<body>
-${empresaHeader}
-${allPagesHTML}
-<script>
-(function(){
-  var d=document.createElement('div');
-  d.style.cssText='position:absolute;left:-9999px;width:1mm;height:1mm';
-  document.body.appendChild(d);
-  var px1mm=d.getBoundingClientRect().height;
-  document.body.removeChild(d);
-  document.querySelectorAll('.page').forEach(function(pg){
-    var its=pg.querySelectorAll('.carne-item');
-    var gaps=(its.length-1)*5*px1mm;
-    var h=Math.floor((277*px1mm-gaps)/its.length);
-    its.forEach(function(it){it.style.height=h+'px';it.style.flex='none';});
-  });
-  window.print();
-})();
-</script>
-</body>
-</html>`;
-
-    win.document.write(html);
-    win.document.close();
-  }
-
   function imprimirCarne(de = 1, ate = Infinity) {
     if (!vendaCriada) return;
 
@@ -1003,17 +883,29 @@ ${allPagesHTML}
       return;
     }
 
-    const quadraNum = vendaCriada.lote?.quadra ?? "";
-    const loteNum = vendaCriada.lote?.lote ?? "";
+    const loteamentoNome = vendaCriada.lote?.loteamento?.nome ?? "";
+    const enderecoLoteamento = [vendaCriada.lote?.loteamento?.cidade, vendaCriada.lote?.loteamento?.estado]
+      .filter(Boolean).join(" - ");
+    const jurosPct = Number(vendaCriada.porcentagem) || 1;
 
-    gerarHTMLCarnePadrao({
+    const slips: CarneSlip[] = parcelas.map((p) => ({
       idVenda: vendaCriada.id_venda,
-      nomeCliente: vendaCriada.cliente?.nome || "indefinido",
-      loteamentoNome: vendaCriada.lote?.loteamento?.nome || "indefinido",
-      loteLabel: `Quadra ${quadraNum} · Lote ${loteNum}`,
-      parcelas,
+      numero_parcela: p.numero_parcela,
       totalParcelas,
-    });
+      vencimentoFmt: fmtDate(p.vencimento),
+      valor: Number(p.valor),
+      cliente: vendaCriada.cliente?.nome || "indefinido",
+      loteamentoNome,
+      loteNum: String(vendaCriada.lote?.lote ?? ""),
+      quadraNum: String(vendaCriada.lote?.quadra ?? ""),
+      enderecoLoteamento,
+      jurosPct,
+      situacao: p.situacao,
+      reajustado: p.reajustado,
+    }));
+
+    const ok = imprimirCarneDetalhado(empresaConfig ?? null, slips, `Carnê — Venda #${vendaCriada.id_venda}`);
+    if (!ok) toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
   }
 
   function imprimirCarneDetalhe(de = 1, ate = Infinity) {
@@ -1032,17 +924,28 @@ ${allPagesHTML}
       return;
     }
 
-    const quadraNum = vendaDetalhe.lote?.quadra ?? "";
-    const loteNum = vendaDetalhe.lote?.lote ?? "";
+    const enderecoLoteamento = [vendaDetalhe.lote?.loteamento?.cidade, vendaDetalhe.lote?.loteamento?.estado]
+      .filter(Boolean).join(" - ");
+    const jurosPct = Number(vendaDetalheInfo.porcentagem) || 1;
 
-    gerarHTMLCarnePadrao({
+    const slips: CarneSlip[] = parcelas.map((p) => ({
       idVenda: vendaDetalheInfo.id_venda,
-      nomeCliente: vendaDetalheInfo.cliente,
-      loteamentoNome: vendaDetalheInfo.loteamento,
-      loteLabel: `Quadra ${quadraNum} · Lote ${loteNum}`,
-      parcelas,
+      numero_parcela: p.numero_parcela,
       totalParcelas,
-    });
+      vencimentoFmt: fmtDate(p.vencimento),
+      valor: Number(p.valor),
+      cliente: vendaDetalheInfo.cliente,
+      loteamentoNome: vendaDetalheInfo.loteamento,
+      loteNum: String(vendaDetalhe.lote?.lote ?? ""),
+      quadraNum: String(vendaDetalhe.lote?.quadra ?? ""),
+      enderecoLoteamento,
+      jurosPct,
+      situacao: p.situacao,
+      reajustado: p.reajustado,
+    }));
+
+    const ok = imprimirCarneDetalhado(empresaConfig ?? null, slips, `Carnê — Venda #${vendaDetalheInfo.id_venda}`);
+    if (!ok) toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
   }
 
   function abrirDetalhe(venda: VendaListItem) {
@@ -2176,7 +2079,7 @@ ${allPagesHTML}
               onClick={() => {
                 const idCliente = bloqueadoPorPagamentos?.id_cliente;
                 setBloqueadoPorPagamentos(null);
-                navigate(`/pagamentos?id_cliente=${idCliente}`);
+                navigate(`/pagamentos?id_cliente=${idCliente}&aba=pagas`);
               }}
             >
               Ir para Pagamentos
@@ -2572,8 +2475,8 @@ ${allPagesHTML}
       {/* ═══════════════════════════════════════════════════════════════════════
           DIALOG — EDITAR VENDA
       ═══════════════════════════════════════════════════════════════════════ */}
-      <Dialog open={editarVendaAberto} onOpenChange={(o) => { if (!editarVendaMutation.isPending) { setEditarVendaAberto(o); if (!o) setVendaParaEditar(null); } }}>
-        <DialogContent className="max-w-md">
+      <Dialog open={editarVendaAberto} onOpenChange={(o) => { if (!o && !editarVendaMutation.isPending) setConfirmarSairEdicao(true); }}>
+        <DialogContent className="max-w-md" onInteractOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => { e.preventDefault(); if (!editarVendaMutation.isPending) setConfirmarSairEdicao(true); }}>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Pencil className="h-5 w-5 text-blue-600" />
@@ -2614,7 +2517,7 @@ ${allPagesHTML}
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => { setEditarVendaAberto(false); setVendaParaEditar(null); }} disabled={editarVendaMutation.isPending}>
+            <Button variant="outline" onClick={() => setConfirmarSairEdicao(true)} disabled={editarVendaMutation.isPending}>
               Cancelar
             </Button>
             <Button
@@ -2626,6 +2529,27 @@ ${allPagesHTML}
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* ── Confirmação de saída da edição de venda ── */}
+      <AlertDialog open={confirmarSairEdicao} onOpenChange={setConfirmarSairEdicao}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sair sem salvar?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você tem alterações que não foram salvas. Deseja realmente sair? As alterações serão perdidas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Continuar editando</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => { setConfirmarSairEdicao(false); setEditarVendaAberto(false); setVendaParaEditar(null); }}
+            >
+              Sair sem salvar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* ═══════════════════════════════════════════════════════════════════════
           DIALOG — CONTRATO

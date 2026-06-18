@@ -50,7 +50,9 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { gerarReciboParcela } from "@/utils/reciboParcela";
+import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
 import { formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
@@ -106,6 +108,8 @@ interface Pagamento {
   cliente: string;
   lote: string;
   loteamento: string;
+  quadra?: string;
+  loteNum?: string;
   numero_parcela: number;
   parcelas: number;
   tipo: string;
@@ -165,6 +169,10 @@ const Pagamentos = () => {
   const [clienteSelecionado, setClienteSelecionado] = useState<ClienteApi | null>(null);
   const [showSugestoes, setShowSugestoes] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // ── Pré-seleção de cliente vinda da URL (ex.: cancelar venda → Pagamentos) ──
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlClienteAplicadoRef = useRef(false);
 
   // ── Abas ──
   const [aba, setAba] = useState<"abertas" | "pagas">("abertas");
@@ -335,6 +343,8 @@ const Pagamentos = () => {
             cliente: p.venda?.cliente?.nome ?? "",
             lote: p.venda?.lote ? `Quadra ${p.venda.lote.quadra} - Lote ${p.venda.lote.lote}` : "",
             loteamento: p.venda?.lote?.loteamento?.nome ?? "",
+            quadra: p.venda?.lote?.quadra ?? "",
+            loteNum: p.venda?.lote?.lote ?? "",
             numero_parcela: p.numero_parcela,
             parcelas: p.venda?.parcelas ?? 0,
             tipo: p.tipo,
@@ -372,6 +382,8 @@ const Pagamentos = () => {
           cliente: p.venda?.cliente?.nome ?? "",
           lote: p.venda?.lote ? `Quadra ${p.venda.lote.quadra} - Lote ${p.venda.lote.lote}` : "",
           loteamento: p.venda?.lote?.loteamento?.nome ?? "",
+          quadra: p.venda?.lote?.quadra ?? "",
+          loteNum: p.venda?.lote?.lote ?? "",
           numero_parcela: p.numero_parcela,
           parcelas: p.venda?.parcelas ?? 0,
           tipo: p.tipo,
@@ -437,6 +449,30 @@ const Pagamentos = () => {
     setFiltroLoteamento("all");
     setFiltroLote("all");
   }
+
+  // Aplica id_cliente / aba vindos da URL (uma única vez) e limpa os parâmetros
+  useEffect(() => {
+    if (urlClienteAplicadoRef.current) return;
+    const idClienteParam = searchParams.get("id_cliente");
+    if (!idClienteParam) return;
+    urlClienteAplicadoRef.current = true;
+
+    if (searchParams.get("aba") === "pagas") setAba("pagas");
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/clientes/${idClienteParam}`, { headers: getAuthHeaders() });
+        if (!res.ok) return;
+        const c = await res.json();
+        selecionarCliente({ id_cliente: c.id_cliente, nome: c.nome, cpf: c.cpf ?? null });
+      } catch {
+        // ignora — usuário pode buscar manualmente
+      }
+    })();
+
+    // remove os parâmetros para não reaplicar em refresh/re-render
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams]);
 
   function toggleSelecionado(id: number) {
     setSelecionados((prev) => {
@@ -684,21 +720,17 @@ const Pagamentos = () => {
     }
 
     const nomeCliente = clienteSelecionado?.nome ?? "";
-    const emp = empresaInfo;
 
-    // Agrupa por lote (pode haver múltiplos lotes/vendas)
+    // Agrupa por lote (pode haver múltiplos lotes/vendas) para calcular o total
+    // de parcelas de cada lote (denominador correto, ex.: 12 + entrada ≠ 13).
     const byLote = new Map<string, typeof parcelasParaImprimir>();
     for (const p of parcelasParaImprimir) {
       if (!byLote.has(p.lote)) byLote.set(p.lote, []);
       byLote.get(p.lote)!.push(p);
     }
 
-    let allPagesHTML = "";
-
+    const slips: CarneSlip[] = [];
     for (const [loteKey, loteParcelas] of byLote) {
-      const loteamento = loteParcelas[0]?.loteamento ?? "";
-      // Calcula o total de parcelas regulares pelo maior numero_parcela
-      // (ignora entrada para não contaminar o denominador, ex: 12 parcelas + 1 entrada ≠ 13)
       const todasParcelasLote = pagamentosAbertos.filter(
         p => p.lote === loteKey && p.tipo !== "entrada" && p.numero_parcela > 0
       );
@@ -706,108 +738,27 @@ const Pagamentos = () => {
         ? Math.max(...todasParcelasLote.map(p => p.numero_parcela))
         : (loteParcelas[0]?.parcelas ?? 0);
 
-      for (let i = 0; i < loteParcelas.length; i += 3) {
-        const slice = loteParcelas.slice(i, i + 3);
-        const carnesHtml = slice.map(p => {
-          const valorFmt = formatCurrency(p.valor);
-          const parcelaLabel = `${p.numero_parcela}/${totalParcelasLote}`;
-          return `<div class="carne-item">
-  <div class="carne-top">
-    <div class="info-block">
-      <div class="lbl">Loteamento</div>
-      <div class="val">${loteamento}</div>
-      <div class="sub">${loteKey}</div>
-    </div>
-    <div style="text-align:right;">
-      <div class="lbl">Parcela</div>
-      <div class="parcela-num">${parcelaLabel}</div>
-    </div>
-  </div>
-  <div class="carne-mid">
-    <div class="lbl">Cliente</div>
-    <div class="val">${nomeCliente}</div>
-  </div>
-  <div class="carne-bot">
-    <div>
-      <div class="lbl">Vencimento</div>
-      <div class="val-lg">${p.vencimento}</div>
-    </div>
-    ${(apenasReajustadas || p.reajustado) ? `<div class="badge-reaj">✓ REAJUSTADO</div>` : `<div></div>`}
-    <div style="text-align:right;">
-      <div class="lbl">Valor</div>
-      <div class="val-valor">${valorFmt}</div>
-    </div>
-  </div>
-</div>`;
-        }).join('');
-        allPagesHTML += `<div class="page">${carnesHtml}</div>`;
+      for (const p of loteParcelas) {
+        slips.push({
+          idVenda: p.id_venda ?? 0,
+          numero_parcela: p.numero_parcela,
+          totalParcelas: totalParcelasLote,
+          vencimentoFmt: p.vencimento,
+          valor: p.valor,
+          cliente: nomeCliente || p.cliente,
+          loteamentoNome: p.loteamento,
+          loteNum: p.loteNum ?? "",
+          quadraNum: p.quadra ?? "",
+          enderecoLoteamento: p.loteamento,
+          jurosPct: 1,
+          reajustado: apenasReajustadas || p.reajustado,
+        });
       }
     }
 
-    const empresaHeader = emp
-      ? `<div class="emp-header">
-          <div class="emp-nome">${emp.nome_fantasia}</div>
-          ${emp.cnpj ? `<div class="emp-det">CNPJ: ${emp.cnpj}</div>` : ""}
-          ${emp.telefone ? `<div class="emp-det">Tel: ${emp.telefone}</div>` : ""}
-        </div>`
-      : "";
-
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>${apenasReajustadas ? "Carnê Reajustado" : "Carnê"} — ${nomeCliente}</title>
-<style>
-@page{size:A4 portrait;margin:10mm 12mm}
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:Arial,Helvetica,sans-serif;background:#fff;color:#111;font-size:9pt}
-.emp-header{text-align:center;padding-bottom:4px;margin-bottom:6px;border-bottom:2px solid #333}
-.emp-nome{font-size:11pt;font-weight:700}
-.emp-det{font-size:8pt;color:#555}
-.page{width:100%;height:277mm;display:flex;flex-direction:column;gap:5mm;page-break-after:always}
-.page:last-child{page-break-after:avoid}
-.carne-item{flex:1;border:2px solid #222;border-radius:3px;padding:8px 12px;display:flex;flex-direction:column;justify-content:space-between}
-.carne-top{display:flex;justify-content:space-between;align-items:flex-start}
-.carne-mid{border-top:1px solid #ddd;border-bottom:1px solid #ddd;padding:4px 0}
-.carne-bot{display:flex;justify-content:space-between;align-items:flex-end;padding-top:4px}
-.lbl{font-size:6.5pt;color:#777;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px}
-.val{font-size:8.5pt;font-weight:600}
-.sub{font-size:7.5pt;color:#555}
-.val-lg{font-size:10pt;font-weight:700}
-.val-valor{font-size:13pt;font-weight:700}
-.parcela-num{font-size:14pt;font-weight:700}
-.badge-reaj{font-size:7pt;font-weight:700;color:#b45309;background:#fef3c7;padding:2px 6px;border-radius:3px;letter-spacing:.5px;align-self:center}
-</style>
-</head>
-<body>
-${empresaHeader}
-${allPagesHTML}
-<script>
-(function(){
-  var d=document.createElement('div');
-  d.style.cssText='position:absolute;left:-9999px;width:1mm;height:1mm';
-  document.body.appendChild(d);
-  var px1mm=d.getBoundingClientRect().height;
-  document.body.removeChild(d);
-  document.querySelectorAll('.page').forEach(function(pg){
-    var its=pg.querySelectorAll('.carne-item');
-    var gaps=(its.length-1)*5*px1mm;
-    var h=Math.floor((277*px1mm-gaps)/its.length);
-    its.forEach(function(it){it.style.height=h+'px';it.style.flex='none';});
-  });
-  window.print();
-})();
-</script>
-</body>
-</html>`;
-
-    const win = window.open("", "_blank", "width=900,height=700");
-    if (!win) {
-      toast({ title: "Popup bloqueado", description: "Permita popups para imprimir", variant: "destructive" });
-      return;
-    }
-    win.document.write(html);
-    win.document.close();
+    const titulo = `${apenasReajustadas ? "Carnê Reajustado" : "Carnê"} — ${nomeCliente}`;
+    const ok = imprimirCarneDetalhado(empresaInfo ?? null, slips, titulo);
+    if (!ok) toast({ title: "Popup bloqueado", description: "Permita popups para imprimir", variant: "destructive" });
   }
 
   // ─── Dados derivados ─────────────────────────────────────────────────────
