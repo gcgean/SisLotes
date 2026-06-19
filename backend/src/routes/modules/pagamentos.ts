@@ -47,7 +47,7 @@ pagamentosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
     .leftJoinAndSelect("venda.cliente", "cliente")
     .leftJoinAndSelect("venda.lote", "lote")
     .leftJoinAndSelect("lote.loteamento", "loteamento")
-    .where("1=1");
+    .where("(venda.status IS NULL OR venda.status <> :cancelada)", { cancelada: "cancelada" });
 
   if (req.user?.id_empresa) {
     qb.andWhere("pagamento.id_empresa = :id_empresa", {
@@ -78,8 +78,10 @@ pagamentosRouter.get("/atrasados", requireAuth, async (req: AuthRequest, res) =>
 
   const qb = repo
     .createQueryBuilder("pagamento")
+    .leftJoin("pagamento.venda", "venda")
     .where("pagamento.vencimento < :hoje", { hoje })
-    .andWhere("pagamento.situacao = :situacao", { situacao: "aberto" });
+    .andWhere("pagamento.situacao = :situacao", { situacao: "aberto" })
+    .andWhere("(venda.status IS NULL OR venda.status <> :cancelada)", { cancelada: "cancelada" });
 
   if (req.user?.id_empresa) {
     qb.andWhere("pagamento.id_empresa = :id_empresa", {
