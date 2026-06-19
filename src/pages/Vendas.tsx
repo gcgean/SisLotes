@@ -955,6 +955,18 @@ const Vendas = () => {
     fetchDetalhe(venda.id_venda);
   }
 
+  function abrirEdicaoVenda(v: VendaListItem) {
+    // Converte DD/MM/YYYY → YYYY-MM-DD para o input date
+    const partes = v.data_venda.split("/");
+    const iso = partes.length === 3 ? `${partes[2]}-${partes[1]}-${partes[0]}` : new Date().toISOString().split("T")[0];
+    setVendaParaEditar(v);
+    setEditDataVenda(iso);
+    setEditEntrada(String(v.valor_entrada));
+    setEditParcelas(String(v.parcelas));
+    setEditValorParcela(String(v.valor_parcela ?? 0));
+    setEditarVendaAberto(true);
+  }
+
   function abrirBaixa(parcela: Pagamento) {
     setParcelaParaBaixa(parcela);
     setBaixaData(new Date().toISOString().split("T")[0]);
@@ -1096,8 +1108,8 @@ const Vendas = () => {
           </div>
         </div>
 
-        {/* Tabela */}
-        <div className="glass-card rounded-lg overflow-hidden">
+        {/* Tabela (desktop / tablet) */}
+        <div className="glass-card rounded-lg overflow-hidden hidden md:block">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -1143,17 +1155,7 @@ const Vendas = () => {
                           className="h-8 w-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-950/30"
                           title={v.status !== "aberta" ? "Só é possível editar vendas abertas" : "Editar venda"}
                           disabled={v.status !== "aberta"}
-                          onClick={() => {
-                            // Converte DD/MM/YYYY → YYYY-MM-DD para o input date
-                            const partes = v.data_venda.split("/");
-                            const iso = partes.length === 3 ? `${partes[2]}-${partes[1]}-${partes[0]}` : new Date().toISOString().split("T")[0];
-                            setVendaParaEditar(v);
-                            setEditDataVenda(iso);
-                            setEditEntrada(String(v.valor_entrada));
-                            setEditParcelas(String(v.parcelas));
-                            setEditValorParcela(String(v.valor_parcela ?? 0));
-                            setEditarVendaAberto(true);
-                          }}
+                          onClick={() => abrirEdicaoVenda(v)}
                         >
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -1176,6 +1178,71 @@ const Vendas = () => {
           {!isLoading && vendaFiltrada.length === 0 && (
             <div className="p-12 text-center text-sm text-muted-foreground">Nenhuma venda encontrada</div>
           )}
+        </div>
+
+        {/* Cards (mobile) */}
+        <div className="md:hidden space-y-3">
+          {!isLoading && vendaFiltrada.length === 0 && (
+            <div className="glass-card rounded-lg p-8 text-center text-sm text-muted-foreground">Nenhuma venda encontrada</div>
+          )}
+          {vendaFiltrada.map((v) => (
+            <div
+              key={v.id_venda}
+              className="glass-card rounded-lg p-4 space-y-3 active:bg-muted/30 transition-colors"
+              onClick={() => abrirDetalhe(v)}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs text-muted-foreground">#{String(v.id_venda).padStart(6, "0")}</p>
+                  <p className="font-semibold truncate">{v.cliente}</p>
+                  <p className="text-sm text-muted-foreground">{v.lote}</p>
+                  <p className="text-xs text-muted-foreground/70">{v.loteamento}</p>
+                </div>
+                <Badge variant={statusConfig[v.status].variant} className="shrink-0">{statusConfig[v.status].label}</Badge>
+              </div>
+
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Data</span>
+                  <span className="font-medium">{fmtDate(v.data_venda)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Total</span>
+                  <span className="font-semibold text-primary">{fmtCurrency(v.valor_total)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Entrada</span>
+                  <span className="font-medium">{fmtCurrency(v.valor_entrada)}</span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span className="text-muted-foreground">Parcelas</span>
+                  <span className="font-medium">{v.parcelas}x {fmtCurrency(v.valor_parcela ?? 0)}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1 border-t border-border" onClick={(e) => e.stopPropagation()}>
+                <Button variant="outline" size="sm" className="flex-1 gap-1.5" onClick={() => abrirDetalhe(v)}>
+                  <Eye className="h-4 w-4" /> Ver
+                </Button>
+                <Button
+                  variant="outline" size="sm"
+                  className="flex-1 gap-1.5 text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                  disabled={v.status !== "aberta"}
+                  onClick={() => abrirEdicaoVenda(v)}
+                >
+                  <Pencil className="h-4 w-4" /> Editar
+                </Button>
+                <Button
+                  variant="outline" size="sm"
+                  className="flex-1 gap-1.5 text-destructive hover:text-destructive disabled:opacity-50"
+                  disabled={v.status !== "aberta"}
+                  onClick={() => setConfirmarCancelamento(v)}
+                >
+                  <Ban className="h-4 w-4" /> Cancelar
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
