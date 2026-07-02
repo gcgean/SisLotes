@@ -13,6 +13,7 @@ import { Auditoria } from "../entities/Auditoria";
 import { HubBillingCharge } from "../entities/HubBillingCharge";
 import { HubBillingEvent } from "../entities/HubBillingEvent";
 import { Sugestao } from "../entities/Sugestao";
+import { TelegramConfig } from "../entities/TelegramConfig";
 import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateClientes";
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
@@ -38,6 +39,7 @@ import { AddReajustadoToPagamentos1700000000020 } from "../migrations/1700000000
 import { FixVendaLoteUniqueConstraint1700000000021 } from "../migrations/1700000000021-FixVendaLoteUniqueConstraint";
 import { AddEncargosToEmpresa1700000000022 } from "../migrations/1700000000022-AddEncargosToEmpresa";
 import { AddAtivoToConta1700000000023 } from "../migrations/1700000000023-AddAtivoToConta";
+import { CreateTelegramConfig1700000000024 } from "../migrations/1700000000024-CreateTelegramConfig";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -46,7 +48,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -73,6 +75,7 @@ export const AppDataSource = new DataSource({
     FixVendaLoteUniqueConstraint1700000000021,
     AddEncargosToEmpresa1700000000022,
     AddAtivoToConta1700000000023,
+    CreateTelegramConfig1700000000024,
   ],
   synchronize: false,
   logging: false,

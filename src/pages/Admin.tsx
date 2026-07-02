@@ -46,9 +46,11 @@ import {
   ShieldAlert,
   ShieldOff,
 } from "lucide-react";
+import { Send } from "lucide-react";
 import { formatCpfCnpj } from "@/lib/cpfCnpj";
 import { formatDateBR, formatDateTimeBR } from "@/lib/date-br";
 import { Navigate } from "react-router-dom";
+import { TelegramConfigDialog } from "@/components/admin/TelegramConfigDialog";
 
 interface Empresa {
   id_empresa: number;
@@ -130,6 +132,7 @@ export default function Admin() {
 
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [telegramOpen, setTelegramOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingEmpresa, setEditingEmpresa] = useState<Empresa | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -289,11 +292,19 @@ export default function Admin() {
             <ShieldAlert className="h-6 w-6 text-emerald-600" />
             <h1 className="text-xl font-bold">Área Administrativa</h1>
           </div>
-          <Button onClick={openNew} className="gap-2">
-            <Plus className="h-4 w-4" />
-            Nova Empresa
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setTelegramOpen(true)} className="gap-2">
+              <Send className="h-4 w-4 text-sky-500" />
+              Notificações Telegram
+            </Button>
+            <Button onClick={openNew} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Nova Empresa
+            </Button>
+          </div>
         </div>
+
+        <TelegramConfigDialog open={telegramOpen} onClose={() => setTelegramOpen(false)} token={token} />
 
         {/* Stats */}
         {stats && (

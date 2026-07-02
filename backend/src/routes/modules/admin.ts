@@ -3,6 +3,8 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Empresa } from "../../entities/Empresa";
 import { Usuario } from "../../entities/Usuario";
+import { TelegramConfig } from "../../entities/TelegramConfig";
+import { TelegramService } from "../../services/TelegramService";
 import { requireAuth, requireMaster } from "../../middleware/auth";
 
 export const adminRouter = Router();
@@ -194,5 +196,113 @@ adminRouter.get("/stats", async (_req, res) => {
     return res.json({ totalEmpresas, ativas, inativas, totalUsuarios });
   } catch (error) {
     return res.status(500).json({ error: "Erro ao buscar estatísticas" });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Notificações via Telegram (novos leads)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const recipientSchema = z.object({
+  nome: z.string().max(120).optional().default(""),
+  chat_id: z.string().min(1, "chat_id obrigatório").max(40),
+});
+
+const telegramConfigSchema = z.object({
+  ativo: z.boolean().optional(),
+  bot_token: z.string().max(200).optional().nullable(),
+  notificar_novo_lead: z.boolean().optional(),
+  recipients: z.array(recipientSchema).optional(),
+});
+
+// ─── GET /admin/telegram ─────────────────────────────────────────────────────
+adminRouter.get("/telegram", async (_req, res) => {
+  try {
+    const config = await TelegramService.ensureConfig();
+    return res.json({
+      ativo: config.ativo,
+      bot_token: config.bot_token ?? "",
+      notificar_novo_lead: config.notificar_novo_lead,
+      recipients: config.recipients ?? [],
+    });
+  } catch (error) {
+    console.error("Erro ao buscar config Telegram:", error);
+    return res.status(500).json({ error: "Erro ao buscar configuração do Telegram" });
+  }
+});
+
+// ─── PUT /admin/telegram ─────────────────────────────────────────────────────
+adminRouter.put("/telegram", async (req, res) => {
+  try {
+    const parse = telegramConfigSchema.safeParse(req.body);
+    if (!parse.success) {
+      return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+    }
+
+    const config = await TelegramService.ensureConfig();
+    const data = parse.data;
+
+    if (data.ativo !== undefined) config.ativo = data.ativo;
+    if (data.notificar_novo_lead !== undefined) config.notificar_novo_lead = data.notificar_novo_lead;
+    if (data.bot_token !== undefined) config.bot_token = data.bot_token?.trim() || null;
+    if (data.recipients !== undefined) {
+      config.recipients = data.recipients.map((r) => ({
+        nome: (r.nome || "").trim(),
+        chat_id: r.chat_id.trim(),
+      }));
+    }
+
+    const repo = AppDataSource.getRepository(TelegramConfig);
+    await repo.save(config);
+
+    return res.json({
+      ativo: config.ativo,
+      bot_token: config.bot_token ?? "",
+      notificar_novo_lead: config.notificar_novo_lead,
+      recipients: config.recipients ?? [],
+    });
+  } catch (error) {
+    console.error("Erro ao salvar config Telegram:", error);
+    return res.status(500).json({ error: "Erro ao salvar configuração do Telegram" });
+  }
+});
+
+// ─── POST /admin/telegram/detectar ───────────────────────────────────────────
+// Lista os chats que já enviaram mensagem ao bot (para descobrir o chat_id).
+adminRouter.post("/telegram/detectar", async (req, res) => {
+  try {
+    const token = (req.body?.bot_token as string | undefined)?.trim() || (await TelegramService.getConfig())?.bot_token || "";
+    if (!token) return res.status(400).json({ error: "Informe o token do bot primeiro." });
+    const chats = await TelegramService.detectChats(token);
+    return res.json({ chats });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : "Falha ao detectar chats" });
+  }
+});
+
+// ─── POST /admin/telegram/test ───────────────────────────────────────────────
+adminRouter.post("/telegram/test", async (_req, res) => {
+  try {
+    const config = await TelegramService.getConfig();
+    if (!config?.bot_token) return res.status(400).json({ error: "Configure o token do bot antes de testar." });
+    if (!config.recipients?.length) return res.status(400).json({ error: "Adicione pelo menos um destinatário." });
+
+    const texto = TelegramService.buildNovoLeadMessage({
+      empresa: "IMOBILIÁRIA EXEMPLO LTDA",
+      responsavel: "João da Silva",
+      telefone: "(88) 99999-0000",
+      email: "contato@exemplo.com",
+      cidade: "Fortaleza",
+      estado: "CE",
+      plano: "TESTE",
+    });
+    const resultado = await TelegramService.broadcast(`🧪 <b>Mensagem de teste</b>\n\n${texto}`);
+
+    if (resultado.enviados === 0) {
+      return res.status(400).json({ error: resultado.erros.join(" | ") || "Nenhuma mensagem enviada." });
+    }
+    return res.json({ success: true, ...resultado });
+  } catch (error) {
+    return res.status(500).json({ error: error instanceof Error ? error.message : "Erro ao enviar teste" });
   }
 });

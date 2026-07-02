@@ -5,6 +5,7 @@ import { AppDataSource } from "../../db/data-source";
 import { Empresa } from "../../entities/Empresa";
 import { Usuario } from "../../entities/Usuario";
 import { HubBillingService } from "../../services/HubBillingService";
+import { TelegramService } from "../../services/TelegramService";
 
 export const setupRouter = Router();
 
@@ -411,6 +412,17 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
     vendas_excluir: true,
   });
   await usuarioRepo.save(usuario);
+
+  // ── Notifica novos leads via Telegram (fire-and-forget, não bloqueia o cadastro)
+  void TelegramService.notifyNovoLead({
+    empresa: empresaData.nome_fantasia,
+    responsavel: usuarioData.login,
+    telefone: telefoneAdmin || empresaData.telefone || null,
+    email: emailAdmin || empresaData.email || null,
+    cidade: empresaData.cidade || null,
+    estado: empresaData.estado || null,
+    plano: parseResult.data.planCode || null,
+  });
 
   // ── 7. Hub Billing: onboarding centralizado via /access/resolve
   // Quando o Hub está configurado e há plano selecionado, o mapeamento é obrigatório.
