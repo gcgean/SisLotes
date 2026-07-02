@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SISLOTE — Sistema de Gestão de Loteamentos | Controle Vendas, Parcelas e Inadimplência</title>
+<meta name="description" content="O SISLOTE é o sistema online completo para loteadoras e imobiliárias controlarem vendas, parcelas, inadimplência e contratos — em um só lugar. Teste grátis por 15 dias, sem cartão." />
+<meta property="og:title" content="SISLOTE — Gestão completa de loteamentos" />
+<meta property="og:description" content="Chega de perder dinheiro por não saber quem deve, quanto deve e quando vence. Teste grátis 15 dias." />
+<meta property="og:type" content="website" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+<!-- ══════════════════════════════════════════════════════════════════
+     RASTREAMENTO / PIXELS  —  preencha os IDs abaixo para ativar.
+     Enquanto estiverem vazios, nada é carregado (não quebra a página).
+     ══════════════════════════════════════════════════════════════════ -->
+<script>
+  window.TRACK = {
+    META_PIXEL_ID: '',   // ex.: '123456789012345'  (Meta/Facebook Ads)
+    GA4_ID:        '',    // ex.: 'G-XXXXXXXXXX'      (Google Analytics 4)
+    GADS_ID:       '',    // ex.: 'AW-XXXXXXXXX'      (Google Ads — conversões)
+    GADS_LABEL:    ''     // ex.: 'AbC-D_efG'         (rótulo da conversão do Google Ads)
+  };
+</script>
+
+<!-- Meta Pixel -->
+<script>
+(function () {
+  var ID = window.TRACK.META_PIXEL_ID;
+  if (!ID) return;
+  !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+  n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+  n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+  t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script',
+  'https://connect.facebook.net/en_US/fbevents.js');
+  fbq('init', ID); fbq('track', 'PageView');
+})();
+</script>
+
+<!-- Google Analytics 4 / Google Ads (gtag) -->
+<script>
+(function () {
+  var T = window.TRACK, ids = [T.GA4_ID, T.GADS_ID].filter(Boolean);
+  if (!ids.length) return;
+  var s = document.createElement('script'); s.async = true;
+  s.src = 'https://www.googletagmanager.com/gtag/js?id=' + ids[0];
+  document.head.appendChild(s);
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function(){ dataLayer.push(arguments); };
+  gtag('js', new Date());
+  ids.forEach(function (id) { gtag('config', id); });
+})();
+</script>
+
+<style>
+  :root {
+    --green: #10b981;
+    --green-dark: #059669;
+    --green-darker: #047857;
+    --ink: #0f172a;
+    --ink-2: #1e293b;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --bg: #ffffff;
+    --bg-soft: #f0fdf4;
+    --bg-soft-2: #f8fafc;
+    --danger: #ef4444;
+    --radius: 16px;
+    --shadow: 0 10px 30px -10px rgba(2, 44, 34, .18);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    color: var(--ink);
+    background: var(--bg);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  img { max-width: 100%; display: block; }
+  a { color: inherit; text-decoration: none; }
+  .wrap { width: 100%; max-width: 1120px; margin: 0 auto; padding: 0 20px; }
+  .eyebrow {
+    display: inline-block; font-size: 13px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--green-darker);
+    background: rgba(16,185,129,.12); padding: 7px 14px; border-radius: 999px; margin-bottom: 20px;
+  }
+  h1, h2, h3 { line-height: 1.15; letter-spacing: -.02em; }
+  .section { padding: 84px 0; }
+  .section-head { text-align: center; max-width: 760px; margin: 0 auto 52px; }
+  .section-head h2 { font-size: clamp(28px, 4vw, 42px); font-weight: 800; }
+  .section-head p { color: var(--muted); font-size: 18px; margin-top: 14px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+    font-weight: 700; font-size: 17px; padding: 16px 28px; border-radius: 14px;
+    cursor: pointer; border: 2px solid transparent; transition: transform .15s ease, box-shadow .15s ease, background .15s;
+    text-align: center;
+  }
+  .btn-primary {
+    background: linear-gradient(180deg, var(--green) 0%, var(--green-dark) 100%);
+    color: #fff; box-shadow: 0 12px 24px -8px rgba(16,185,129,.55);
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 30px -8px rgba(16,185,129,.65); }
+  .btn-ghost { background: #fff; color: var(--ink); border-color: var(--line); }
+  .btn-ghost:hover { border-color: var(--green); color: var(--green-darker); }
+  .btn-lg { font-size: 18px; padding: 18px 34px; }
+
+  /* Top bar */
+  header.nav {
+    position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,.9);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line);
+  }
+  .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+  .logo { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 20px; }
+  .logo .mark {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--green) 0%, var(--green-dark) 100%);
+    display: grid; place-items: center; color: #fff; font-size: 20px;
+  }
+  .logo small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); letter-spacing: .02em; }
+  .nav .btn { padding: 11px 20px; font-size: 15px; }
+  .nav-cta-desktop { display: inline-flex; }
+
+  /* Hero */
+  .hero {
+    background:
+      radial-gradient(1200px 500px at 80% -10%, rgba(16,185,129,.14), transparent 60%),
+      linear-gradient(180deg, #ffffff 0%, var(--bg-soft) 100%);
+    padding: 72px 0 84px;
+    text-align: center;
+  }
+  .hero h1 {
+    font-size: clamp(32px, 5.4vw, 58px); font-weight: 900; max-width: 900px; margin: 0 auto;
+  }
+  .hero h1 .hl { color: var(--green-dark); }
+  .hero .sub { font-size: clamp(17px, 2.2vw, 21px); color: var(--ink-2); max-width: 760px; margin: 24px auto 0; }
+  .hero-cta { margin-top: 36px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .hero-note { margin-top: 16px; color: var(--muted); font-size: 14px; }
+  .hero-badges { margin-top: 44px; display: flex; gap: 26px; justify-content: center; flex-wrap: wrap; color: var(--muted); font-size: 14px; font-weight: 600; }
+  .hero-badges span { display: inline-flex; align-items: center; gap: 8px; }
+
+  /* Hero — mockup do sistema */
+  .hero-shot { margin: 54px auto 0; max-width: 960px; }
+  .browser {
+    border-radius: 16px; overflow: hidden; background: #fff;
+    border: 1px solid var(--line);
+    box-shadow: 0 40px 80px -30px rgba(2,44,34,.35), 0 12px 24px -12px rgba(2,44,34,.2);
+  }
+  .browser-bar { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: #f1f5f9; border-bottom: 1px solid var(--line); }
+  .browser-bar .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .browser-bar .dot.r { background: #ff5f57; } .browser-bar .dot.y { background: #febc2e; } .browser-bar .dot.g { background: #28c840; }
+  .browser-url {
+    flex: 1; margin-left: 10px; background: #fff; border: 1px solid var(--line); border-radius: 8px;
+    font-size: 12.5px; color: var(--muted); padding: 6px 12px; text-align: left; display: flex; align-items: center; gap: 7px;
+  }
+  .browser-body { padding: 22px; background: linear-gradient(180deg, #ffffff, #f8fafc); text-align: left; }
+  .shot-title { font-size: 15px; font-weight: 800; color: var(--ink); margin-bottom: 2px; }
+  .shot-sub { font-size: 12px; color: var(--muted); margin-bottom: 16px; }
+  .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .kpi {
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px 15px; background: #fff;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .kpi .lbl { font-size: 10.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+  .kpi .num { font-size: 24px; font-weight: 900; color: var(--ink); }
+  .kpi .num.green { color: var(--green-dark); }
+  .kpi .num.red { color: var(--danger); }
+  .kpi .foot { font-size: 11px; color: var(--muted); }
+  .kpi .ic { position: absolute; }
+  .shot-lists { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .shot-panel { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: #fff; }
+  .shot-panel h4 { font-size: 12px; font-weight: 800; color: var(--ink); margin-bottom: 8px; }
+  .shot-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid #f1f5f9; font-size: 11.5px; }
+  .shot-line:first-of-type { border-top: none; }
+  .shot-line .who { color: var(--ink-2); font-weight: 600; }
+  .shot-line .sub2 { color: var(--muted); font-weight: 400; font-size: 10.5px; }
+  .shot-line .val { font-weight: 800; color: var(--green-dark); white-space: nowrap; }
+  .shot-line .val.red { color: var(--danger); }
+
+  /* Stats / prova social */
+  .stats { background: var(--ink); color: #fff; }
+  .stats .section-head h2 { color: #fff; }
+  .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .stat-card {
+    background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.09);
+    border-radius: var(--radius); padding: 22px 22px; display: flex; gap: 14px; align-items: flex-start;
+  }
+  .stat-card .ic { font-size: 22px; line-height: 1.4; }
+  .stat-card p { color: #cbd5e1; font-size: 15.5px; }
+
+  /* Dor */
+  .pain { background: var(--bg-soft-2); }
+  .pain-list { max-width: 780px; margin: 0 auto; display: grid; gap: 14px; }
+  .pain-item {
+    display: flex; gap: 14px; align-items: flex-start; background: #fff; border: 1px solid var(--line);
+    border-left: 4px solid var(--danger); border-radius: 12px; padding: 18px 20px; font-size: 17px; font-weight: 500;
+  }
+  .pain-item .x { color: var(--danger); font-size: 18px; }
+  .pain-quote {
+    max-width: 780px; margin: 30px auto 0; text-align: center; font-size: 19px; font-weight: 600;
+    color: var(--ink-2); background: #fff; border: 1px dashed var(--green); border-radius: var(--radius); padding: 26px 24px;
+  }
+
+  /* Features */
+  .feat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .feat-card {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 26px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.03); transition: transform .18s ease, box-shadow .18s ease, border-color .18s;
+  }
+  .feat-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); border-color: rgba(16,185,129,.4); }
+  .feat-ic {
+    width: 52px; height: 52px; border-radius: 13px; background: var(--bg-soft);
+    display: grid; place-items: center; font-size: 25px; margin-bottom: 16px;
+  }
+  .feat-card h3 { font-size: 19px; font-weight: 800; }
+  .feat-num { color: var(--green-dark); font-weight: 800; }
+  .feat-card > p { color: var(--muted); font-size: 15.5px; margin: 10px 0 14px; }
+  .feat-card ul { list-style: none; display: grid; gap: 8px; }
+  .feat-card li { position: relative; padding-left: 26px; font-size: 14.5px; color: var(--ink-2); }
+  .feat-card li::before { content: "✓"; position: absolute; left: 0; color: var(--green-dark); font-weight: 800; }
+  .docs-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .docs-tags span { font-size: 13px; background: var(--bg-soft); color: var(--green-darker); font-weight: 600; padding: 6px 11px; border-radius: 8px; }
+
+  /* Pricing */
+  .pricing { background: var(--bg-soft); }
+  .price-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; align-items: stretch; }
+  .price-card {
+    background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 26px 20px; text-align: center;
+    display: flex; flex-direction: column; position: relative;
+  }
+  .price-card.featured { border: 2px solid var(--green); box-shadow: var(--shadow); }
+  .price-card .tag-pop {
+    position: absolute; top: -13px; left: 50%; transform: translateX(-50%);
+    background: var(--green-dark); color: #fff; font-size: 12px; font-weight: 700; padding: 5px 14px; border-radius: 999px; white-space: nowrap;
+  }
+  .price-card h3 { font-size: 19px; font-weight: 800; }
+  .price-card .lotes { color: var(--muted); font-size: 14px; margin-top: 4px; min-height: 20px; }
+  .price-card .val { margin: 18px 0 6px; }
+  .price-card .val b { font-size: 30px; font-weight: 900; }
+  .price-card .val small { color: var(--muted); font-weight: 600; font-size: 14px; }
+  .price-card .btn { margin-top: auto; width: 100%; font-size: 15px; padding: 13px 16px; }
+  .price-support { max-width: 760px; margin: 40px auto 0; text-align: center; color: var(--ink-2); font-size: 17px; }
+  .price-cta { text-align: center; margin-top: 30px; }
+
+  /* Garantias */
+  .guar-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; max-width: 900px; margin: 0 auto; }
+  .guar-item { display: flex; gap: 13px; align-items: flex-start; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .guar-item .c { color: var(--green-dark); font-size: 19px; }
+  .guar-item p { font-size: 16px; font-weight: 500; }
+
+  /* FAQ */
+  .faq { background: var(--bg-soft-2); }
+  .faq-list { max-width: 800px; margin: 0 auto; display: grid; gap: 12px; }
+  details.faq-item { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 4px 20px; }
+  details.faq-item summary {
+    cursor: pointer; list-style: none; font-weight: 700; font-size: 17px; padding: 16px 0;
+    display: flex; justify-content: space-between; align-items: center; gap: 16px;
+  }
+  details.faq-item summary::-webkit-details-marker { display: none; }
+  details.faq-item summary::after { content: "+"; color: var(--green-dark); font-size: 24px; font-weight: 700; }
+  details.faq-item[open] summary::after { content: "–"; }
+  details.faq-item p { color: var(--muted); font-size: 15.5px; padding: 0 0 18px; }
+
+  /* Final CTA */
+  .final {
+    background:
+      radial-gradient(900px 400px at 50% 120%, rgba(16,185,129,.25), transparent 60%),
+      linear-gradient(180deg, var(--ink) 0%, #0b1220 100%);
+    color: #fff; text-align: center;
+  }
+  .final h2 { font-size: clamp(28px, 4.4vw, 46px); font-weight: 900; max-width: 820px; margin: 0 auto; }
+  .final p { color: #cbd5e1; font-size: 18px; max-width: 700px; margin: 22px auto 0; }
+  .final .hero-cta { margin-top: 38px; }
+  .final .btn-ghost { background: transparent; color: #fff; border-color: rgba(255,255,255,.35); }
+  .final .btn-ghost:hover { border-color: #fff; color: #fff; }
+
+  /* Footer */
+  footer.foot { background: #0b1220; color: #94a3b8; padding: 40px 0; text-align: center; font-size: 14px; }
+  footer.foot .logo { justify-content: center; color: #fff; margin-bottom: 14px; }
+  footer.foot a { color: #cbd5e1; }
+
+  /* Sticky mobile CTA */
+  .mobile-cta {
+    display: none; position: fixed; bottom: 0; left: 0; right: 0; z-index: 60;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); background: rgba(255,255,255,.96);
+    backdrop-filter: blur(10px); border-top: 1px solid var(--line);
+  }
+  .mobile-cta .btn { width: 100%; }
+
+  @media (max-width: 960px) {
+    .feat-grid { grid-template-columns: repeat(2, 1fr); }
+    .price-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (max-width: 720px) {
+    .section { padding: 60px 0; }
+    .nav-cta-desktop { display: none; }
+    .stat-grid { grid-template-columns: 1fr; }
+    .feat-grid { grid-template-columns: 1fr; }
+    .price-grid { grid-template-columns: 1fr; }
+    .guar-grid { grid-template-columns: 1fr; }
+    .hero-badges { gap: 14px 20px; }
+    .kpi-row { grid-template-columns: 1fr; }
+    .shot-lists { grid-template-columns: 1fr; }
+    .kpi .num { font-size: 22px; }
+    .browser-body { padding: 16px; }
+    .mobile-cta { display: block; }
+    body { padding-bottom: 78px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ══════════ NAV ══════════ -->
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a href="#topo" class="logo">
+      <span class="mark">📊</span>
+      <span>SISLOTE<small>Gestão de Loteamentos</small></span>
+    </a>
+    <a href="#planos" class="btn btn-primary nav-cta-desktop">Testar Grátis por 15 Dias</a>
+  </div>
+</header>
+
+<!-- ══════════ HERO ══════════ -->
+<section class="hero" id="topo">
+  <div class="wrap">
+    <span class="eyebrow">Para donos de loteamentos que ainda controlam parcelas no caderno, na planilha ou na cabeça</span>
+    <h1>Chega de perder dinheiro porque você não sabe <span class="hl">quem deve, quanto deve e quando vence</span></h1>
+    <p class="sub">
+      O SISLOTE é o sistema online completo para loteadoras e imobiliárias que precisam controlar
+      vendas, parcelas, inadimplência e emissão de contratos — tudo em um só lugar, com acesso de qualquer dispositivo.
+    </p>
+    <div class="hero-cta">
+      <a href="#planos" class="btn btn-primary btn-lg">➡️ Experimente Grátis por 15 Dias — Sem Cartão</a>
+    </div>
+    <p class="hero-note">Acesso imediato após o cadastro • Sem cartão de crédito • Cancele quando quiser</p>
+    <div class="hero-badges">
+      <span>✅ Sem cartão de crédito</span>
+      <span>📱 Funciona no celular</span>
+      <span>⚡ Comece em minutos</span>
+      <span>🛡️ Dados seguros na nuvem</span>
+    </div>
+
+    <!-- Mockup do sistema -->
+    <div class="hero-shot">
+      <div class="browser">
+        <div class="browser-bar">
+          <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
+          <span class="browser-url">🔒 sislote.baselider.com.br/dashboard</span>
+        </div>
+        <div class="browser-body">
+          <div class="shot-title">Dashboard</div>
+          <div class="shot-sub">Visão completa da sua operação em segundos</div>
+          <div class="kpi-row">
+            <div class="kpi">
+              <span class="lbl">Vendas ativas</span>
+              <span class="num">1.429</span>
+              <span class="foot">🛒 em andamento</span>
+            </div>
+            <div class="kpi">
+              <span class="lbl">Recebido no mês</span>
+              <span class="num green">R$ 48.750</span>
+              <span class="foot">📈 +12% vs. mês anterior</span>
+            </div>
+            <div class="kpi">
+              <span class="lbl">Títulos em atraso</span>
+              <span class="num red">11.455</span>
+              <span class="foot">⚠️ R$ 2.049.853 pendente</span>
+            </div>
+          </div>
+          <div class="shot-lists">
+            <div class="shot-panel">
+              <h4>Vendas recentes</h4>
+              <div class="shot-line"><span class="who">Jaime Araújo dos Santos<br><span class="sub2">Quadra 09 · Lote 07</span></span><span class="val">R$ 1.400</span></div>
+              <div class="shot-line"><span class="who">Francisco G. S. Sousa<br><span class="sub2">Quadra 09 · Lote 14</span></span><span class="val">R$ 34.400</span></div>
+              <div class="shot-line"><span class="who">Manoel C. dos Santos<br><span class="sub2">Quadra 09 · Lote 08</span></span><span class="val">R$ 12.620</span></div>
+            </div>
+            <div class="shot-panel">
+              <h4>Títulos em atraso</h4>
+              <div class="shot-line"><span class="who">Maria Josete S. Sales<br><span class="sub2">Parcela 1/60 · há 42 dias</span></span><span class="val red">R$ 75</span></div>
+              <div class="shot-line"><span class="who">Maria Josete S. Sales<br><span class="sub2">Parcela 2/60 · há 12 dias</span></span><span class="val red">R$ 75</span></div>
+              <div class="shot-line"><span class="who">Vicente Oliveira de Brito<br><span class="sub2">Parcela 4/12 · há 8 dias</span></span><span class="val red">R$ 160</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ PROVA SOCIAL / NÚMEROS ══════════ -->
+<section class="section stats">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Quem usa o SISLOTE sabe exatamente onde está cada centavo do seu loteamento</h2>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-card"><span class="ic">✅</span><p>Controle de <b>mais de 1.400 vendas ativas</b> em uma única tela</p></div>
+      <div class="stat-card"><span class="ic">✅</span><p>Visualize <b>todos os títulos em atraso</b> com o valor exato pendente, em tempo real</p></div>
+      <div class="stat-card"><span class="ic">✅</span><p>Gerencie <b>múltiplos loteamentos e lotes</b> em diferentes cidades com um só login</p></div>
+      <div class="stat-card"><span class="ic">✅</span><p>Cadastre clientes <b>pessoa física e jurídica</b>, com CPF/CNPJ, cidade e telefone</p></div>
+      <div class="stat-card" style="grid-column:1/-1"><span class="ic">✅</span><p>Emita <b>contratos, carnês, recibos de quitação, minutas e termos de transferência</b> com um clique</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ DOR / PROBLEMA ══════════ -->
+<section class="section pain">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Você sabe responder agora, sem consultar planilha ou ligar para alguém:</h2>
+    </div>
+    <div class="pain-list">
+      <div class="pain-item"><span class="x">❌</span>Quantas parcelas do meu loteamento estão em atraso hoje?</div>
+      <div class="pain-item"><span class="x">❌</span>Qual o valor total pendente de recebimento?</div>
+      <div class="pain-item"><span class="x">❌</span>Quais clientes não pagaram os últimos 3 meses?</div>
+      <div class="pain-item"><span class="x">❌</span>Qual loteamento está gerando mais receita?</div>
+      <div class="pain-item"><span class="x">❌</span>Quem já quitou e precisa do recibo de quitação?</div>
+    </div>
+    <p class="pain-quote">
+      Se você hesitou em qualquer uma dessas perguntas, seu negócio está funcionando no escuro.
+      E negócio no escuro sangra dinheiro todo mês — sem você perceber.
+    </p>
+  </div>
+</section>
+
+<!-- ══════════ FUNCIONALIDADES ══════════ -->
+<section class="section" id="funcionalidades">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Funcionalidades</span>
+      <h2>Tudo que você precisa para profissionalizar a gestão do seu loteamento</h2>
+    </div>
+    <div class="feat-grid">
+
+      <div class="feat-card">
+        <div class="feat-ic">📊</div>
+        <h3><span class="feat-num">1.</span> Dashboard</h3>
+        <p>Ao fazer login, veja o retrato completo da operação: clientes, loteamentos ativos, vendas, valor recebido no mês, títulos em atraso e pagamentos. Decisões com dados, não com achismo.</p>
+        <ul>
+          <li>Indicadores mais importantes num só painel</li>
+          <li>Vendas recentes e títulos em atraso na tela inicial</li>
+          <li>Funciona em computador, tablet e celular</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-ic">👥</div>
+        <h3><span class="feat-num">2.</span> Clientes</h3>
+        <p>Cadastre compradores em minutos — PF ou PJ, com CPF/CNPJ, endereço, cidade, telefone e histórico. Saiba quem quitou, quem está ativo e quem desistiu.</p>
+        <ul>
+          <li>Cadastro ilimitado de clientes (PF e PJ)</li>
+          <li>Filtros por tipo de cliente</li>
+          <li>Histórico completo vinculado às vendas</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-ic">📍</div>
+        <h3><span class="feat-num">3.</span> Loteamentos</h3>
+        <p>Cadastre cada empreendimento com nome, localização, proprietário e tipo. Visualize todos os lotes e decida com clareza — não importa quantos loteamentos você tenha.</p>
+        <ul>
+          <li>Múltiplos loteamentos em um único acesso</li>
+          <li>Busca por nome, cidade ou proprietário</li>
+          <li>Visão de lotes disponíveis e vendidos</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-ic">🏡</div>
+        <h3><span class="feat-num">4.</span> Lotes</h3>
+        <p>Saiba em tempo real quantos lotes estão disponíveis, vendidos e o total cadastrado — por loteamento, quadra e número. Nunca mais venda o mesmo lote duas vezes.</p>
+        <ul>
+          <li>Cadastro com área, frente e fundo</li>
+          <li>Status em tempo real: Disponível ou Vendido</li>
+          <li>Filtros por loteamento</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-ic">🛒</div>
+        <h3><span class="feat-num">5.</span> Vendas</h3>
+        <p>Registre cada venda com código único, cliente, lote, data, valor, entrada e parcelas. O sistema gera o parcelamento e acompanha cada parcela. Com um clique, imprima:</p>
+        <div class="docs-tags">
+          <span>📄 Contrato</span><span>📄 À Vista</span><span>📄 Recibo de Quitação</span>
+          <span>📄 Minuta</span><span>📄 Termo de Transferência</span><span>🖨️ Carnê com timbre</span>
+        </div>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-ic">💳</div>
+        <h3><span class="feat-num">6.</span> Pagamentos</h3>
+        <p>Busque qualquer cliente pelo nome ou número do carnê e veja todas as parcelas numa tela. Dê baixa rapidamente, registrando data, juros e multas quando aplicável.</p>
+        <ul>
+          <li>Busca instantânea por cliente ou carnê</li>
+          <li>Todas as parcelas do cliente numa tela</li>
+          <li>Registro preciso de data e valor de cada pagamento</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-ic">📈</div>
+        <h3><span class="feat-num">7.</span> Relatórios</h3>
+        <p>Enxergue o negócio de cima com relatórios completos:</p>
+        <ul>
+          <li>Entradas por loteamento (receita no ano)</li>
+          <li>Títulos em atraso para agir na inadimplência</li>
+          <li>Juros recebidos no período</li>
+          <li>Total por conta bancária</li>
+          <li>Clientes por loteamento e endereços para carnê</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-ic">🔍</div>
+        <h3><span class="feat-num">8.</span> Auditoria</h3>
+        <p>Cada ação é registrada com usuário, tabela, descrição, data/hora e IP. Vendas criadas, editadas ou canceladas ficam rastreadas para sempre. Ideal para equipes.</p>
+        <ul>
+          <li>Log completo de todas as operações</li>
+          <li>Rastreabilidade por usuário e ação</li>
+          <li>Proteção contra erros e manipulações</li>
+        </ul>
+      </div>
+
+      <div class="feat-card">
+        <div class="feat-ic">⚙️</div>
+        <h3><span class="feat-num">9.</span> Configurações</h3>
+        <p>Deixe o sistema com a cara da sua empresa: logomarca, razão social, CNPJ, endereço e dados bancários. Defina usuários com permissões e modelos de contrato com o seu timbre.</p>
+        <ul>
+          <li>Logomarca nos documentos impressos</li>
+          <li>Contas bancárias e usuários com permissões</li>
+          <li>Modelo de contrato personalizado e múltiplas empresas</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ PREÇOS ══════════ -->
+<section class="section pricing" id="planos">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Planos</span>
+      <h2>Planos para todo tamanho de operação. A partir de R$ 19,90/mês.</h2>
+    </div>
+    <div class="price-grid">
+      <div class="price-card">
+        <h3>Starter</h3><div class="lotes">Até 3 lotes</div>
+        <div class="val"><b>R$ 19,90</b><br><small>/mês</small></div>
+        <a href="#" class="btn btn-ghost" data-cta="plano-starter">Começar</a>
+      </div>
+      <div class="price-card">
+        <h3>Pro</h3><div class="lotes">Até 50 lotes</div>
+        <div class="val"><b>R$ 49,90</b><br><small>/mês</small></div>
+        <a href="#" class="btn btn-ghost" data-cta="plano-pro">Começar</a>
+      </div>
+      <div class="price-card featured">
+        <span class="tag-pop">Mais popular</span>
+        <h3>Business</h3><div class="lotes">Até 100 lotes</div>
+        <div class="val"><b>R$ 99,90</b><br><small>/mês</small></div>
+        <a href="#" class="btn btn-primary" data-cta="plano-business">Começar</a>
+      </div>
+      <div class="price-card">
+        <h3>Premium</h3><div class="lotes">Até 300 lotes</div>
+        <div class="val"><b>R$ 199,90</b><br><small>/mês</small></div>
+        <a href="#" class="btn btn-ghost" data-cta="plano-premium">Começar</a>
+      </div>
+      <div class="price-card">
+        <h3>Enterprise</h3><div class="lotes">Ilimitado</div>
+        <div class="val"><b>R$ 349,90</b><br><small>/mês</small></div>
+        <a href="#" class="btn btn-ghost" data-cta="plano-enterprise">Começar</a>
+      </div>
+    </div>
+    <p class="price-support">
+      Quanto você perde por mês com parcelas que vencem e ninguém cobra? Com um cliente que não paga há 3 meses e você nem sabia?
+      O SISLOTE custa <b>menos que uma hora do seu tempo</b> e recupera dezenas de vezes esse valor em inadimplência identificada e cobrada.
+    </p>
+    <div class="price-cta">
+      <a href="#" class="btn btn-primary btn-lg" data-cta="precos-trial">🟢 Comece Agora com 15 Dias Grátis</a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ GARANTIAS / OBJEÇÕES ══════════ -->
+<section class="section">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Sem complicação. Sem contratos longos. Sem pegadinhas.</h2>
+    </div>
+    <div class="guar-grid">
+      <div class="guar-item"><span class="c">✅</span><p><b>15 dias grátis</b> para testar tudo, sem compromisso e sem cartão de crédito</p></div>
+      <div class="guar-item"><span class="c">✅</span><p><b>Acesso imediato</b> após o cadastro — comece a usar em minutos</p></div>
+      <div class="guar-item"><span class="c">✅</span><p><b>Funciona no celular</b> — acesse de qualquer lugar, a qualquer hora</p></div>
+      <div class="guar-item"><span class="c">✅</span><p><b>Suporte incluso</b> — canal dedicado para tirar dúvidas rapidamente</p></div>
+      <div class="guar-item"><span class="c">✅</span><p><b>Plano escalável</b> — comece pequeno e expanda conforme cresce</p></div>
+      <div class="guar-item"><span class="c">✅</span><p><b>Dados seguros</b> — tudo na nuvem, com registro de auditoria completo</p></div>
+      <div class="guar-item" style="grid-column:1/-1"><span class="c">✅</span><p><b>Cancele quando quiser</b> — sem fidelidade forçada</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ FAQ ══════════ -->
+<section class="section faq">
+  <div class="wrap">
+    <div class="section-head">
+      <span class="eyebrow">Dúvidas frequentes</span>
+      <h2>Ainda com alguma dúvida?</h2>
+    </div>
+    <div class="faq-list">
+      <details class="faq-item">
+        <summary>Preciso cadastrar cartão de crédito para testar?</summary>
+        <p>Não. Os 15 dias de teste são totalmente gratuitos e não exigem cartão de crédito. Você cria a conta e já começa a usar.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Funciona no celular?</summary>
+        <p>Sim. O SISLOTE é online e funciona em computador, tablet e celular — você acessa de qualquer lugar, a qualquer hora.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Consigo gerenciar mais de um loteamento?</summary>
+        <p>Sim. Com um único login você gerencia múltiplos loteamentos e lotes em diferentes cidades. Os planos variam pela quantidade de lotes.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Consigo emitir contratos e carnês?</summary>
+        <p>Sim. Em um clique você emite contratos, contrato à vista, recibos de quitação, minutas, termos de transferência e carnês com o timbre da sua empresa.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Posso cancelar quando quiser?</summary>
+        <p>Sim. Não há fidelidade forçada — você cancela quando quiser, sem multas ou contratos longos.</p>
+      </details>
+      <details class="faq-item">
+        <summary>Meus dados ficam seguros?</summary>
+        <p>Sim. Tudo fica armazenado na nuvem, com registro de auditoria completo de todas as ações realizadas por cada usuário.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ CTA FINAL ══════════ -->
+<section class="section final">
+  <div class="wrap">
+    <h2>Você administra loteamentos demais para continuar no improviso.</h2>
+    <p>
+      Cada dia sem um sistema profissional é um dia com parcelas que vencem sem cobrança, contratos que somem
+      e dinheiro que fica na mesa. A sua concorrência já está usando tecnologia. O SISLOTE coloca a sua loteadora
+      no mesmo nível — ou acima.
+    </p>
+    <div class="hero-cta">
+      <a href="#" class="btn btn-primary btn-lg" data-cta="final-trial">🟢 Testar Grátis por 15 Dias — Sem Cartão</a>
+      <a href="#" class="btn btn-ghost btn-lg" data-cta="final-consultor">📞 Falar com um Consultor</a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════ FOOTER ══════════ -->
+<footer class="foot">
+  <div class="wrap">
+    <div class="logo"><span class="mark">📊</span> SISLOTE</div>
+    <p>Sistema de Gestão de Loteamentos • Controle de vendas, parcelas, inadimplência e contratos.</p>
+    <p style="margin-top:10px">© <span id="ano"></span> SISLOTE. Todos os direitos reservados.</p>
+  </div>
+</footer>
+
+<!-- ══════════ STICKY MOBILE CTA ══════════ -->
+<div class="mobile-cta">
+  <a href="#planos" class="btn btn-primary" data-cta="mobile-sticky">Testar Grátis por 15 Dias</a>
+</div>
+
+<script>
+  document.getElementById('ano').textContent = new Date().getFullYear();
+
+  // ── Configuração central de links ─────────────────────────────
+  // Ajuste estes dois valores conforme seus destinos reais:
+  var URL_CADASTRO = 'https://sislote.baselider.com.br';      // página de cadastro/trial
+  var URL_WHATSAPP = 'https://wa.me/55DDDNUMERO?text=' +       // troque DDDNUMERO
+                     encodeURIComponent('Olá! Quero saber mais sobre o SISLOTE.');
+
+  // Dispara evento de conversão nos pixels (se configurados)
+  function trackClick(origem) {
+    var T = window.TRACK || {};
+    var isConsultor = origem === 'final-consultor';
+    var evtName = isConsultor ? 'Contact' : 'Lead';
+    try { if (window.fbq) fbq('track', evtName, { content_name: origem }); } catch (e) {}
+    try {
+      if (window.gtag) {
+        if (!isConsultor && T.GADS_ID && T.GADS_LABEL) {
+          gtag('event', 'conversion', { send_to: T.GADS_ID + '/' + T.GADS_LABEL });
+        }
+        gtag('event', isConsultor ? 'contact' : 'generate_lead', { cta: origem });
+      }
+    } catch (e) {}
+  }
+
+  // Direciona todos os CTAs de trial para o cadastro (com marcação do plano/origem)
+  document.querySelectorAll('[data-cta]').forEach(function (el) {
+    var origem = el.getAttribute('data-cta');
+    if (origem === 'final-consultor') {
+      el.setAttribute('href', URL_WHATSAPP);
+      el.setAttribute('target', '_blank');
+      el.setAttribute('rel', 'noopener');
+    } else {
+      var url = new URL(URL_CADASTRO);
+      url.searchParams.set('origem', 'lp');
+      url.searchParams.set('cta', origem);
+      el.setAttribute('href', url.toString());
+    }
+    el.addEventListener('click', function () { trackClick(origem); });
+  });
+</script>
+</body>
+</html>
