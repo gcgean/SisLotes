@@ -4,6 +4,26 @@ export class CreateTelegramConfig1700000000024 implements MigrationInterface {
   name = "CreateTelegramConfig1700000000024";
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    // Auto-correção: remove um TYPE "telegram_config" órfão (resíduo de tentativa
+    // anterior interrompida) que impediria o CREATE TABLE — mas apenas se NÃO
+    // existir uma tabela real com esse nome (para não apagar dados existentes).
+    await queryRunner.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM pg_type t
+          JOIN pg_namespace n ON n.oid = t.typnamespace
+          WHERE t.typname = 'telegram_config' AND n.nspname = 'public'
+        ) AND NOT EXISTS (
+          SELECT 1 FROM pg_class c
+          JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.relname = 'telegram_config' AND n.nspname = 'public' AND c.relkind IN ('r', 'p')
+        ) THEN
+          DROP TYPE IF EXISTS public.telegram_config CASCADE;
+        END IF;
+      END $$;
+    `);
+
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS telegram_config (
         id INTEGER PRIMARY KEY DEFAULT 1,
