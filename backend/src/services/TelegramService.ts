@@ -3,11 +3,19 @@ import { TelegramConfig, TelegramRecipient } from "../entities/TelegramConfig";
 
 export interface NovoLeadPayload {
   empresa: string;
+  cnpj?: string | null;
   responsavel?: string | null;
   telefone?: string | null;
   email?: string | null;
   cidade?: string | null;
   estado?: string | null;
+  plano?: string | null;
+}
+
+export interface PagamentoPayload {
+  empresa: string;
+  cnpj?: string | null;
+  valor?: number | string | null;
   plano?: string | null;
 }
 
@@ -78,17 +86,37 @@ function escapeHtml(v: string): string {
   return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+function agoraFmt(): string {
+  return new Date().toLocaleString("pt-BR", { timeZone: "America/Fortaleza" });
+}
+
+function fmtValor(v: number | string | null | undefined): string {
+  const n = typeof v === "string" ? Number(v) : v;
+  if (n == null || !Number.isFinite(n)) return "—";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
+}
+
 function buildNovoLeadMessage(p: NovoLeadPayload): string {
   const linhas: string[] = ["🎉 <b>Novo lead cadastrado no SISLOTE!</b>", ""];
   linhas.push(`🏢 <b>Empresa:</b> ${escapeHtml(p.empresa || "—")}`);
+  if (p.cnpj) linhas.push(`🧾 <b>CPF/CNPJ:</b> ${escapeHtml(p.cnpj)}`);
   if (p.responsavel) linhas.push(`👤 <b>Responsável:</b> ${escapeHtml(p.responsavel)}`);
   linhas.push(`📞 <b>Telefone:</b> ${escapeHtml(p.telefone || "Não informado")}`);
   if (p.email) linhas.push(`✉️ <b>E-mail:</b> ${escapeHtml(p.email)}`);
   const local = [p.cidade, p.estado].filter(Boolean).join("/");
   if (local) linhas.push(`📍 <b>Cidade:</b> ${escapeHtml(local)}`);
   if (p.plano) linhas.push(`🗂️ <b>Plano:</b> ${escapeHtml(p.plano)}`);
-  const agora = new Date().toLocaleString("pt-BR", { timeZone: "America/Fortaleza" });
-  linhas.push("", `🕒 ${escapeHtml(agora)}`);
+  linhas.push("", `🕒 ${escapeHtml(agoraFmt())}`);
+  return linhas.join("\n");
+}
+
+function buildPagamentoMessage(p: PagamentoPayload): string {
+  const linhas: string[] = ["💰 <b>Pagamento de assinatura recebido!</b>", ""];
+  linhas.push(`🏢 <b>Empresa:</b> ${escapeHtml(p.empresa || "—")}`);
+  if (p.cnpj) linhas.push(`🧾 <b>CPF/CNPJ:</b> ${escapeHtml(p.cnpj)}`);
+  linhas.push(`💵 <b>Valor:</b> ${escapeHtml(fmtValor(p.valor))}`);
+  if (p.plano) linhas.push(`🗂️ <b>Plano:</b> ${escapeHtml(p.plano)}`);
+  linhas.push("", `🕒 ${escapeHtml(agoraFmt())}`);
   return linhas.join("\n");
 }
 
@@ -105,6 +133,22 @@ async function notifyNovoLead(payload: NovoLeadPayload): Promise<void> {
     }
   } catch (err) {
     console.warn("[Telegram] Erro inesperado ao notificar novo lead:", err instanceof Error ? err.message : err);
+  }
+}
+
+// Dispara a notificação de pagamento de assinatura — fire-and-forget, nunca lança erro.
+async function notifyPagamento(payload: PagamentoPayload): Promise<void> {
+  try {
+    const config = await getConfig();
+    if (!config?.ativo || !config.notificar_pagamento) return;
+    if (!config.bot_token || !config.recipients?.length) return;
+    const text = buildPagamentoMessage(payload);
+    const res = await broadcast(text);
+    if (res.erros.length) {
+      console.warn("[Telegram] Falha ao notificar pagamento:", res.erros.join(" | "));
+    }
+  } catch (err) {
+    console.warn("[Telegram] Erro inesperado ao notificar pagamento:", err instanceof Error ? err.message : err);
   }
 }
 
@@ -138,6 +182,8 @@ export const TelegramService = {
   sendMessage,
   broadcast,
   buildNovoLeadMessage,
+  buildPagamentoMessage,
   notifyNovoLead,
+  notifyPagamento,
   detectChats,
 };

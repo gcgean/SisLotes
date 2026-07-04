@@ -7,6 +7,7 @@ import { HubBillingCharge } from "../../entities/HubBillingCharge";
 import { HubBillingEvent } from "../../entities/HubBillingEvent";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
 import { HubBillingService } from "../../services/HubBillingService";
+import { TelegramService } from "../../services/TelegramService";
 import { getEffectiveFeatures } from "../../config/license-features";
 
 export const hubBillingRouter = Router();
@@ -809,6 +810,17 @@ hubBillingRouter.post("/minhas-cobrancas/:id/sync", requireAuth, async (req: Aut
         },
       });
       await eventRepo.save(event);
+
+      // Notifica no Telegram quando a cobrança passa a "paid" (novo pagamento confirmado)
+      if (oldStatus !== "paid" && charge.status === "paid") {
+        const empresa = await AppDataSource.getRepository(Empresa).findOne({ where: { id_empresa: idEmpresa } });
+        void TelegramService.notifyPagamento({
+          empresa: empresa?.nome_fantasia || `Empresa #${idEmpresa}`,
+          cnpj: empresa?.cnpj || null,
+          valor: charge.amount,
+          plano: planCode || empresa?.plano || null,
+        });
+      }
     }
 
     return res.json(charge);

@@ -416,6 +416,7 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
   // ── Notifica novos leads via Telegram (fire-and-forget, não bloqueia o cadastro)
   void TelegramService.notifyNovoLead({
     empresa: empresaData.nome_fantasia,
+    cnpj: empresaData.cnpj || null,
     responsavel: usuarioData.login,
     telefone: telefoneAdmin || empresaData.telefone || null,
     email: emailAdmin || empresaData.email || null,

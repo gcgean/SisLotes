@@ -21,6 +21,10 @@ export class TelegramConfig {
   @Column({ type: "boolean", name: "notificar_novo_lead", default: true })
   notificar_novo_lead!: boolean;
 
+  // Notificar quando um pagamento de assinatura for confirmado
+  @Column({ type: "boolean", name: "notificar_pagamento", default: true })
+  notificar_pagamento!: boolean;
+
   // Lista de destinatários: [{ nome, chat_id }]
   @Column({ type: "jsonb", nullable: true })
   recipients!: TelegramRecipient[] | null;

@@ -212,6 +212,7 @@ const telegramConfigSchema = z.object({
   ativo: z.boolean().optional(),
   bot_token: z.string().max(200).optional().nullable(),
   notificar_novo_lead: z.boolean().optional(),
+  notificar_pagamento: z.boolean().optional(),
   recipients: z.array(recipientSchema).optional(),
 });
 
@@ -223,6 +224,7 @@ adminRouter.get("/telegram", async (_req, res) => {
       ativo: config.ativo,
       bot_token: config.bot_token ?? "",
       notificar_novo_lead: config.notificar_novo_lead,
+      notificar_pagamento: config.notificar_pagamento,
       recipients: config.recipients ?? [],
     });
   } catch (error) {
@@ -244,6 +246,7 @@ adminRouter.put("/telegram", async (req, res) => {
 
     if (data.ativo !== undefined) config.ativo = data.ativo;
     if (data.notificar_novo_lead !== undefined) config.notificar_novo_lead = data.notificar_novo_lead;
+    if (data.notificar_pagamento !== undefined) config.notificar_pagamento = data.notificar_pagamento;
     if (data.bot_token !== undefined) config.bot_token = data.bot_token?.trim() || null;
     if (data.recipients !== undefined) {
       config.recipients = data.recipients.map((r) => ({
@@ -259,6 +262,7 @@ adminRouter.put("/telegram", async (req, res) => {
       ativo: config.ativo,
       bot_token: config.bot_token ?? "",
       notificar_novo_lead: config.notificar_novo_lead,
+      notificar_pagamento: config.notificar_pagamento,
       recipients: config.recipients ?? [],
     });
   } catch (error) {

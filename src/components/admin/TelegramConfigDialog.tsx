@@ -25,6 +25,7 @@ interface TelegramConfig {
   ativo: boolean;
   bot_token: string;
   notificar_novo_lead: boolean;
+  notificar_pagamento: boolean;
   recipients: Recipient[];
 }
 
@@ -41,6 +42,7 @@ export function TelegramConfigDialog({ open, onClose, token }: Props) {
 
   const [ativo, setAtivo] = useState(false);
   const [notificarNovoLead, setNotificarNovoLead] = useState(true);
+  const [notificarPagamento, setNotificarPagamento] = useState(true);
   const [botToken, setBotToken] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([]);
 
@@ -58,6 +60,7 @@ export function TelegramConfigDialog({ open, onClose, token }: Props) {
     if (data) {
       setAtivo(data.ativo);
       setNotificarNovoLead(data.notificar_novo_lead);
+      setNotificarPagamento(data.notificar_pagamento ?? true);
       setBotToken(data.bot_token || "");
       setRecipients(data.recipients?.length ? data.recipients : []);
     }
@@ -71,6 +74,7 @@ export function TelegramConfigDialog({ open, onClose, token }: Props) {
         body: JSON.stringify({
           ativo,
           notificar_novo_lead: notificarNovoLead,
+          notificar_pagamento: notificarPagamento,
           bot_token: botToken,
           recipients: recipients.filter((r) => r.chat_id.trim()),
         }),
@@ -191,6 +195,13 @@ export function TelegramConfigDialog({ open, onClose, token }: Props) {
                 <p className="text-xs text-muted-foreground">Envia mensagem quando uma nova empresa se cadastra.</p>
               </div>
               <Switch checked={notificarNovoLead} onCheckedChange={setNotificarNovoLead} />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="font-medium text-sm">Avisar sobre pagamentos</p>
+                <p className="text-xs text-muted-foreground">Envia mensagem quando um pagamento de assinatura é confirmado.</p>
+              </div>
+              <Switch checked={notificarPagamento} onCheckedChange={setNotificarPagamento} />
             </div>
 
             <Separator />

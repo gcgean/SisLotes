@@ -10,11 +10,17 @@ export class CreateTelegramConfig1700000000024 implements MigrationInterface {
         ativo BOOLEAN NOT NULL DEFAULT FALSE,
         bot_token TEXT,
         notificar_novo_lead BOOLEAN NOT NULL DEFAULT TRUE,
+        notificar_pagamento BOOLEAN NOT NULL DEFAULT TRUE,
         recipients JSONB,
         updated_at TIMESTAMP DEFAULT NOW(),
         CONSTRAINT telegram_config_single_row CHECK (id = 1)
       )
     `);
+
+    // Idempotente: garante a coluna caso a tabela já existisse
+    await queryRunner.query(
+      `ALTER TABLE telegram_config ADD COLUMN IF NOT EXISTS notificar_pagamento BOOLEAN NOT NULL DEFAULT TRUE`
+    );
 
     // Garante a linha única de configuração
     await queryRunner.query(`
