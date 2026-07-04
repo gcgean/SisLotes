@@ -25,6 +25,10 @@ export class TelegramConfig {
   @Column({ type: "boolean", name: "notificar_pagamento", default: true })
   notificar_pagamento!: boolean;
 
+  // Notificar quando um trial estiver vencendo ou tiver expirado
+  @Column({ type: "boolean", name: "notificar_trial", default: true })
+  notificar_trial!: boolean;
+
   // Lista de destinatários: [{ nome, chat_id }]
   @Column({ type: "jsonb", nullable: true })
   recipients!: TelegramRecipient[] | null;

@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import { createApp } from "./app";
 import { AppDataSource } from "./db/data-source";
 import { Usuario } from "./entities/Usuario";
+import { startTrialScheduler } from "./services/TrialScheduler";
 
 dotenv.config();
 
@@ -50,6 +51,9 @@ AppDataSource.initialize()
     app.listen(port, () => {
       console.log(`SISLOTE backend rodando na porta ${port}`);
     });
+
+    // Agendador de avisos de trial (vencendo/expirado) via Telegram
+    startTrialScheduler();
   })
   .catch((error) => {
     console.error("Erro ao inicializar DataSource", error);

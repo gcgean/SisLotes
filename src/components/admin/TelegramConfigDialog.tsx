@@ -26,6 +26,7 @@ interface TelegramConfig {
   bot_token: string;
   notificar_novo_lead: boolean;
   notificar_pagamento: boolean;
+  notificar_trial: boolean;
   recipients: Recipient[];
 }
 
@@ -43,6 +44,7 @@ export function TelegramConfigDialog({ open, onClose, token }: Props) {
   const [ativo, setAtivo] = useState(false);
   const [notificarNovoLead, setNotificarNovoLead] = useState(true);
   const [notificarPagamento, setNotificarPagamento] = useState(true);
+  const [notificarTrial, setNotificarTrial] = useState(true);
   const [botToken, setBotToken] = useState("");
   const [recipients, setRecipients] = useState<Recipient[]>([]);
 
@@ -61,6 +63,7 @@ export function TelegramConfigDialog({ open, onClose, token }: Props) {
       setAtivo(data.ativo);
       setNotificarNovoLead(data.notificar_novo_lead);
       setNotificarPagamento(data.notificar_pagamento ?? true);
+      setNotificarTrial(data.notificar_trial ?? true);
       setBotToken(data.bot_token || "");
       setRecipients(data.recipients?.length ? data.recipients : []);
     }
@@ -75,6 +78,7 @@ export function TelegramConfigDialog({ open, onClose, token }: Props) {
           ativo,
           notificar_novo_lead: notificarNovoLead,
           notificar_pagamento: notificarPagamento,
+          notificar_trial: notificarTrial,
           bot_token: botToken,
           recipients: recipients.filter((r) => r.chat_id.trim()),
         }),
@@ -202,6 +206,13 @@ export function TelegramConfigDialog({ open, onClose, token }: Props) {
                 <p className="text-xs text-muted-foreground">Envia mensagem quando um pagamento de assinatura é confirmado.</p>
               </div>
               <Switch checked={notificarPagamento} onCheckedChange={setNotificarPagamento} />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div>
+                <p className="font-medium text-sm">Avisar sobre trials</p>
+                <p className="text-xs text-muted-foreground">Avisa quando um trial está vencendo (3 dias antes) ou expirou.</p>
+              </div>
+              <Switch checked={notificarTrial} onCheckedChange={setNotificarTrial} />
             </div>
 
             <Separator />

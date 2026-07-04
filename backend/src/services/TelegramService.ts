@@ -19,6 +19,14 @@ export interface PagamentoPayload {
   plano?: string | null;
 }
 
+export interface TrialPayload {
+  empresa: string;
+  cnpj?: string | null;
+  telefone?: string | null;
+  vencimento: Date;
+  diasRestantes: number; // >0 = vence em N dias; <=0 = expirado
+}
+
 const API_BASE = "https://api.telegram.org";
 
 function repo() {
@@ -136,6 +144,52 @@ async function notifyNovoLead(payload: NovoLeadPayload): Promise<void> {
   }
 }
 
+function dataFmt(d: Date): string {
+  return d.toLocaleDateString("pt-BR", { timeZone: "America/Fortaleza" });
+}
+
+function buildTrialMessage(p: TrialPayload): string {
+  const expirado = p.diasRestantes <= 0;
+  const linhas: string[] = expirado
+    ? ["⚠️ <b>Trial EXPIRADO</b>", ""]
+    : ["⏳ <b>Trial vencendo!</b>", ""];
+  linhas.push(`🏢 <b>Empresa:</b> ${escapeHtml(p.empresa || "—")}`);
+  if (p.cnpj) linhas.push(`🧾 <b>CPF/CNPJ:</b> ${escapeHtml(p.cnpj)}`);
+  linhas.push(`📞 <b>Telefone:</b> ${escapeHtml(p.telefone || "Não informado")}`);
+  if (expirado) {
+    linhas.push(`📅 <b>Expirou em:</b> ${escapeHtml(dataFmt(p.vencimento))}`);
+  } else {
+    const dias = p.diasRestantes === 1 ? "1 dia" : `${p.diasRestantes} dias`;
+    linhas.push(`⏳ <b>Vence em:</b> ${escapeHtml(dias)} (${escapeHtml(dataFmt(p.vencimento))})`);
+  }
+  linhas.push("", `🕒 ${escapeHtml(agoraFmt())}`);
+  return linhas.join("\n");
+}
+
+// Dispara a notificação de trial — retorna true se enviou (para o chamador registrar dedup).
+async function notifyTrial(payload: TrialPayload): Promise<boolean> {
+  try {
+    const config = await getConfig();
+    if (!config?.ativo || !config.notificar_trial) return false;
+    if (!config.bot_token || !config.recipients?.length) return false;
+    const text = buildTrialMessage(payload);
+    const res = await broadcast(text);
+    if (res.erros.length) {
+      console.warn("[Telegram] Falha ao notificar trial:", res.erros.join(" | "));
+    }
+    return res.enviados > 0;
+  } catch (err) {
+    console.warn("[Telegram] Erro inesperado ao notificar trial:", err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+// Indica se as notificações de trial estão habilitadas (evita varrer o banco à toa).
+async function isTrialNotifyEnabled(): Promise<boolean> {
+  const config = await getConfig();
+  return Boolean(config?.ativo && config.notificar_trial && config.bot_token && config.recipients?.length);
+}
+
 // Dispara a notificação de pagamento de assinatura — fire-and-forget, nunca lança erro.
 async function notifyPagamento(payload: PagamentoPayload): Promise<void> {
   try {
@@ -183,7 +237,10 @@ export const TelegramService = {
   broadcast,
   buildNovoLeadMessage,
   buildPagamentoMessage,
+  buildTrialMessage,
   notifyNovoLead,
   notifyPagamento,
+  notifyTrial,
+  isTrialNotifyEnabled,
   detectChats,
 };
