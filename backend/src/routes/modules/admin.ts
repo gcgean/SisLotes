@@ -314,3 +314,122 @@ adminRouter.post("/telegram/test", async (_req, res) => {
     return res.status(500).json({ error: error instanceof Error ? error.message : "Erro ao enviar teste" });
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Analytics da Landing Page (/lp)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const lpAnalyticsSchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+adminRouter.get("/lp/analytics", async (req, res) => {
+  const parse = lpAnalyticsSchema.safeParse(req.query);
+  if (!parse.success) return res.status(400).json({ error: "Parâmetros inválidos" });
+
+  // Janela padrão: últimos 30 dias
+  const hoje = new Date();
+  const to = parse.data.to ? new Date(parse.data.to + "T23:59:59") : new Date(hoje.getTime() + 24 * 3600 * 1000);
+  const from = parse.data.from ? new Date(parse.data.from + "T00:00:00") : new Date(hoje.getTime() - 30 * 24 * 3600 * 1000);
+  const params = [from.toISOString(), to.toISOString()];
+  const win = "created_at >= $1 AND created_at <= $2";
+
+  try {
+    const [resumoRows, funnelRows, ctaRows, fonteRows, serieRows, recentesRows] = await Promise.all([
+      AppDataSource.query(
+        `SELECT
+           COUNT(*) FILTER (WHERE tipo='pageview')                        AS visitas,
+           COUNT(DISTINCT visitor_id) FILTER (WHERE tipo='pageview')      AS visitantes,
+           COUNT(DISTINCT session_id) FILTER (WHERE tipo='pageview')      AS sessoes,
+           COUNT(*) FILTER (WHERE tipo='cta')                             AS cta_clicks,
+           COUNT(DISTINCT session_id) FILTER (WHERE tipo='cta')           AS sessoes_cta,
+           AVG(duracao) FILTER (WHERE tipo='exit')                        AS tempo_medio,
+           AVG(scroll_pct) FILTER (WHERE tipo='exit')                     AS scroll_medio
+         FROM lp_evento WHERE ${win}`,
+        params
+      ),
+      AppDataSource.query(
+        `SELECT secao, COUNT(DISTINCT session_id) AS sessoes
+         FROM lp_evento WHERE tipo='section' AND secao IS NOT NULL AND ${win}
+         GROUP BY secao`,
+        params
+      ),
+      AppDataSource.query(
+        `SELECT cta, COUNT(*) AS cliques, COUNT(DISTINCT session_id) AS sessoes
+         FROM lp_evento WHERE tipo='cta' AND cta IS NOT NULL AND ${win}
+         GROUP BY cta ORDER BY cliques DESC`,
+        params
+      ),
+      AppDataSource.query(
+        `SELECT COALESCE(NULLIF(utm_source, ''), 'Direto/Orgânico') AS fonte,
+                COUNT(DISTINCT session_id) AS sessoes
+         FROM lp_evento WHERE tipo='pageview' AND ${win}
+         GROUP BY fonte ORDER BY sessoes DESC LIMIT 10`,
+        params
+      ),
+      AppDataSource.query(
+        `SELECT TO_CHAR(created_at, 'YYYY-MM-DD') AS dia,
+                COUNT(*) FILTER (WHERE tipo='pageview')              AS visitas,
+                COUNT(DISTINCT session_id) FILTER (WHERE tipo='cta') AS conversoes
+         FROM lp_evento WHERE ${win}
+         GROUP BY dia ORDER BY dia`,
+        params
+      ),
+      AppDataSource.query(
+        `SELECT visitor_id, device,
+                COALESCE(NULLIF(utm_source, ''), 'Direto/Orgânico') AS fonte,
+                referrer, ip, TO_CHAR(created_at, 'DD/MM/YYYY HH24:MI') AS quando
+         FROM lp_evento WHERE tipo='pageview' AND ${win}
+         ORDER BY created_at DESC LIMIT 25`,
+        params
+      ),
+    ]);
+
+    const r = resumoRows[0] || {};
+    const num = (v: unknown) => Number(v ?? 0);
+    const funnelMap = new Map<string, number>(
+      (funnelRows as { secao: string; sessoes: string }[]).map((x) => [x.secao, num(x.sessoes)])
+    );
+
+    return res.json({
+      periodo: { from: from.toISOString(), to: to.toISOString() },
+      resumo: {
+        visitas: num(r.visitas),
+        visitantes: num(r.visitantes),
+        sessoes: num(r.sessoes),
+        ctaClicks: num(r.cta_clicks),
+        sessoesComCta: num(r.sessoes_cta),
+        ctr: num(r.sessoes) > 0 ? num(r.sessoes_cta) / num(r.sessoes) : 0,
+        tempoMedioSeg: Math.round(num(r.tempo_medio)),
+        scrollMedioPct: Math.round(num(r.scroll_medio)),
+      },
+      funnel: Object.fromEntries(funnelMap),
+      ctas: (ctaRows as { cta: string; cliques: string; sessoes: string }[]).map((x) => ({
+        cta: x.cta,
+        cliques: num(x.cliques),
+        sessoes: num(x.sessoes),
+      })),
+      fontes: (fonteRows as { fonte: string; sessoes: string }[]).map((x) => ({
+        fonte: x.fonte,
+        sessoes: num(x.sessoes),
+      })),
+      serie: (serieRows as { dia: string; visitas: string; conversoes: string }[]).map((x) => ({
+        dia: x.dia,
+        visitas: num(x.visitas),
+        conversoes: num(x.conversoes),
+      })),
+      recentes: (recentesRows as Record<string, unknown>[]).map((x) => ({
+        visitorId: (x.visitor_id as string) ?? null,
+        device: (x.device as string) ?? null,
+        fonte: (x.fonte as string) ?? null,
+        referrer: (x.referrer as string) ?? null,
+        ip: (x.ip as string) ?? null,
+        quando: (x.quando as string) ?? null,
+      })),
+    });
+  } catch (error) {
+    console.error("Erro ao gerar analytics da LP:", error);
+    return res.status(500).json({ error: "Erro ao gerar analytics" });
+  }
+});

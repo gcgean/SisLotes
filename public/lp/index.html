@@ -326,7 +326,7 @@
 </header>
 
 <!-- ══════════ HERO ══════════ -->
-<section class="hero" id="topo">
+<section class="hero" id="topo" data-sec="hero">
   <div class="wrap">
     <span class="eyebrow">Para donos de loteamentos que ainda controlam parcelas no caderno, na planilha ou na cabeça</span>
     <h1>Chega de perder dinheiro porque você não sabe <span class="hl">quem deve, quanto deve e quando vence</span></h1>
@@ -393,7 +393,7 @@
 </section>
 
 <!-- ══════════ PROVA SOCIAL / NÚMEROS ══════════ -->
-<section class="section stats">
+<section class="section stats" data-sec="prova">
   <div class="wrap">
     <div class="section-head">
       <h2>Quem usa o SISLOTE sabe exatamente onde está cada centavo do seu loteamento</h2>
@@ -409,7 +409,7 @@
 </section>
 
 <!-- ══════════ DOR / PROBLEMA ══════════ -->
-<section class="section pain">
+<section class="section pain" data-sec="dor">
   <div class="wrap">
     <div class="section-head">
       <h2>Você sabe responder agora, sem consultar planilha ou ligar para alguém:</h2>
@@ -429,7 +429,7 @@
 </section>
 
 <!-- ══════════ FUNCIONALIDADES ══════════ -->
-<section class="section" id="funcionalidades">
+<section class="section" id="funcionalidades" data-sec="funcionalidades">
   <div class="wrap">
     <div class="section-head">
       <span class="eyebrow">Funcionalidades</span>
@@ -542,7 +542,7 @@
 </section>
 
 <!-- ══════════ PREÇOS ══════════ -->
-<section class="section pricing" id="planos">
+<section class="section pricing" id="planos" data-sec="planos">
   <div class="wrap">
     <div class="section-head">
       <span class="eyebrow">Planos</span>
@@ -587,7 +587,7 @@
 </section>
 
 <!-- ══════════ GARANTIAS / OBJEÇÕES ══════════ -->
-<section class="section">
+<section class="section" data-sec="garantias">
   <div class="wrap">
     <div class="section-head">
       <h2>Sem complicação. Sem contratos longos. Sem pegadinhas.</h2>
@@ -605,7 +605,7 @@
 </section>
 
 <!-- ══════════ FAQ ══════════ -->
-<section class="section faq">
+<section class="section faq" data-sec="faq">
   <div class="wrap">
     <div class="section-head">
       <span class="eyebrow">Dúvidas frequentes</span>
@@ -641,7 +641,7 @@
 </section>
 
 <!-- ══════════ CTA FINAL ══════════ -->
-<section class="section final">
+<section class="section final" data-sec="final">
   <div class="wrap">
     <h2>Você administra loteamentos demais para continuar no improviso.</h2>
     <p>
@@ -710,6 +710,107 @@
     }
     el.addEventListener('click', function () { trackClick(origem); });
   });
+</script>
+
+<!-- ══════════ RASTREAMENTO INTERNO (analytics da landing) ══════════ -->
+<script>
+(function () {
+  var ENDPOINT = '/api/lp/track';
+
+  function uid() {
+    try { return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2)).slice(0, 36); }
+    catch (e) { return String(Date.now()) + Math.random().toString(16).slice(2); }
+  }
+  function getVisitorId() {
+    try {
+      var v = localStorage.getItem('lp_vid');
+      if (!v) { v = uid(); localStorage.setItem('lp_vid', v); }
+      return v;
+    } catch (e) { return uid(); }
+  }
+  function getSessionId() {
+    try {
+      var s = sessionStorage.getItem('lp_sid');
+      if (!s) { s = uid(); sessionStorage.setItem('lp_sid', s); }
+      return s;
+    } catch (e) { return uid(); }
+  }
+
+  var qs = new URLSearchParams(location.search);
+  var base = {
+    visitorId: getVisitorId(),
+    sessionId: getSessionId(),
+    referrer: document.referrer || null,
+    device: window.matchMedia('(max-width: 720px)').matches ? 'mobile' : 'desktop',
+    utm: {
+      source: qs.get('utm_source') || null,
+      medium: qs.get('utm_medium') || null,
+      campaign: qs.get('utm_campaign') || null
+    }
+  };
+
+  function send(events, useBeacon) {
+    var payload = JSON.stringify(Object.assign({}, base, { events: events }));
+    try {
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(ENDPOINT, new Blob([payload], { type: 'application/json' }));
+        return;
+      }
+    } catch (e) {}
+    try {
+      fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true });
+    } catch (e) {}
+  }
+
+  // 1) Pageview imediato
+  send([{ tipo: 'pageview' }], false);
+
+  // 2) Seções vistas (uma vez cada)
+  var vistas = {};
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var sec = en.target.getAttribute('data-sec');
+        if (sec && !vistas[sec]) {
+          vistas[sec] = true;
+          send([{ tipo: 'section', secao: sec }], true);
+        }
+      });
+    }, { threshold: 0.4 });
+    document.querySelectorAll('[data-sec]').forEach(function (el) { io.observe(el); });
+  }
+
+  // 3) Cliques em CTA
+  document.querySelectorAll('[data-cta]').forEach(function (el) {
+    el.addEventListener('click', function () {
+      send([{ tipo: 'cta', cta: el.getAttribute('data-cta') }], true);
+    });
+  });
+
+  // 4) Saída: duração + profundidade de rolagem
+  var inicio = Date.now();
+  var maxScroll = 0;
+  function scrollPct() {
+    var h = document.documentElement;
+    var total = (h.scrollHeight - h.clientHeight);
+    var pct = total > 0 ? Math.round((h.scrollTop || window.scrollY) / total * 100) : 0;
+    if (pct > maxScroll) maxScroll = Math.min(100, pct);
+  }
+  window.addEventListener('scroll', scrollPct, { passive: true });
+
+  var enviouExit = false;
+  function exit() {
+    if (enviouExit) return;
+    enviouExit = true;
+    var dur = Math.round((Date.now() - inicio) / 1000);
+    send([{ tipo: 'exit', duracao: dur, scrollPct: maxScroll }], true);
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') exit();
+  });
+  window.addEventListener('pagehide', exit);
+})();
 </script>
 </body>
 </html>

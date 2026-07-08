@@ -16,9 +16,11 @@ import { auditoriaRouter } from "./modules/auditoria";
 import { adminRouter } from "./modules/admin";
 import { hubBillingRouter } from "./modules/hub-billing";
 import { sugestoesRouter } from "./modules/sugestoes";
+import { lpRouter } from "./modules/lp";
 
 export const router = Router();
 
+router.use("/lp", lpRouter);
 router.use("/setup", setupRouter);
 router.use("/auth", authRouter);
 router.use("/clientes", clientesRouter);

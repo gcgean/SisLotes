@@ -46,11 +46,12 @@ import {
   ShieldAlert,
   ShieldOff,
 } from "lucide-react";
-import { Send } from "lucide-react";
+import { Send, BarChart3 } from "lucide-react";
 import { formatCpfCnpj } from "@/lib/cpfCnpj";
 import { formatDateBR, formatDateTimeBR } from "@/lib/date-br";
 import { Navigate } from "react-router-dom";
 import { TelegramConfigDialog } from "@/components/admin/TelegramConfigDialog";
+import { LpAnalyticsDialog } from "@/components/admin/LpAnalyticsDialog";
 
 interface Empresa {
   id_empresa: number;
@@ -133,6 +134,7 @@ export default function Admin() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
+  const [lpAnalyticsOpen, setLpAnalyticsOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editingEmpresa, setEditingEmpresa] = useState<Empresa | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -292,7 +294,11 @@ export default function Admin() {
             <ShieldAlert className="h-6 w-6 text-emerald-600" />
             <h1 className="text-xl font-bold">Área Administrativa</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" onClick={() => setLpAnalyticsOpen(true)} className="gap-2">
+              <BarChart3 className="h-4 w-4 text-emerald-600" />
+              Analytics da Landing
+            </Button>
             <Button variant="outline" onClick={() => setTelegramOpen(true)} className="gap-2">
               <Send className="h-4 w-4 text-sky-500" />
               Notificações Telegram
@@ -305,6 +311,7 @@ export default function Admin() {
         </div>
 
         <TelegramConfigDialog open={telegramOpen} onClose={() => setTelegramOpen(false)} token={token} />
+        <LpAnalyticsDialog open={lpAnalyticsOpen} onClose={() => setLpAnalyticsOpen(false)} token={token} />
 
         {/* Stats */}
         {stats && (
