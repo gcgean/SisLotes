@@ -5,6 +5,7 @@ import { Empresa } from "../../entities/Empresa";
 import { Usuario } from "../../entities/Usuario";
 import { TelegramConfig } from "../../entities/TelegramConfig";
 import { TelegramService } from "../../services/TelegramService";
+import { HubBillingService } from "../../services/HubBillingService";
 import { requireAuth, requireMaster } from "../../middleware/auth";
 
 export const adminRouter = Router();
@@ -196,6 +197,242 @@ adminRouter.get("/stats", async (_req, res) => {
     return res.json({ totalEmpresas, ativas, inativas, totalUsuarios });
   } catch (error) {
     return res.status(500).json({ error: "Erro ao buscar estatísticas" });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Dashboard — Jornada do usuário (trial → pago), uso do sistema, geografia
+// ═══════════════════════════════════════════════════════════════════════════
+
+function isTrialLicenseStatusAdmin(empresa: Empresa): boolean {
+  const status = (empresa.hub_license_status || "").toLowerCase();
+  const reason = (empresa.hub_license_reason || "").toLowerCase();
+  return status === "trial" || status === "trialing" || reason === "trial_active";
+}
+
+function isPaidLicenseStatusAdmin(empresa: Empresa): boolean {
+  const status = (empresa.hub_license_status || "").toLowerCase();
+  return status === "licensed" || status === "active";
+}
+
+function diffDias(de: Date, ate: Date): number {
+  return Math.floor((ate.getTime() - de.getTime()) / (24 * 3600 * 1000));
+}
+
+function resolveDaysLeft(empresa: Empresa): number | null {
+  const stored = HubBillingService.getStoredDaysLeft(empresa);
+  if (stored != null) return stored;
+  const expiresRaw: Date | string | null =
+    empresa.hub_expires_at ?? (empresa.data_vencimento ? new Date(empresa.data_vencimento) : null);
+  if (!expiresRaw) return null;
+  const expires = expiresRaw instanceof Date ? expiresRaw : new Date(expiresRaw);
+  if (Number.isNaN(expires.getTime())) return null;
+  return diffDias(new Date(), expires);
+}
+
+interface EmpresaJourney {
+  id_empresa: number;
+  nome_fantasia: string;
+  cidade: string | null;
+  estado: string | null;
+  plano: string | null;
+  ativo: boolean;
+  created_at: Date;
+  ultimo_acesso: Date | null;
+  is_trial: boolean;
+  is_paid: boolean;
+  dias_restantes: number | null;
+  loteamentos: number;
+  lotes: number;
+  vendas: number;
+  pagamentos_pagos: number;
+  motivos_ajuda: string[];
+}
+
+async function getEmpresasJourney(): Promise<EmpresaJourney[]> {
+  const empresaRepo = AppDataSource.getRepository(Empresa);
+  const empresas = await empresaRepo.find({ order: { created_at: "DESC" } });
+
+  const counts = (await AppDataSource.query(`
+    SELECT
+      e.id_empresa,
+      COALESCE(lot.cnt, 0)::int AS loteamentos,
+      COALESCE(lt.cnt, 0)::int  AS lotes,
+      COALESCE(v.cnt, 0)::int   AS vendas,
+      COALESCE(p.cnt, 0)::int   AS pagamentos_pagos
+    FROM empresas e
+    LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM loteamentos GROUP BY id_empresa) lot ON lot.id_empresa = e.id_empresa
+    LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM lotes GROUP BY id_empresa) lt ON lt.id_empresa = e.id_empresa
+    LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM vendas GROUP BY id_empresa) v ON v.id_empresa = e.id_empresa
+    LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM pagamentos WHERE situacao = 'pago' GROUP BY id_empresa) p ON p.id_empresa = e.id_empresa
+  `)) as Array<{ id_empresa: number; loteamentos: number; lotes: number; vendas: number; pagamentos_pagos: number }>;
+  const countsMap = new Map(counts.map((c) => [c.id_empresa, c]));
+
+  const agora = new Date();
+
+  return empresas.map((e) => {
+    const c = countsMap.get(e.id_empresa) ?? { loteamentos: 0, lotes: 0, vendas: 0, pagamentos_pagos: 0 };
+    const isTrial = isTrialLicenseStatusAdmin(e);
+    const isPaid = isPaidLicenseStatusAdmin(e) || (!isTrial && Boolean(e.plano) && e.plano !== "TESTE");
+    const diasRestantes = resolveDaysLeft(e);
+    const diasCadastro = diffDias(new Date(e.created_at), agora);
+    const ultimoAcesso = e.ultimo_acesso ? new Date(e.ultimo_acesso) : null;
+    const diasSemAcesso = ultimoAcesso ? diffDias(ultimoAcesso, agora) : diasCadastro;
+
+    const motivos: string[] = [];
+    const semUso = c.loteamentos === 0 && c.lotes === 0 && c.vendas === 0;
+    if (isTrial && diasCadastro >= 3 && semUso) motivos.push("sem_uso");
+    if (e.ativo && diasSemAcesso >= 5) motivos.push("sem_acesso");
+    if (isTrial && diasRestantes != null && diasRestantes <= 3 && diasRestantes >= 0 && !isPaid) {
+      motivos.push("trial_vencendo");
+    }
+
+    return {
+      id_empresa: e.id_empresa,
+      nome_fantasia: e.nome_fantasia,
+      cidade: e.cidade ?? null,
+      estado: e.estado ?? null,
+      plano: e.plano ?? null,
+      ativo: e.ativo,
+      created_at: e.created_at,
+      ultimo_acesso: e.ultimo_acesso ?? null,
+      is_trial: isTrial,
+      is_paid: isPaid,
+      dias_restantes: diasRestantes,
+      loteamentos: c.loteamentos,
+      lotes: c.lotes,
+      vendas: c.vendas,
+      pagamentos_pagos: c.pagamentos_pagos,
+      motivos_ajuda: motivos,
+    };
+  });
+}
+
+// ─── GET /admin/dashboard/overview ────────────────────────────────────────────
+adminRouter.get("/dashboard/overview", async (_req, res) => {
+  try {
+    const empresaRepo = AppDataSource.getRepository(Empresa);
+    const usuarioRepo = AppDataSource.getRepository(Usuario);
+
+    const [totalEmpresas, ativas, inativas, totalUsuarios, journey, serieRows] = await Promise.all([
+      empresaRepo.count(),
+      empresaRepo.count({ where: { ativo: true } }),
+      empresaRepo.count({ where: { ativo: false } }),
+      usuarioRepo.count(),
+      getEmpresasJourney(),
+      AppDataSource.query(`
+        SELECT TO_CHAR(created_at, 'YYYY-MM-DD') AS dia, COUNT(*)::int AS total
+        FROM empresas
+        WHERE created_at >= NOW() - INTERVAL '30 days'
+        GROUP BY dia ORDER BY dia
+      `),
+    ]);
+
+    const trials = journey.filter((j) => j.is_trial).length;
+    const pagas = journey.filter((j) => j.is_paid).length;
+
+    return res.json({
+      totalEmpresas,
+      ativas,
+      inativas,
+      totalUsuarios,
+      trials,
+      pagas,
+      serieCadastros: serieRows,
+    });
+  } catch (error) {
+    console.error("Erro ao buscar overview do dashboard:", error);
+    return res.status(500).json({ error: "Erro ao buscar visão geral" });
+  }
+});
+
+// ─── GET /admin/dashboard/empresas ───────────────────────────────────────────
+adminRouter.get("/dashboard/empresas", async (_req, res) => {
+  try {
+    const journey = await getEmpresasJourney();
+    return res.json(journey);
+  } catch (error) {
+    console.error("Erro ao buscar jornada das empresas:", error);
+    return res.status(500).json({ error: "Erro ao buscar uso do sistema" });
+  }
+});
+
+// ─── GET /admin/dashboard/funil ──────────────────────────────────────────────
+adminRouter.get("/dashboard/funil", async (_req, res) => {
+  try {
+    const journey = await getEmpresasJourney();
+    const total = journey.length;
+    const comLoteamento = journey.filter((j) => j.loteamentos > 0).length;
+    const comLote = journey.filter((j) => j.lotes > 0).length;
+    const comVenda = journey.filter((j) => j.vendas > 0).length;
+    const comPagamento = journey.filter((j) => j.pagamentos_pagos > 0).length;
+    const convertidas = journey.filter((j) => j.is_paid).length;
+
+    const precisaAjuda = journey.filter((j) => j.motivos_ajuda.length > 0);
+    const trialsVencendo = journey.filter((j) => j.motivos_ajuda.includes("trial_vencendo"));
+
+    return res.json({
+      funil: {
+        cadastradas: total,
+        comLoteamento,
+        comLote,
+        comVenda,
+        comPagamento,
+        convertidasPago: convertidas,
+      },
+      precisaAjuda,
+      trialsVencendo,
+    });
+  } catch (error) {
+    console.error("Erro ao buscar funil:", error);
+    return res.status(500).json({ error: "Erro ao buscar funil" });
+  }
+});
+
+// ─── GET /admin/dashboard/geografia ──────────────────────────────────────────
+adminRouter.get("/dashboard/geografia", async (_req, res) => {
+  try {
+    const [porEstado, porCidade] = await Promise.all([
+      AppDataSource.query(`
+        SELECT COALESCE(NULLIF(estado, ''), 'Não informado') AS estado, COUNT(*)::int AS total
+        FROM empresas GROUP BY estado ORDER BY total DESC
+      `),
+      AppDataSource.query(`
+        SELECT COALESCE(NULLIF(cidade, ''), 'Não informado') AS cidade,
+               COALESCE(NULLIF(estado, ''), '—') AS estado, COUNT(*)::int AS total
+        FROM empresas GROUP BY cidade, estado ORDER BY total DESC LIMIT 20
+      `),
+    ]);
+    return res.json({ porEstado, porCidade });
+  } catch (error) {
+    console.error("Erro ao buscar geografia:", error);
+    return res.status(500).json({ error: "Erro ao buscar geografia" });
+  }
+});
+
+// ─── GET /admin/dashboard/empresas/:id/timeline ──────────────────────────────
+// Timeline de billing (Hub) por empresa: trial → checkout → pago.
+adminRouter.get("/dashboard/empresas/:id/timeline", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ error: "ID inválido" });
+
+    const [eventos, cobrancas] = await Promise.all([
+      AppDataSource.query(
+        `SELECT id_hub_event, event_type, event_source, status, amount, created_at
+         FROM hub_billing_events WHERE id_empresa = $1 ORDER BY created_at ASC`,
+        [id]
+      ),
+      AppDataSource.query(
+        `SELECT id_hub_charge, origin_type, status, amount, created_at
+         FROM hub_billing_charges WHERE id_empresa = $1 ORDER BY created_at ASC`,
+        [id]
+      ),
+    ]);
+    return res.json({ eventos, cobrancas });
+  } catch (error) {
+    console.error("Erro ao buscar timeline da empresa:", error);
+    return res.status(500).json({ error: "Erro ao buscar timeline" });
   }
 });
 

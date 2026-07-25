@@ -150,13 +150,13 @@ authRouter.post("/login", async (req, res) => {
       }
     }
 
-    // Atualiza ultimo_acesso da empresa (somente usuários não-master)
-    if (!user.user_master) {
-      try {
-        await empresaRepo.update({ id_empresa: user.id_empresa }, { ultimo_acesso: new Date() });
-      } catch (e) {
-        // não bloqueia o login se falhar
-      }
+    // Atualiza último acesso do usuário e da empresa (todo login conta)
+    try {
+      const agora = new Date();
+      await usuarioRepo.update({ id_usuario: user.id_usuario }, { last_login_at: agora });
+      await empresaRepo.update({ id_empresa: user.id_empresa }, { ultimo_acesso: agora });
+    } catch (e) {
+      // não bloqueia o login se falhar
     }
 
     const secret = process.env.JWT_SECRET || "development-secret";

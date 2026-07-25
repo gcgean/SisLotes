@@ -44,6 +44,7 @@ import { AddAtivoToConta1700000000023 } from "../migrations/1700000000023-AddAti
 import { CreateTelegramConfig1700000000024 } from "../migrations/1700000000024-CreateTelegramConfig";
 import { CreateTelegramNotificacao1700000000025 } from "../migrations/1700000000025-CreateTelegramNotificacao";
 import { CreateLpEvento1700000000026 } from "../migrations/1700000000026-CreateLpEvento";
+import { AddLastLoginToUsuario1700000000027 } from "../migrations/1700000000027-AddLastLoginToUsuario";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -82,6 +83,7 @@ export const AppDataSource = new DataSource({
     CreateTelegramConfig1700000000024,
     CreateTelegramNotificacao1700000000025,
     CreateLpEvento1700000000026,
+    AddLastLoginToUsuario1700000000027,
   ],
   synchronize: false,
   logging: false,

@@ -52,6 +52,9 @@ export class Usuario {
   @Column({ type: "varchar", length: 20, nullable: true })
   telefone?: string | null;
 
+  @Column({ type: "timestamp", name: "last_login_at", nullable: true })
+  last_login_at?: Date | null;
+
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 
