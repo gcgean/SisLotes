@@ -14,6 +14,31 @@ interface TokenPayload {
   sub: number;
 }
 
+// Evita gravar a cada requisição: só atualiza "último acesso" se fizer mais de 5min do último registro.
+const ACCESS_THROTTLE_MS = 5 * 60 * 1000;
+
+function touchLastAccess(user: Usuario, empresa: Empresa | null) {
+  const agora = new Date();
+
+  const usuarioDesatualizado =
+    !user.last_login_at || agora.getTime() - new Date(user.last_login_at).getTime() > ACCESS_THROTTLE_MS;
+  if (usuarioDesatualizado) {
+    AppDataSource.getRepository(Usuario)
+      .update({ id_usuario: user.id_usuario }, { last_login_at: agora })
+      .catch(() => {});
+  }
+
+  if (empresa) {
+    const empresaDesatualizada =
+      !empresa.ultimo_acesso || agora.getTime() - new Date(empresa.ultimo_acesso).getTime() > ACCESS_THROTTLE_MS;
+    if (empresaDesatualizada) {
+      AppDataSource.getRepository(Empresa)
+        .update({ id_empresa: empresa.id_empresa }, { ultimo_acesso: agora })
+        .catch(() => {});
+    }
+  }
+}
+
 export async function requireAuth(req: AuthRequest, res: Response, next: NextFunction) {
   const header = req.headers.authorization;
 
@@ -40,9 +65,15 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
       return res.status(401).json({ error: "Usuário não encontrado" });
     }
 
+    let empresaAutenticada: Empresa | null = null;
+
     if (user.login.toLowerCase() !== "gcgean") {
       const empresaRepo = AppDataSource.getRepository(Empresa);
       const empresa = await empresaRepo.findOne({ where: { id_empresa: user.id_empresa } });
+      empresaAutenticada = empresa ?? null;
+
+      // Token válido = acesso genuíno, mesmo que a licença bloqueie a requisição em seguida.
+      touchLastAccess(user, empresaAutenticada);
 
       if (!empresa || !empresa.ativo) {
         return res.status(403).json({ error: "Empresa inativa. Acesso bloqueado." });
@@ -67,6 +98,9 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
     }
 
     req.user = user;
+    if (user.login.toLowerCase() === "gcgean") {
+      touchLastAccess(user, null);
+    }
 
     next();
   } catch {

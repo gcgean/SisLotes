@@ -413,6 +413,13 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
   });
   await usuarioRepo.save(usuario);
 
+  // Cadastro já conta como primeiro acesso (o usuário sai daqui logado)
+  const agoraCadastro = new Date();
+  usuario.last_login_at = agoraCadastro;
+  await usuarioRepo.update({ id_usuario: usuario.id_usuario }, { last_login_at: agoraCadastro });
+  empresaSalva.ultimo_acesso = agoraCadastro;
+  await empresaRepo.update({ id_empresa: empresaSalva.id_empresa }, { ultimo_acesso: agoraCadastro });
+
   // ── Notifica novos leads via Telegram (fire-and-forget, não bloqueia o cadastro)
   void TelegramService.notifyNovoLead({
     empresa: empresaData.nome_fantasia,
