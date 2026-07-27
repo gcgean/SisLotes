@@ -235,6 +235,8 @@ interface EmpresaJourney {
   nome_fantasia: string;
   cidade: string | null;
   estado: string | null;
+  telefone: string | null;
+  email: string | null;
   plano: string | null;
   ativo: boolean;
   created_at: Date;
@@ -268,6 +270,15 @@ async function getEmpresasJourney(): Promise<EmpresaJourney[]> {
   `)) as Array<{ id_empresa: number; loteamentos: number; lotes: number; vendas: number; pagamentos_pagos: number }>;
   const countsMap = new Map(counts.map((c) => [c.id_empresa, c]));
 
+  // Contato do usuário master de cada empresa (fallback para contato da empresa)
+  const contatos = (await AppDataSource.query(`
+    SELECT DISTINCT ON (id_empresa) id_empresa, telefone, email
+    FROM usuarios
+    WHERE user_master = true
+    ORDER BY id_empresa, id_usuario ASC
+  `)) as Array<{ id_empresa: number; telefone: string | null; email: string | null }>;
+  const contatoMap = new Map(contatos.map((c) => [c.id_empresa, c]));
+
   const agora = new Date();
 
   return empresas.map((e) => {
@@ -287,11 +298,15 @@ async function getEmpresasJourney(): Promise<EmpresaJourney[]> {
       motivos.push("trial_vencendo");
     }
 
+    const contato = contatoMap.get(e.id_empresa);
+
     return {
       id_empresa: e.id_empresa,
       nome_fantasia: e.nome_fantasia,
       cidade: e.cidade ?? null,
       estado: e.estado ?? null,
+      telefone: e.telefone ?? contato?.telefone ?? null,
+      email: e.email ?? contato?.email ?? null,
       plano: e.plano ?? null,
       ativo: e.ativo,
       created_at: e.created_at,

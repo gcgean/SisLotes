@@ -10,14 +10,25 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Phone, Mail, MessageCircle } from "lucide-react";
 import { formatDateTimeBR } from "@/lib/date-br";
+
+// Monta link do WhatsApp a partir de um telefone brasileiro (adiciona DDI 55 se faltar)
+function waLink(telefone: string | null): string | null {
+  if (!telefone) return null;
+  let d = telefone.replace(/\D/g, "");
+  if (!d) return null;
+  if (d.length <= 11) d = "55" + d;
+  return `https://wa.me/${d}`;
+}
 
 interface EmpresaJourney {
   id_empresa: number;
   nome_fantasia: string;
   cidade: string | null;
   estado: string | null;
+  telefone: string | null;
+  email: string | null;
   plano: string | null;
   ativo: boolean;
   created_at: string;
@@ -155,6 +166,7 @@ export function UsoTab() {
               <th className="px-4 py-3 text-left">
                 <SortHeader label="Empresa" active={sortKey === "nome_fantasia"} dir={sortDir} onClick={() => toggleSort("nome_fantasia")} />
               </th>
+              <th className="px-4 py-3 text-left font-semibold">Contato</th>
               <th className="px-4 py-3 text-left font-semibold">Plano</th>
               <th className="px-4 py-3 text-left">
                 <SortHeader label="Cadastro" active={sortKey === "created_at"} dir={sortDir} onClick={() => toggleSort("created_at")} />
@@ -180,11 +192,11 @@ export function UsoTab() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td>
+                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-8 text-center text-muted-foreground">Nenhuma empresa encontrada.</td>
+                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Nenhuma empresa encontrada.</td>
               </tr>
             ) : (
               filtered.map((e) => (
@@ -199,6 +211,40 @@ export function UsoTab() {
                       <div className="text-xs text-muted-foreground font-normal">
                         {[e.cidade, e.estado].filter(Boolean).join("/")}
                       </div>
+                    )}
+                  </td>
+                  <td className="px-4 py-3" onClick={(ev) => ev.stopPropagation()}>
+                    {e.telefone || e.email ? (
+                      <div className="flex items-center gap-2">
+                        {waLink(e.telefone) && (
+                          <a
+                            href={waLink(e.telefone)!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title={`WhatsApp: ${e.telefone}`}
+                            className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-700 font-medium"
+                          >
+                            <MessageCircle className="h-4 w-4" />
+                            <span className="text-xs">{e.telefone}</span>
+                          </a>
+                        )}
+                        {!e.telefone && (
+                          <span className="inline-flex items-center gap-1 text-muted-foreground text-xs">
+                            <Phone className="h-3.5 w-3.5" /> —
+                          </span>
+                        )}
+                        {e.email && (
+                          <a
+                            href={`mailto:${e.email}`}
+                            title={e.email}
+                            className="inline-flex items-center text-sky-600 hover:text-sky-700"
+                          >
+                            <Mail className="h-4 w-4" />
+                          </a>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">Sem contato</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -236,6 +282,28 @@ export function UsoTab() {
 
           {selected && (
             <div className="space-y-4">
+              {(selected.telefone || selected.email) && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {waLink(selected.telefone) && (
+                    <a
+                      href={waLink(selected.telefone)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 rounded-md bg-emerald-600 text-white px-3 py-1.5 text-sm font-medium hover:bg-emerald-700"
+                    >
+                      <MessageCircle className="h-4 w-4" /> WhatsApp {selected.telefone}
+                    </a>
+                  )}
+                  {selected.email && (
+                    <a
+                      href={`mailto:${selected.email}`}
+                      className="inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm font-medium hover:bg-muted"
+                    >
+                      <Mail className="h-4 w-4" /> {selected.email}
+                    </a>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                 <div className="rounded-lg border p-2">
                   <div className="text-lg font-bold">{selected.loteamentos}</div>
