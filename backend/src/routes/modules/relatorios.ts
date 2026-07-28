@@ -842,6 +842,11 @@ relatoriosRouter.get(
     if (from) { params.push(from); fromDespesa = `AND dp.pago_data >= $${params.length}`; }
     if (to) { params.push(to); toDespesa = `AND dp.pago_data <= $${params.length}`; }
 
+    let fromLanc = "";
+    let toLanc = "";
+    if (from) { params.push(from); fromLanc = `AND l2.data >= $${params.length}`; }
+    if (to) { params.push(to); toLanc = `AND l2.data <= $${params.length}`; }
+
     let loteamentoFilter = "";
     if (typeof id_loteamento === "number") {
       params.push(id_loteamento);
@@ -852,8 +857,8 @@ relatoriosRouter.get(
       SELECT
         lot.id_loteamento,
         lot.nome AS loteamento,
-        COALESCE(receita.total, 0) AS receita,
-        COALESCE(despesa.total, 0) AS despesas
+        COALESCE(receita.total, 0) + COALESCE(lanc_receita.total, 0) AS receita,
+        COALESCE(despesa.total, 0) + COALESCE(lanc_despesa.total, 0) AS despesas
       FROM loteamentos lot
       LEFT JOIN (
         SELECT lo.id_loteamento, SUM(COALESCE(p.valor_pago, p.valor)) AS total
@@ -871,6 +876,18 @@ relatoriosRouter.get(
         WHERE dp.situacao = 'pago' AND dp.id_empresa = $${idEmpresaParam} AND d.id_loteamento IS NOT NULL ${fromDespesa} ${toDespesa}
         GROUP BY d.id_loteamento
       ) despesa ON despesa.id_loteamento = lot.id_loteamento
+      LEFT JOIN (
+        SELECT l2.id_loteamento, SUM(l2.valor) AS total
+        FROM lancamentos_manuais l2
+        WHERE l2.tipo = 'receita' AND l2.id_empresa = $${idEmpresaParam} AND l2.id_loteamento IS NOT NULL ${fromLanc} ${toLanc}
+        GROUP BY l2.id_loteamento
+      ) lanc_receita ON lanc_receita.id_loteamento = lot.id_loteamento
+      LEFT JOIN (
+        SELECT l3.id_loteamento, SUM(l3.valor) AS total
+        FROM lancamentos_manuais l3
+        WHERE l3.tipo = 'despesa' AND l3.id_empresa = $${idEmpresaParam} AND l3.id_loteamento IS NOT NULL ${fromLanc.replace(/l2\./g, "l3.")} ${toLanc.replace(/l2\./g, "l3.")}
+        GROUP BY l3.id_loteamento
+      ) lanc_despesa ON lanc_despesa.id_loteamento = lot.id_loteamento
       WHERE lot.id_empresa = $${idEmpresaParam}${loteamentoFilter}
       ORDER BY lot.nome ASC
     `;
@@ -991,7 +1008,7 @@ relatoriosRouter.get(
     const from = parseResult.data.from ?? new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1).toISOString().slice(0, 10);
     const to = parseResult.data.to ?? hoje.toISOString().slice(0, 10);
 
-    const [entradasRows, saidasRows] = await Promise.all([
+    const [entradasRows, saidasRows, lancReceitaRows, lancDespesaRows] = await Promise.all([
       AppDataSource.query(
         `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, SUM(COALESCE(p.valor_pago, p.valor)) AS total
          FROM pagamentos p
@@ -1009,11 +1026,31 @@ relatoriosRouter.get(
          GROUP BY mes ORDER BY mes`,
         [idEmpresa, from, to]
       ),
+      AppDataSource.query(
+        `SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, SUM(l.valor) AS total
+         FROM lancamentos_manuais l
+         WHERE l.tipo = 'receita' AND l.id_empresa = $1 AND l.data >= $2 AND l.data <= $3
+         GROUP BY mes ORDER BY mes`,
+        [idEmpresa, from, to]
+      ),
+      AppDataSource.query(
+        `SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, SUM(l.valor) AS total
+         FROM lancamentos_manuais l
+         WHERE l.tipo = 'despesa' AND l.id_empresa = $1 AND l.data >= $2 AND l.data <= $3
+         GROUP BY mes ORDER BY mes`,
+        [idEmpresa, from, to]
+      ),
     ]);
 
     type MesRow = { mes: string; total: string | number | null };
     const entradasMap = new Map((entradasRows as MesRow[]).map((r) => [r.mes, Number(r.total ?? 0)]));
+    for (const r of lancReceitaRows as MesRow[]) {
+      entradasMap.set(r.mes, (entradasMap.get(r.mes) ?? 0) + Number(r.total ?? 0));
+    }
     const saidasMap = new Map((saidasRows as MesRow[]).map((r) => [r.mes, Number(r.total ?? 0)]));
+    for (const r of lancDespesaRows as MesRow[]) {
+      saidasMap.set(r.mes, (saidasMap.get(r.mes) ?? 0) + Number(r.total ?? 0));
+    }
 
     const meses = new Set([...entradasMap.keys(), ...saidasMap.keys()]);
     const resultado = Array.from(meses)
@@ -1087,6 +1124,132 @@ relatoriosRouter.get(
       valorTotal: Number(row.valor_total ?? 0),
       valorPago: Number(row.valor_pago ?? 0),
     }));
+
+    return res.json(resultado);
+  },
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DRE Mensal — geral ou por loteamento
+// ═══════════════════════════════════════════════════════════════════════════
+
+const dreMensalQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),
+  id_loteamento: z.string().regex(/^\d+$/).transform((v) => parseInt(v, 10)).optional(),
+});
+
+const LANCAMENTOS_GRUPO_LABEL = "Lançamentos Manuais";
+
+relatoriosRouter.get(
+  "/dre-mensal",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = dreMensalQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+    const { id_loteamento } = parseResult.data;
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const hoje = new Date();
+    const from = parseResult.data.from ?? new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1).toISOString().slice(0, 10);
+    const to = parseResult.data.to ?? hoje.toISOString().slice(0, 10);
+
+    const receitaVendasQuery = typeof id_loteamento === "number"
+      ? `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, SUM(COALESCE(p.valor_pago, p.valor)) AS total
+         FROM pagamentos p
+         JOIN vendas v ON v.id_venda = p.id_venda
+         JOIN lotes l ON l.id_lote = v.id_lote
+         WHERE p.situacao = 'pago' AND p.id_empresa = $1 AND v.status <> 'cancelada' AND l.id_loteamento = $2
+           AND p.pago_data >= $3 AND p.pago_data <= $4
+         GROUP BY mes`
+      : `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, SUM(COALESCE(p.valor_pago, p.valor)) AS total
+         FROM pagamentos p
+         JOIN vendas v ON v.id_venda = p.id_venda
+         WHERE p.situacao = 'pago' AND p.id_empresa = $1 AND v.status <> 'cancelada'
+           AND p.pago_data >= $2 AND p.pago_data <= $3
+         GROUP BY mes`;
+    const receitaVendasParams = typeof id_loteamento === "number"
+      ? [idEmpresa, id_loteamento, from, to]
+      : [idEmpresa, from, to];
+
+    const lancQuery = (tipo: "receita" | "despesa") => typeof id_loteamento === "number"
+      ? `SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, SUM(l.valor) AS total
+         FROM lancamentos_manuais l
+         WHERE l.tipo = '${tipo}' AND l.id_empresa = $1 AND l.id_loteamento = $2 AND l.data >= $3 AND l.data <= $4
+         GROUP BY mes`
+      : `SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, SUM(l.valor) AS total
+         FROM lancamentos_manuais l
+         WHERE l.tipo = '${tipo}' AND l.id_empresa = $1 AND l.data >= $2 AND l.data <= $3
+         GROUP BY mes`;
+    const lancParams = typeof id_loteamento === "number"
+      ? [idEmpresa, id_loteamento, from, to]
+      : [idEmpresa, from, to];
+
+    const despesasPorGrupoQuery = typeof id_loteamento === "number"
+      ? `SELECT TO_CHAR(dp.pago_data, 'YYYY-MM') AS mes, COALESCE(cat.grupo, 'Outras') AS grupo, SUM(dp.valor_pago) AS total
+         FROM despesa_parcelas dp
+         JOIN despesas d ON d.id_despesa = dp.id_despesa
+         LEFT JOIN categorias_despesa cat ON cat.id_categoria = d.id_categoria
+         WHERE dp.situacao = 'pago' AND dp.id_empresa = $1 AND d.id_loteamento = $2
+           AND dp.pago_data >= $3 AND dp.pago_data <= $4
+         GROUP BY mes, grupo`
+      : `SELECT TO_CHAR(dp.pago_data, 'YYYY-MM') AS mes, COALESCE(cat.grupo, 'Outras') AS grupo, SUM(dp.valor_pago) AS total
+         FROM despesa_parcelas dp
+         JOIN despesas d ON d.id_despesa = dp.id_despesa
+         LEFT JOIN categorias_despesa cat ON cat.id_categoria = d.id_categoria
+         WHERE dp.situacao = 'pago' AND dp.id_empresa = $1
+           AND dp.pago_data >= $2 AND dp.pago_data <= $3
+         GROUP BY mes, grupo`;
+
+    const [receitaVendasRows, lancReceitaRows, lancDespesaRows, despesasGrupoRows] = await Promise.all([
+      AppDataSource.query(receitaVendasQuery, receitaVendasParams),
+      AppDataSource.query(lancQuery("receita"), lancParams),
+      AppDataSource.query(lancQuery("despesa"), lancParams),
+      AppDataSource.query(despesasPorGrupoQuery, receitaVendasParams),
+    ]);
+
+    type MesRow = { mes: string; total: string | number | null };
+    type GrupoRow = { mes: string; grupo: string; total: string | number | null };
+
+    interface DreMes {
+      mes: string;
+      receita: number;
+      despesasPorGrupo: Record<string, number>;
+      despesasTotal: number;
+      resultado: number;
+    }
+    const porMes = new Map<string, DreMes>();
+
+    function getMes(mes: string): DreMes {
+      let m = porMes.get(mes);
+      if (!m) {
+        m = { mes, receita: 0, despesasPorGrupo: {}, despesasTotal: 0, resultado: 0 };
+        porMes.set(mes, m);
+      }
+      return m;
+    }
+
+    for (const r of receitaVendasRows as MesRow[]) getMes(r.mes).receita += Number(r.total ?? 0);
+    for (const r of lancReceitaRows as MesRow[]) getMes(r.mes).receita += Number(r.total ?? 0);
+    for (const r of despesasGrupoRows as GrupoRow[]) {
+      const m = getMes(r.mes);
+      const valor = Number(r.total ?? 0);
+      m.despesasPorGrupo[r.grupo] = (m.despesasPorGrupo[r.grupo] ?? 0) + valor;
+      m.despesasTotal += valor;
+    }
+    for (const r of lancDespesaRows as MesRow[]) {
+      const m = getMes(r.mes);
+      const valor = Number(r.total ?? 0);
+      m.despesasPorGrupo[LANCAMENTOS_GRUPO_LABEL] = (m.despesasPorGrupo[LANCAMENTOS_GRUPO_LABEL] ?? 0) + valor;
+      m.despesasTotal += valor;
+    }
+
+    const resultado = Array.from(porMes.values())
+      .map((m) => ({ ...m, resultado: m.receita - m.despesasTotal }))
+      .sort((a, b) => a.mes.localeCompare(b.mes));
 
     return res.json(resultado);
   },

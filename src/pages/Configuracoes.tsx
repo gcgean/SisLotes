@@ -38,10 +38,14 @@ import { MODELO_CONTRATO_PADRAO } from "@/utils/modeloContratoPadrao";
 interface Conta {
   id_conta: number;
   apelido: string;
-  titular: string;
-  agencia: string;
-  conta: string;
+  titular?: string | null;
+  agencia?: string | null;
+  conta?: string | null;
   convenio?: string | null;
+  tipo: "banco" | "caixa";
+  saldo_inicial: string;
+  data_saldo_inicial?: string | null;
+  saldo_atual?: number;
   ativo: boolean;
 }
 
@@ -283,13 +287,27 @@ const Configuracoes = () => {
     },
   });
 
-  const contaFormSchema = z.object({
-    apelido: z.string().min(1, "Apelido é obrigatório"),
-    titular: z.string().min(1, "Titular é obrigatório"),
-    agencia: z.string().min(1, "Agência é obrigatória"),
-    conta: z.string().min(1, "Conta é obrigatória"),
-    convenio: z.string().optional(),
-  });
+  const contaFormSchema = z
+    .object({
+      apelido: z.string().min(1, "Apelido é obrigatório"),
+      tipo: z.enum(["banco", "caixa"]),
+      titular: z.string().optional(),
+      agencia: z.string().optional(),
+      conta: z.string().optional(),
+      convenio: z.string().optional(),
+      saldo_inicial: z.string().optional(),
+      data_saldo_inicial: z.string().optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (data.tipo === "banco") {
+        if (!data.agencia?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Agência é obrigatória para conta bancária", path: ["agencia"] });
+        }
+        if (!data.conta?.trim()) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Conta é obrigatória para conta bancária", path: ["conta"] });
+        }
+      }
+    });
 
   type ContaFormValues = z.infer<typeof contaFormSchema>;
 
@@ -297,12 +315,17 @@ const Configuracoes = () => {
     resolver: zodResolver(contaFormSchema),
     defaultValues: {
       apelido: "",
+      tipo: "banco",
       titular: "",
       agencia: "",
       conta: "",
       convenio: "",
+      saldo_inicial: "0",
+      data_saldo_inicial: "",
     },
   });
+
+  const tipoContaForm = contaForm.watch("tipo");
 
   const criarUsuarioMutation = useMutation({
     mutationFn: async (values: UsuarioFormValues) => {
@@ -412,6 +435,14 @@ const Configuracoes = () => {
     },
   });
 
+  function contaFormValuesToPayload(values: ContaFormValues) {
+    return {
+      ...values,
+      saldo_inicial: values.saldo_inicial ? Number(values.saldo_inicial.replace(",", ".")) : 0,
+      data_saldo_inicial: values.data_saldo_inicial?.trim() || null,
+    };
+  }
+
   const criarContaMutation = useMutation({
     mutationFn: async (values: ContaFormValues) => {
       const response = await fetch("/api/contas", {
@@ -420,7 +451,7 @@ const Configuracoes = () => {
           "Content-Type": "application/json",
           ...getAuthHeaders(),
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify(contaFormValuesToPayload(values)),
       });
 
       if (!response.ok) {
@@ -434,10 +465,13 @@ const Configuracoes = () => {
       setDialogContaAberto(false);
       contaForm.reset({
         apelido: "",
+        tipo: "banco",
         titular: "",
         agencia: "",
         conta: "",
         convenio: "",
+        saldo_inicial: "0",
+        data_saldo_inicial: "",
       });
       toast({ title: "Conta criada com sucesso" });
     },
@@ -454,7 +488,7 @@ const Configuracoes = () => {
           "Content-Type": "application/json",
           ...getAuthHeaders(),
         },
-        body: JSON.stringify(input.values),
+        body: JSON.stringify(contaFormValuesToPayload(input.values)),
       });
 
       if (!response.ok) {
@@ -675,10 +709,13 @@ const Configuracoes = () => {
     setContaSelecionada(null);
     contaForm.reset({
       apelido: "",
+      tipo: "banco",
       titular: "",
       agencia: "",
       conta: "",
       convenio: "",
+      saldo_inicial: "0",
+      data_saldo_inicial: "",
     });
     setDialogContaAberto(true);
   }
@@ -688,10 +725,13 @@ const Configuracoes = () => {
     setContaSelecionada(conta);
     contaForm.reset({
       apelido: conta.apelido,
-      titular: conta.titular,
-      agencia: conta.agencia,
-      conta: conta.conta,
+      tipo: conta.tipo ?? "banco",
+      titular: conta.titular ?? "",
+      agencia: conta.agencia ?? "",
+      conta: conta.conta ?? "",
       convenio: conta.convenio ?? "",
+      saldo_inicial: conta.saldo_inicial ?? "0",
+      data_saldo_inicial: conta.data_saldo_inicial?.slice(0, 10) ?? "",
     });
     setDialogContaAberto(true);
   }
@@ -1044,10 +1084,15 @@ const Configuracoes = () => {
                         ) : (
                           contasFiltradas.map((conta) => (
                             <tr key={conta.id_conta} className={`hover:bg-muted/30 transition-colors ${!conta.ativo ? "opacity-60" : ""}`}>
-                              <td className="px-5 py-3 font-medium">{conta.apelido}</td>
-                              <td className="px-5 py-3 text-muted-foreground">{conta.titular}</td>
-                              <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.agencia}</td>
-                              <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.conta}</td>
+                              <td className="px-5 py-3 font-medium">
+                                {conta.apelido}
+                                {conta.tipo === "caixa" && (
+                                  <Badge variant="outline" className="ml-2 text-[10px]">Caixa</Badge>
+                                )}
+                              </td>
+                              <td className="px-5 py-3 text-muted-foreground">{conta.titular || "—"}</td>
+                              <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.agencia || "—"}</td>
+                              <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.conta || "—"}</td>
                               <td className="px-5 py-3 text-muted-foreground font-mono text-xs">{conta.convenio || "—"}</td>
                               <td className="px-5 py-3">
                                 <Badge variant={conta.ativo ? "default" : "secondary"} className="text-xs">
@@ -1113,40 +1158,116 @@ const Configuracoes = () => {
                   >
                     <FormField
                       control={contaForm.control}
-                      name="apelido"
+                      name="tipo"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Nome de identificação</FormLabel>
+                          <FormLabel>Tipo</FormLabel>
                           <FormControl>
-                            <Input placeholder="Ex: Bradesco Principal, Conta Empresarial..." {...field} />
+                            <div className="flex gap-2">
+                              <Button
+                                type="button"
+                                variant={field.value === "banco" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => field.onChange("banco")}
+                              >
+                                Banco
+                              </Button>
+                              <Button
+                                type="button"
+                                variant={field.value === "caixa" ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => field.onChange("caixa")}
+                              >
+                                Caixa / Tesouraria
+                              </Button>
+                            </div>
                           </FormControl>
-                          <p className="text-xs text-muted-foreground">Um nome para identificar esta conta no sistema.</p>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
                     <FormField
                       control={contaForm.control}
-                      name="titular"
+                      name="apelido"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Nome do titular</FormLabel>
+                          <FormLabel>Nome de identificação</FormLabel>
                           <FormControl>
-                            <Input placeholder="Nome completo conforme cadastro no banco" {...field} />
+                            <Input placeholder="Ex: Bradesco Principal, Caixa Geral..." {...field} />
                           </FormControl>
+                          <p className="text-xs text-muted-foreground">Um nome para identificar esta conta no sistema.</p>
                           <FormMessage />
                         </FormItem>
                       )}
                     />
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {tipoContaForm === "banco" && (
+                      <>
+                        <FormField
+                          control={contaForm.control}
+                          name="titular"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Nome do titular</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Nome completo conforme cadastro no banco" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <FormField
+                            control={contaForm.control}
+                            name="agencia"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Agência</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="Ex: 1234" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={contaForm.control}
+                            name="conta"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Conta com dígito</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="Ex: 00012345-6" {...field} />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                          <FormField
+                            control={contaForm.control}
+                            name="convenio"
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Convênio / Cedente</FormLabel>
+                                <FormControl>
+                                  <Input placeholder="Ex: 123456 (opcional)" {...field} />
+                                </FormControl>
+                                <p className="text-xs text-muted-foreground">Código fornecido pelo banco para emissão de boletos.</p>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </div>
+                      </>
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <FormField
                         control={contaForm.control}
-                        name="agencia"
+                        name="saldo_inicial"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Agência</FormLabel>
+                            <FormLabel>Saldo inicial</FormLabel>
                             <FormControl>
-                              <Input placeholder="Ex: 1234" {...field} />
+                              <Input placeholder="0,00" inputMode="decimal" {...field} />
                             </FormControl>
                             <FormMessage />
                           </FormItem>
@@ -1154,27 +1275,14 @@ const Configuracoes = () => {
                       />
                       <FormField
                         control={contaForm.control}
-                        name="conta"
+                        name="data_saldo_inicial"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Conta com dígito</FormLabel>
+                            <FormLabel>Data do saldo inicial</FormLabel>
                             <FormControl>
-                              <Input placeholder="Ex: 00012345-6" {...field} />
+                              <Input type="date" {...field} />
                             </FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )}
-                      />
-                      <FormField
-                        control={contaForm.control}
-                        name="convenio"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Convênio / Cedente</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Ex: 123456 (opcional)" {...field} />
-                            </FormControl>
-                            <p className="text-xs text-muted-foreground">Código fornecido pelo banco para emissão de boletos.</p>
+                            <p className="text-xs text-muted-foreground">Movimentos antes dessa data não entram no saldo.</p>
                             <FormMessage />
                           </FormItem>
                         )}

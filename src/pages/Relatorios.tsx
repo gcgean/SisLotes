@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Download, BarChart3, DollarSign, Users, Calendar, Printer, TrendingUp, AlertTriangle, LineChart, PieChart } from "lucide-react";
+import { FileText, Download, BarChart3, DollarSign, Users, Calendar, Printer, TrendingUp, AlertTriangle, LineChart, PieChart, ClipboardList } from "lucide-react";
 import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
 import { formatDateBR } from "@/lib/date-br";
 import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
@@ -135,6 +135,12 @@ const reportTypes = [
     title: "Despesas por Categoria",
     description: "Quanto foi gasto em cada categoria de despesa",
     icon: PieChart,
+  },
+  {
+    id: "dre-mensal",
+    title: "DRE Mensal",
+    description: "Receita menos despesas por natureza, mês a mês — geral ou por loteamento",
+    icon: ClipboardList,
   },
 ];
 
@@ -266,6 +272,14 @@ interface DespesaPorCategoria {
   valorPago: number;
 }
 
+interface DreMes {
+  mes: string;
+  receita: number;
+  despesasPorGrupo: Record<string, number>;
+  despesasTotal: number;
+  resultado: number;
+}
+
 const Relatorios = () => {
   const { canExportCsv, canExportPdf } = useLicenseFeatures();
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
@@ -309,6 +323,7 @@ const Relatorios = () => {
   const [hasSearchedContasPagar, setHasSearchedContasPagar] = useState(false);
   const [hasSearchedFluxoCaixa, setHasSearchedFluxoCaixa] = useState(false);
   const [hasSearchedDespesasCategoria, setHasSearchedDespesasCategoria] = useState(false);
+  const [hasSearchedDreMensal, setHasSearchedDreMensal] = useState(false);
 
   const [apenasAtrasoInput, setApenasAtrasoInput] = useState(false);
   const [apenasAtraso, setApenasAtraso] = useState(false);
@@ -351,7 +366,8 @@ const Relatorios = () => {
       selectedReport === "clientes-loteamento" ||
       selectedReport === "resultado-loteamento" ||
       selectedReport === "contas-pagar" ||
-      selectedReport === "despesas-categoria",
+      selectedReport === "despesas-categoria" ||
+      selectedReport === "dre-mensal",
   });
 
   const { data: contasData = [] } = useQuery<ContaRelatorio[]>({
@@ -597,6 +613,26 @@ const Relatorios = () => {
     enabled: selectedReport === "despesas-categoria" && hasSearchedDespesasCategoria,
   });
 
+  const { data: dreMensalData = [], isLoading: loadingDreMensal } = useQuery<DreMes[]>({
+    queryKey: ["relatorios", "dre-mensal", loteamentoId, dataIni, dataFim],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const fromIso = toIsoFromBr(dataIni);
+      const toIso = toIsoFromBr(dataFim);
+      if (fromIso) params.set("from", fromIso);
+      if (toIso) params.set("to", toIso);
+      if (loteamentoId !== "all") params.set("id_loteamento", loteamentoId);
+
+      const response = await fetch(`/api/relatorios/dre-mensal?${params.toString()}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) throw new Error("Erro ao carregar DRE mensal");
+      return response.json();
+    },
+    enabled: selectedReport === "dre-mensal" && hasSearchedDreMensal,
+  });
+  const dreGrupos = Array.from(new Set(dreMensalData.flatMap((m) => Object.keys(m.despesasPorGrupo)))).sort();
+
   const entradasPageSize = 20;
   const totalPagesEntradas = Math.max(1, Math.ceil(entradasData.length / entradasPageSize));
   const currentPageEntradas = Math.min(pageEntradas, totalPagesEntradas || 1);
@@ -681,7 +717,11 @@ const Relatorios = () => {
     (selectedReport === "despesas-categoria" &&
       hasSearchedDespesasCategoria &&
       !loadingDespesasCategoria &&
-      despesasCategoriaData.length > 0);
+      despesasCategoriaData.length > 0) ||
+    (selectedReport === "dre-mensal" &&
+      hasSearchedDreMensal &&
+      !loadingDreMensal &&
+      dreMensalData.length > 0);
 
   const handlePrint = () => {
     if (!canExportPdf) return;
@@ -803,7 +843,8 @@ const Relatorios = () => {
                   selectedReport === "clientes-loteamento" ||
                   selectedReport === "resultado-loteamento" ||
                   selectedReport === "contas-pagar" ||
-                  selectedReport === "despesas-categoria") && (
+                  selectedReport === "despesas-categoria" ||
+                  selectedReport === "dre-mensal") && (
                   <LoteamentoCombobox
                     loteamentos={loteamentosData}
                     value={loteamentoIdInput}
@@ -931,6 +972,9 @@ const Relatorios = () => {
                     if (selectedReport === "despesas-categoria") {
                       setHasSearchedDespesasCategoria(true);
                     }
+                    if (selectedReport === "dre-mensal") {
+                      setHasSearchedDreMensal(true);
+                    }
                   }}
                 >
                   Buscar
@@ -950,7 +994,8 @@ const Relatorios = () => {
                       selectedReport === "resultado-loteamento" && resultadoLoteamentoData.length > 0 ||
                       selectedReport === "contas-pagar" && contasPagarData.length > 0 ||
                       selectedReport === "fluxo-caixa" && fluxoCaixaData.length > 0 ||
-                      selectedReport === "despesas-categoria" && despesasCategoriaData.length > 0
+                      selectedReport === "despesas-categoria" && despesasCategoriaData.length > 0 ||
+                      selectedReport === "dre-mensal" && dreMensalData.length > 0
                     )
                   }
                   onClick={() => {
@@ -1083,6 +1128,17 @@ const Relatorios = () => {
                           valorTotal: r.valorTotal,
                           valorPago: r.valorPago,
                         })),
+                      );
+                    } else if (selectedReport === "dre-mensal") {
+                      filename = "dre-mensal.csv";
+                      rows.push(
+                        ...dreMensalData.map((r) => {
+                          const linha: Record<string, unknown> = { mes: r.mes, receita: r.receita };
+                          for (const g of dreGrupos) linha[g] = r.despesasPorGrupo[g] ?? 0;
+                          linha.despesasTotal = r.despesasTotal;
+                          linha.resultado = r.resultado;
+                          return linha;
+                        }),
                       );
                     }
 
@@ -1877,6 +1933,78 @@ const Relatorios = () => {
                           </td>
                           <td className="px-5 py-3 text-right font-bold">
                             {formatCurrency(despesasCategoriaData.reduce((s, r) => s + r.valorPago, 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedReport === "dre-mensal" && (
+              <div className="glass-card rounded-lg overflow-hidden">
+                <div className="p-5 border-b border-border">
+                  <h2 className="font-semibold">DRE Mensal</h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {loteamentoId !== "all"
+                      ? `Loteamento: ${loteamentosData.find((l) => String(l.id_loteamento) === loteamentoId)?.nome ?? "selecionado"}`
+                      : "Visão geral da empresa (inclui despesas administrativas)"}
+                  </p>
+                </div>
+                {loadingDreMensal ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : dreMensalData.length === 0 ? (
+                  <div className="p-5 text-sm text-muted-foreground">
+                    Nenhum lançamento encontrado para os filtros selecionados
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Mês</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Receita</th>
+                          {dreGrupos.map((g) => (
+                            <th key={g} className="text-right px-5 py-3 font-medium text-muted-foreground">(−) {g}</th>
+                          ))}
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Despesas Total</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Resultado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {dreMensalData.map((row) => (
+                          <tr key={row.mes} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-3 font-medium">{row.mes}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.receita)}</td>
+                            {dreGrupos.map((g) => (
+                              <td key={g} className="px-5 py-3 text-right text-muted-foreground">
+                                {row.despesasPorGrupo[g] ? formatCurrency(row.despesasPorGrupo[g]) : "—"}
+                              </td>
+                            ))}
+                            <td className="px-5 py-3 text-right font-medium">{formatCurrency(row.despesasTotal)}</td>
+                            <td className={`px-5 py-3 text-right font-bold ${row.resultado >= 0 ? "text-primary" : "text-destructive"}`}>
+                              {formatCurrency(row.resultado)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-border bg-muted/30">
+                          <td className="px-5 py-3 font-bold">Total</td>
+                          <td className="px-5 py-3 text-right font-bold">
+                            {formatCurrency(dreMensalData.reduce((s, r) => s + r.receita, 0))}
+                          </td>
+                          {dreGrupos.map((g) => (
+                            <td key={g} className="px-5 py-3 text-right font-bold">
+                              {formatCurrency(dreMensalData.reduce((s, r) => s + (r.despesasPorGrupo[g] ?? 0), 0))}
+                            </td>
+                          ))}
+                          <td className="px-5 py-3 text-right font-bold">
+                            {formatCurrency(dreMensalData.reduce((s, r) => s + r.despesasTotal, 0))}
+                          </td>
+                          <td className="px-5 py-3 text-right font-bold text-primary">
+                            {formatCurrency(dreMensalData.reduce((s, r) => s + r.resultado, 0))}
                           </td>
                         </tr>
                       </tfoot>

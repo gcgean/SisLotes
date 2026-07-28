@@ -39,7 +39,7 @@ const mainItems = [
   { title: "Lotes", url: "/lotes", icon: Grid3X3 },
   { title: "Vendas", url: "/vendas", icon: ShoppingCart },
   { title: "Pagamentos", url: "/pagamentos", icon: CreditCard },
-  { title: "Despesas", url: "/despesas", icon: Receipt },
+  { title: "Financeiro", url: "/despesas", icon: Receipt },
 ];
 
 const secondaryItems = [

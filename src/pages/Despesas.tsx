@@ -34,6 +34,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { formatDateBR } from "@/lib/date-br";
+import { VisaoGeralTab } from "@/components/financeiro/VisaoGeralTab";
+import { ContasTab } from "@/components/financeiro/ContasTab";
+import { LancamentosTab } from "@/components/financeiro/LancamentosTab";
 import {
   Plus,
   Receipt,
@@ -550,20 +553,27 @@ export default function Despesas() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               <Receipt className="h-6 w-6 text-primary" />
-              Despesas
+              Financeiro
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Custos de obra por loteamento e despesas administrativas.
+              Receitas, despesas, contas, saldo e resultado por loteamento.
             </p>
           </div>
         </div>
 
-        <Tabs defaultValue="despesas">
-          <TabsList>
+        <Tabs defaultValue="visao-geral">
+          <TabsList className="h-auto flex-wrap">
+            <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
             <TabsTrigger value="despesas">Despesas</TabsTrigger>
             <TabsTrigger value="categorias">Categorias</TabsTrigger>
             <TabsTrigger value="fornecedores">Fornecedores</TabsTrigger>
+            <TabsTrigger value="contas">Contas</TabsTrigger>
+            <TabsTrigger value="lancamentos">Lançamentos</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="visao-geral" className="mt-4">
+            <VisaoGeralTab />
+          </TabsContent>
 
           {/* ─── Aba Despesas ─────────────────────────────────────────────── */}
           <TabsContent value="despesas" className="mt-4 space-y-4">
@@ -773,6 +783,14 @@ export default function Despesas() {
                 </tbody>
               </table>
             </div>
+          </TabsContent>
+
+          <TabsContent value="contas" className="mt-4">
+            <ContasTab />
+          </TabsContent>
+
+          <TabsContent value="lancamentos" className="mt-4">
+            <LancamentosTab />
           </TabsContent>
         </Tabs>
       </div>
