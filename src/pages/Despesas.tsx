@@ -47,7 +47,14 @@ import {
   RotateCcw,
   Search,
   Building2,
+  LayoutDashboard,
+  ReceiptText,
+  ListTree,
+  Truck,
+  Landmark,
+  ScrollText,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Tipos
@@ -162,6 +169,15 @@ const emptyDespesaForm = {
 
 const emptyCategoriaForm = { nome: "", tipo: "despesa" as "receita" | "despesa" };
 const emptyFornecedorForm = { nome: "", documento: "", telefone: "", email: "", contato: "", observacoes: "" };
+
+const MENU_FINANCEIRO = [
+  { value: "visao-geral", label: "Visão Geral", icon: LayoutDashboard },
+  { value: "despesas", label: "Despesas", icon: ReceiptText },
+  { value: "categorias", label: "Plano de Contas", icon: ListTree },
+  { value: "fornecedores", label: "Fornecedores", icon: Truck },
+  { value: "contas", label: "Contas", icon: Landmark },
+  { value: "lancamentos", label: "Lançamentos", icon: ScrollText },
+] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -586,22 +602,31 @@ export default function Despesas() {
           </div>
         </div>
 
-        <Tabs defaultValue="visao-geral">
-          <TabsList className="h-auto flex-wrap">
-            <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
-            <TabsTrigger value="despesas">Despesas</TabsTrigger>
-            <TabsTrigger value="categorias">Plano de Contas</TabsTrigger>
-            <TabsTrigger value="fornecedores">Fornecedores</TabsTrigger>
-            <TabsTrigger value="contas">Contas</TabsTrigger>
-            <TabsTrigger value="lancamentos">Lançamentos</TabsTrigger>
+        <Tabs defaultValue="visao-geral" orientation="vertical" className="flex flex-col md:flex-row gap-6 items-start">
+          <TabsList className="h-auto md:sticky md:top-4 w-full md:w-56 shrink-0 flex-row md:flex-col items-stretch justify-start gap-1 bg-transparent p-0 overflow-x-auto md:overflow-visible">
+            {MENU_FINANCEIRO.map(({ value, label, icon: Icon }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                className={cn(
+                  "w-full justify-start gap-2.5 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium text-muted-foreground shrink-0",
+                  "data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-primary/20 data-[state=active]:shadow-none",
+                  "hover:bg-muted/60 hover:text-foreground transition-colors"
+                )}
+              >
+                <Icon className="h-4 w-4 shrink-0" />
+                {label}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
-          <TabsContent value="visao-geral" className="mt-4">
+          <div className="flex-1 min-w-0 w-full">
+          <TabsContent value="visao-geral" className="mt-0">
             <VisaoGeralTab />
           </TabsContent>
 
           {/* ─── Aba Despesas ─────────────────────────────────────────────── */}
-          <TabsContent value="despesas" className="mt-4 space-y-4">
+          <TabsContent value="despesas" className="mt-0 space-y-4">
             <div className="flex flex-wrap items-center gap-2 justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative w-56">
@@ -715,7 +740,7 @@ export default function Despesas() {
           </TabsContent>
 
           {/* ─── Aba Plano de Contas ──────────────────────────────────────── */}
-          <TabsContent value="categorias" className="mt-4 space-y-4">
+          <TabsContent value="categorias" className="mt-0 space-y-4">
             <div className="flex justify-end">
               <Button size="sm" className="gap-2" onClick={abrirNovaContaRaiz}>
                 <Plus className="h-4 w-4" /> Nova Conta Raiz
@@ -771,7 +796,7 @@ export default function Despesas() {
           </TabsContent>
 
           {/* ─── Aba Fornecedores ─────────────────────────────────────────── */}
-          <TabsContent value="fornecedores" className="mt-4 space-y-4">
+          <TabsContent value="fornecedores" className="mt-0 space-y-4">
             <div className="flex justify-end">
               <Button size="sm" className="gap-2" onClick={abrirNovoFornecedor}>
                 <Plus className="h-4 w-4" /> Novo Fornecedor
@@ -821,13 +846,14 @@ export default function Despesas() {
             </div>
           </TabsContent>
 
-          <TabsContent value="contas" className="mt-4">
+          <TabsContent value="contas" className="mt-0">
             <ContasTab />
           </TabsContent>
 
-          <TabsContent value="lancamentos" className="mt-4">
+          <TabsContent value="lancamentos" className="mt-0">
             <LancamentosTab />
           </TabsContent>
+          </div>
         </Tabs>
       </div>
 
