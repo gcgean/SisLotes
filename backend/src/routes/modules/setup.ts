@@ -6,7 +6,7 @@ import { Empresa } from "../../entities/Empresa";
 import { Usuario } from "../../entities/Usuario";
 import { HubBillingService } from "../../services/HubBillingService";
 import { TelegramService } from "../../services/TelegramService";
-import { CategoriaDespesa } from "../../entities/CategoriaDespesa";
+import { PlanoDeContas } from "../../entities/PlanoDeContas";
 import { CATEGORIAS_DESPESA_PADRAO } from "../../config/categorias-despesa-padrao";
 
 export const setupRouter = Router();
@@ -415,16 +415,39 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
   });
   await usuarioRepo.save(usuario);
 
-  // Semeia as categorias padrão de despesa para a empresa recém-criada (não bloqueia o cadastro se falhar)
+  // Semeia o plano de contas padrão (grupos + contas) para a empresa recém-criada (não bloqueia o cadastro se falhar)
   try {
-    const categoriaRepo = AppDataSource.getRepository(CategoriaDespesa);
-    await categoriaRepo.save(
-      CATEGORIAS_DESPESA_PADRAO.map((c) =>
-        categoriaRepo.create({ id_empresa: empresaSalva.id_empresa, nome: c.nome, grupo: c.grupo })
+    const planoRepo = AppDataSource.getRepository(PlanoDeContas);
+    const grupos = Array.from(new Set(CATEGORIAS_DESPESA_PADRAO.map((c) => c.grupo)));
+    const gruposSalvos = await planoRepo.save(
+      grupos.map((grupo, i) =>
+        planoRepo.create({
+          id_empresa: empresaSalva.id_empresa,
+          id_pai: null,
+          tipo: "despesa",
+          codigo: String(i + 1),
+          nome: grupo,
+        })
       )
     );
+    const idPorGrupo = new Map(gruposSalvos.map((g) => [g.nome, g]));
+    const contasPorGrupo = new Map<string, number>();
+    await planoRepo.save(
+      CATEGORIAS_DESPESA_PADRAO.map((c) => {
+        const pai = idPorGrupo.get(c.grupo)!;
+        const n = (contasPorGrupo.get(c.grupo) ?? 0) + 1;
+        contasPorGrupo.set(c.grupo, n);
+        return planoRepo.create({
+          id_empresa: empresaSalva.id_empresa,
+          id_pai: pai.id_conta_contabil,
+          tipo: "despesa",
+          codigo: `${pai.codigo}.${n}`,
+          nome: c.nome,
+        });
+      })
+    );
   } catch (err) {
-    console.warn("[Setup] Falha ao semear categorias de despesa padrão:", err instanceof Error ? err.message : err);
+    console.warn("[Setup] Falha ao semear plano de contas padrão:", err instanceof Error ? err.message : err);
   }
 
   // Cadastro já conta como primeiro acesso (o usuário sai daqui logado)

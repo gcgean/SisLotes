@@ -1,7 +1,8 @@
 import { Response, Router } from "express";
 import { z } from "zod";
+import { IsNull } from "typeorm";
 import { AppDataSource } from "../../db/data-source";
-import { CategoriaDespesa } from "../../entities/CategoriaDespesa";
+import { PlanoDeContas } from "../../entities/PlanoDeContas";
 import { Fornecedor } from "../../entities/Fornecedor";
 import { Despesa } from "../../entities/Despesa";
 import { DespesaParcela } from "../../entities/DespesaParcela";
@@ -12,82 +13,88 @@ export const despesasRouter = Router();
 despesasRouter.use(requireAuth, requireFeature("module_despesas"));
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  Categorias de despesa
+//  Plano de Contas (árvore: grupo > subgrupo > conta)
 // ═══════════════════════════════════════════════════════════════════════════
 
-const categoriaBodySchema = z.object({
-  nome: z.string().min(1),
-  grupo: z.string().max(50).optional().nullable(),
-  ativo: z.boolean().optional(),
+const planoContasBodySchema = z.object({
+  id_pai: z.number().int().positive().optional().nullable(),
+  tipo: z.enum(["receita", "despesa"]).optional(),
+  nome: z.string().min(1).max(150),
 });
 
-despesasRouter.get("/categorias", async (req: AuthRequest, res: Response) => {
-  const repo = AppDataSource.getRepository(CategoriaDespesa);
-  const where: Record<string, unknown> = { id_empresa: req.user?.id_empresa };
+despesasRouter.get("/plano-de-contas", async (req: AuthRequest, res: Response) => {
+  const repo = AppDataSource.getRepository(PlanoDeContas);
+  const where: Record<string, unknown> = { id_empresa: req.user!.id_empresa };
   if (req.query.ativo !== undefined) where.ativo = req.query.ativo === "true";
-  const categorias = await repo.find({ where, order: { grupo: "ASC", nome: "ASC" } });
-  return res.json(categorias);
+  if (req.query.tipo === "receita" || req.query.tipo === "despesa") where.tipo = req.query.tipo;
+  const contas = await repo.find({ where, order: { codigo: "ASC" } });
+  return res.json(contas);
 });
 
-despesasRouter.post("/categorias", async (req: AuthRequest, res: Response) => {
-  const parse = categoriaBodySchema.safeParse(req.body);
+despesasRouter.post("/plano-de-contas", async (req: AuthRequest, res: Response) => {
+  const parse = planoContasBodySchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
 
-  const repo = AppDataSource.getRepository(CategoriaDespesa);
-  const categoria = repo.create({
-    ...parse.data,
-    ativo: parse.data.ativo ?? true,
-    id_empresa: req.user!.id_empresa,
-  });
-  const saved = await repo.save(categoria);
+  const repo = AppDataSource.getRepository(PlanoDeContas);
+  const idEmpresa = req.user!.id_empresa;
+  const { id_pai, nome } = parse.data;
+  let tipo = parse.data.tipo;
+
+  let pai: PlanoDeContas | null = null;
+  if (id_pai) {
+    pai = await repo.findOne({ where: { id_conta_contabil: id_pai, id_empresa: idEmpresa } });
+    if (!pai) return res.status(404).json({ error: "Conta pai não encontrada" });
+    tipo = pai.tipo;
+  }
+  if (!tipo) return res.status(400).json({ error: "Informe o tipo (receita ou despesa) para uma conta raiz" });
+
+  const irmaos = await repo.count({ where: { id_empresa: idEmpresa, id_pai: id_pai ? id_pai : IsNull() } });
+  const proximoNumero = irmaos + 1;
+  const codigo = pai ? `${pai.codigo}.${proximoNumero}` : String(proximoNumero);
+
+  const conta = repo.create({ id_empresa: idEmpresa, id_pai: id_pai ?? null, tipo, codigo, nome, ativo: true });
+  const saved = await repo.save(conta);
   return res.status(201).json(saved);
 });
 
-despesasRouter.put("/categorias/:id", async (req: AuthRequest, res: Response) => {
-  const parse = categoriaBodySchema.partial().safeParse(req.body);
+despesasRouter.put("/plano-de-contas/:id", async (req: AuthRequest, res: Response) => {
+  const parse = z.object({ nome: z.string().min(1).max(150).optional(), ativo: z.boolean().optional() }).safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
 
-  const repo = AppDataSource.getRepository(CategoriaDespesa);
-  const categoria = await repo.findOne({
-    where: { id_categoria: Number(req.params.id), id_empresa: req.user!.id_empresa },
+  const repo = AppDataSource.getRepository(PlanoDeContas);
+  const conta = await repo.findOne({
+    where: { id_conta_contabil: Number(req.params.id), id_empresa: req.user!.id_empresa },
   });
-  if (!categoria) return res.status(404).json({ error: "Categoria não encontrada" });
+  if (!conta) return res.status(404).json({ error: "Conta não encontrada" });
 
-  Object.assign(categoria, parse.data);
-  const saved = await repo.save(categoria);
+  Object.assign(conta, parse.data);
+  const saved = await repo.save(conta);
   return res.json(saved);
 });
 
-despesasRouter.patch("/categorias/:id/ativo", async (req: AuthRequest, res: Response) => {
-  const { ativo } = req.body as { ativo?: boolean };
-  if (typeof ativo !== "boolean") return res.status(400).json({ error: "Campo 'ativo' deve ser boolean" });
+despesasRouter.delete("/plano-de-contas/:id", async (req: AuthRequest, res: Response) => {
+  const repo = AppDataSource.getRepository(PlanoDeContas);
+  const idEmpresa = req.user!.id_empresa;
+  const conta = await repo.findOne({ where: { id_conta_contabil: Number(req.params.id), id_empresa: idEmpresa } });
+  if (!conta) return res.status(404).json({ error: "Conta não encontrada" });
 
-  const repo = AppDataSource.getRepository(CategoriaDespesa);
-  const categoria = await repo.findOne({
-    where: { id_categoria: Number(req.params.id), id_empresa: req.user!.id_empresa },
-  });
-  if (!categoria) return res.status(404).json({ error: "Categoria não encontrada" });
-
-  categoria.ativo = ativo;
-  const saved = await repo.save(categoria);
-  return res.json(saved);
-});
-
-despesasRouter.delete("/categorias/:id", async (req: AuthRequest, res: Response) => {
-  const repo = AppDataSource.getRepository(CategoriaDespesa);
-  const categoria = await repo.findOne({
-    where: { id_categoria: Number(req.params.id), id_empresa: req.user!.id_empresa },
-  });
-  if (!categoria) return res.status(404).json({ error: "Categoria não encontrada" });
-
-  const emUso = await AppDataSource.getRepository(Despesa).count({
-    where: { id_categoria: categoria.id_categoria, id_empresa: req.user!.id_empresa },
-  });
-  if (emUso > 0) {
-    return res.status(409).json({ error: "Categoria em uso por despesas cadastradas — desative em vez de excluir." });
+  const temFilhos = await repo.count({ where: { id_pai: conta.id_conta_contabil, id_empresa: idEmpresa } });
+  if (temFilhos > 0) {
+    return res.status(409).json({ error: "Esta conta tem sub-contas — remova ou mova as sub-contas antes de excluir." });
   }
 
-  await repo.remove(categoria);
+  const emUsoDespesas = await AppDataSource.getRepository(Despesa).count({
+    where: { id_categoria: conta.id_conta_contabil, id_empresa: idEmpresa },
+  });
+  const emUsoLancamentos = await AppDataSource.query(
+    `SELECT COUNT(*)::int AS total FROM lancamentos_manuais WHERE id_conta_contabil = $1 AND id_empresa = $2`,
+    [conta.id_conta_contabil, idEmpresa]
+  );
+  if (emUsoDespesas > 0 || Number(emUsoLancamentos[0]?.total ?? 0) > 0) {
+    return res.status(409).json({ error: "Conta em uso por despesas ou lançamentos — desative em vez de excluir." });
+  }
+
+  await repo.remove(conta);
   return res.status(204).send();
 });
 
@@ -251,14 +258,15 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
          d.descricao, d.valor_total, d.numero_parcelas, d.documento, d.observacoes,
          d.anexo_nome, d.created_at, d.updated_at,
          lo.nome AS loteamento_nome,
-         c.nome AS categoria_nome, c.grupo AS categoria_grupo,
+         c.nome AS categoria_nome, COALESCE(cg.nome, c.nome) AS categoria_grupo,
          f.nome AS fornecedor_nome,
          COALESCE(pc.parcelas_pagas, 0)::int AS parcelas_pagas,
          COALESCE(pc.parcelas_total, d.numero_parcelas)::int AS parcelas_total,
          COALESCE(pc.valor_pago, 0)::numeric AS valor_pago
        FROM despesas d
        LEFT JOIN loteamentos lo ON lo.id_loteamento = d.id_loteamento
-       LEFT JOIN categorias_despesa c ON c.id_categoria = d.id_categoria
+       LEFT JOIN plano_de_contas c ON c.id_conta_contabil = d.id_categoria
+       LEFT JOIN plano_de_contas cg ON cg.id_conta_contabil = c.id_pai
        LEFT JOIN fornecedores f ON f.id_fornecedor = d.id_fornecedor
        LEFT JOIN (
          SELECT id_despesa,
@@ -297,11 +305,12 @@ despesasRouter.get("/:id", async (req: AuthRequest, res: Response) => {
     `SELECT
        d.*,
        lo.nome AS loteamento_nome,
-       c.nome AS categoria_nome, c.grupo AS categoria_grupo,
+       c.nome AS categoria_nome, COALESCE(cg.nome, c.nome) AS categoria_grupo,
        f.nome AS fornecedor_nome
      FROM despesas d
      LEFT JOIN loteamentos lo ON lo.id_loteamento = d.id_loteamento
-     LEFT JOIN categorias_despesa c ON c.id_categoria = d.id_categoria
+     LEFT JOIN plano_de_contas c ON c.id_conta_contabil = d.id_categoria
+     LEFT JOIN plano_de_contas cg ON cg.id_conta_contabil = c.id_pai
      LEFT JOIN fornecedores f ON f.id_fornecedor = d.id_fornecedor
      WHERE d.id_despesa = $1 AND d.id_empresa = $2`,
     [Number(req.params.id), idEmpresa]

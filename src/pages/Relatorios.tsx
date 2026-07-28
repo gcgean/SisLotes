@@ -275,6 +275,7 @@ interface DespesaPorCategoria {
 interface DreMes {
   mes: string;
   receita: number;
+  receitaPorGrupo: Record<string, number>;
   despesasPorGrupo: Record<string, number>;
   despesasTotal: number;
   resultado: number;
@@ -632,6 +633,7 @@ const Relatorios = () => {
     enabled: selectedReport === "dre-mensal" && hasSearchedDreMensal,
   });
   const dreGrupos = Array.from(new Set(dreMensalData.flatMap((m) => Object.keys(m.despesasPorGrupo)))).sort();
+  const dreReceitaGrupos = Array.from(new Set(dreMensalData.flatMap((m) => Object.keys(m.receitaPorGrupo)))).sort();
 
   const entradasPageSize = 20;
   const totalPagesEntradas = Math.max(1, Math.ceil(entradasData.length / entradasPageSize));
@@ -1133,7 +1135,9 @@ const Relatorios = () => {
                       filename = "dre-mensal.csv";
                       rows.push(
                         ...dreMensalData.map((r) => {
-                          const linha: Record<string, unknown> = { mes: r.mes, receita: r.receita };
+                          const linha: Record<string, unknown> = { mes: r.mes };
+                          for (const g of dreReceitaGrupos) linha[`receita_${g}`] = r.receitaPorGrupo[g] ?? 0;
+                          linha.receita = r.receita;
                           for (const g of dreGrupos) linha[g] = r.despesasPorGrupo[g] ?? 0;
                           linha.despesasTotal = r.despesasTotal;
                           linha.resultado = r.resultado;
@@ -1964,7 +1968,10 @@ const Relatorios = () => {
                       <thead>
                         <tr className="border-b border-border bg-muted/50">
                           <th className="text-left px-5 py-3 font-medium text-muted-foreground">Mês</th>
-                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Receita</th>
+                          {dreReceitaGrupos.map((g) => (
+                            <th key={`r-${g}`} className="text-right px-5 py-3 font-medium text-muted-foreground">(+) {g}</th>
+                          ))}
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Receita Total</th>
                           {dreGrupos.map((g) => (
                             <th key={g} className="text-right px-5 py-3 font-medium text-muted-foreground">(−) {g}</th>
                           ))}
@@ -1976,7 +1983,12 @@ const Relatorios = () => {
                         {dreMensalData.map((row) => (
                           <tr key={row.mes} className="hover:bg-muted/30 transition-colors">
                             <td className="px-5 py-3 font-medium">{row.mes}</td>
-                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.receita)}</td>
+                            {dreReceitaGrupos.map((g) => (
+                              <td key={`r-${g}`} className="px-5 py-3 text-right text-muted-foreground">
+                                {row.receitaPorGrupo[g] ? formatCurrency(row.receitaPorGrupo[g]) : "—"}
+                              </td>
+                            ))}
+                            <td className="px-5 py-3 text-right font-medium">{formatCurrency(row.receita)}</td>
                             {dreGrupos.map((g) => (
                               <td key={g} className="px-5 py-3 text-right text-muted-foreground">
                                 {row.despesasPorGrupo[g] ? formatCurrency(row.despesasPorGrupo[g]) : "—"}
@@ -1992,6 +2004,11 @@ const Relatorios = () => {
                       <tfoot>
                         <tr className="border-t-2 border-border bg-muted/30">
                           <td className="px-5 py-3 font-bold">Total</td>
+                          {dreReceitaGrupos.map((g) => (
+                            <td key={`r-${g}`} className="px-5 py-3 text-right font-bold">
+                              {formatCurrency(dreMensalData.reduce((s, r) => s + (r.receitaPorGrupo[g] ?? 0), 0))}
+                            </td>
+                          ))}
                           <td className="px-5 py-3 text-right font-bold">
                             {formatCurrency(dreMensalData.reduce((s, r) => s + r.receita, 0))}
                           </td>

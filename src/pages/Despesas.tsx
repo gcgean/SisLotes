@@ -64,10 +64,12 @@ interface Conta {
   ativo: boolean;
 }
 
-interface Categoria {
-  id_categoria: number;
+interface PlanoConta {
+  id_conta_contabil: number;
+  id_pai: number | null;
+  tipo: "receita" | "despesa";
+  codigo: string;
   nome: string;
-  grupo?: string | null;
   ativo: boolean;
 }
 
@@ -158,7 +160,7 @@ const emptyDespesaForm = {
   anexo_base64: "",
 };
 
-const emptyCategoriaForm = { nome: "", grupo: "" };
+const emptyCategoriaForm = { nome: "", tipo: "despesa" as "receita" | "despesa" };
 const emptyFornecedorForm = { nome: "", documento: "", telefone: "", email: "", contato: "", observacoes: "" };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -186,9 +188,10 @@ export default function Despesas() {
   const [parcelaSelecionada, setParcelaSelecionada] = useState<DespesaParcela | null>(null);
   const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_pago: "", id_conta: "" });
 
-  // ─── Dialogs: categoria / fornecedor ──────────────────────────────────────
+  // ─── Dialogs: plano de contas / fornecedor ─────────────────────────────────
   const [dialogCategoriaAberto, setDialogCategoriaAberto] = useState(false);
   const [categoriaEditandoId, setCategoriaEditandoId] = useState<number | null>(null);
+  const [categoriaPaiId, setCategoriaPaiId] = useState<number | null>(null);
   const [formCategoria, setFormCategoria] = useState(emptyCategoriaForm);
 
   const [dialogFornecedorAberto, setDialogFornecedorAberto] = useState(false);
@@ -216,11 +219,11 @@ export default function Despesas() {
     },
   });
 
-  const { data: categorias = [], isError: erroCategorias, error: erroCategoriasMsg } = useQuery<Categoria[]>({
+  const { data: categorias = [], isError: erroCategorias, error: erroCategoriasMsg } = useQuery<PlanoConta[]>({
     queryKey: ["despesas-categorias"],
     queryFn: async () => {
-      const r = await fetch("/api/despesas/categorias", { headers: getAuthHeaders() });
-      if (!r.ok) throw new Error("Erro ao carregar categorias");
+      const r = await fetch("/api/despesas/plano-de-contas", { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Erro ao carregar plano de contas");
       return r.json();
     },
   });
@@ -263,8 +266,18 @@ export default function Despesas() {
     if (erroFornecedores) toast({ title: "Erro ao carregar fornecedores", description: erroFornecedoresMsg instanceof Error ? erroFornecedoresMsg.message : undefined, variant: "destructive" });
   }, [erroFornecedores, erroFornecedoresMsg]);
 
-  const categoriasAtivas = categorias.filter((c) => c.ativo);
+  const categoriasAtivas = categorias.filter((c) => c.ativo && c.tipo === "despesa");
   const fornecedoresAtivos = fornecedores.filter((f) => f.ativo);
+
+  function planoContaDepth(c: PlanoConta): number {
+    return c.codigo.split(".").length - 1;
+  }
+  function planoContaLabel(c: PlanoConta): string {
+    return `${c.codigo} — ${c.nome}`;
+  }
+  const categoriasOrdenadas = [...categorias].sort((a, b) =>
+    a.codigo.localeCompare(b.codigo, undefined, { numeric: true })
+  );
 
   const despesasFiltradas = despesas.filter((d) => {
     if (filtroLoteamento !== "todos") {
@@ -376,37 +389,41 @@ export default function Despesas() {
     onError: (e: Error) => toast({ title: "Erro ao estornar", description: e.message, variant: "destructive" }),
   });
 
-  // ─── Mutations: categoria ─────────────────────────────────────────────────
+  // ─── Mutations: plano de contas ───────────────────────────────────────────
   const salvarCategoriaMutation = useMutation({
     mutationFn: async () => {
       const isEdicao = Boolean(categoriaEditandoId);
-      const body = { nome: formCategoria.nome.trim(), grupo: formCategoria.grupo.trim() || null };
-      const url = isEdicao ? `/api/despesas/categorias/${categoriaEditandoId}` : "/api/despesas/categorias";
+      const body: Record<string, unknown> = { nome: formCategoria.nome.trim() };
+      if (!isEdicao) {
+        body.id_pai = categoriaPaiId;
+        body.tipo = formCategoria.tipo;
+      }
+      const url = isEdicao ? `/api/despesas/plano-de-contas/${categoriaEditandoId}` : "/api/despesas/plano-de-contas";
       const r = await fetch(url, { method: isEdicao ? "PUT" : "POST", headers, body: JSON.stringify(body) });
       const data = await parseJson(r);
-      if (!r.ok) throw new Error(extractError(data, "Erro ao salvar categoria"));
+      if (!r.ok) throw new Error(extractError(data, "Erro ao salvar conta"));
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas-categorias"] });
       setDialogCategoriaAberto(false);
-      toast({ title: "Categoria salva" });
+      toast({ title: "Conta salva" });
     },
-    onError: (e: Error) => toast({ title: "Erro ao salvar categoria", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Erro ao salvar conta", description: e.message, variant: "destructive" }),
   });
 
   const toggleCategoriaMutation = useMutation({
     mutationFn: async ({ id, ativo }: { id: number; ativo: boolean }) => {
-      const r = await fetch(`/api/despesas/categorias/${id}/ativo`, { method: "PATCH", headers, body: JSON.stringify({ ativo }) });
+      const r = await fetch(`/api/despesas/plano-de-contas/${id}`, { method: "PUT", headers, body: JSON.stringify({ ativo }) });
       if (!r.ok) throw new Error("Erro ao alterar status");
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["despesas-categorias"] }),
-    onError: () => toast({ title: "Erro ao alterar status da categoria", variant: "destructive" }),
+    onError: () => toast({ title: "Erro ao alterar status da conta", variant: "destructive" }),
   });
 
   const excluirCategoriaMutation = useMutation({
     mutationFn: async (id: number) => {
-      const r = await fetch(`/api/despesas/categorias/${id}`, { method: "DELETE", headers: getAuthHeaders() });
+      const r = await fetch(`/api/despesas/plano-de-contas/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!r.ok) {
         const data = await parseJson(r);
         throw new Error(extractError(data, "Erro ao excluir categoria"));
@@ -517,14 +534,22 @@ export default function Despesas() {
     reader.readAsDataURL(file);
   }
 
-  function abrirNovaCategoria() {
+  function abrirNovaContaRaiz() {
     setCategoriaEditandoId(null);
+    setCategoriaPaiId(null);
     setFormCategoria(emptyCategoriaForm);
     setDialogCategoriaAberto(true);
   }
-  function abrirEditarCategoria(c: Categoria) {
-    setCategoriaEditandoId(c.id_categoria);
-    setFormCategoria({ nome: c.nome, grupo: c.grupo ?? "" });
+  function abrirNovaSubconta(pai: PlanoConta) {
+    setCategoriaEditandoId(null);
+    setCategoriaPaiId(pai.id_conta_contabil);
+    setFormCategoria({ nome: "", tipo: pai.tipo });
+    setDialogCategoriaAberto(true);
+  }
+  function abrirEditarCategoria(c: PlanoConta) {
+    setCategoriaEditandoId(c.id_conta_contabil);
+    setCategoriaPaiId(c.id_pai);
+    setFormCategoria({ nome: c.nome, tipo: c.tipo });
     setDialogCategoriaAberto(true);
   }
 
@@ -565,7 +590,7 @@ export default function Despesas() {
           <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
             <TabsTrigger value="despesas">Despesas</TabsTrigger>
-            <TabsTrigger value="categorias">Categorias</TabsTrigger>
+            <TabsTrigger value="categorias">Plano de Contas</TabsTrigger>
             <TabsTrigger value="fornecedores">Fornecedores</TabsTrigger>
             <TabsTrigger value="contas">Contas</TabsTrigger>
             <TabsTrigger value="lancamentos">Lançamentos</TabsTrigger>
@@ -597,8 +622,10 @@ export default function Despesas() {
                   <SelectTrigger className="w-44"><SelectValue placeholder="Categoria" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="todas">Todas as categorias</SelectItem>
-                    {categorias.map((c) => (
-                      <SelectItem key={c.id_categoria} value={String(c.id_categoria)}>{c.nome}</SelectItem>
+                    {categoriasOrdenadas.filter((c) => c.tipo === "despesa").map((c) => (
+                      <SelectItem key={c.id_conta_contabil} value={String(c.id_conta_contabil)}>
+                        {"  ".repeat(planoContaDepth(c))}{planoContaLabel(c)}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -687,41 +714,50 @@ export default function Despesas() {
             </div>
           </TabsContent>
 
-          {/* ─── Aba Categorias ───────────────────────────────────────────── */}
+          {/* ─── Aba Plano de Contas ──────────────────────────────────────── */}
           <TabsContent value="categorias" className="mt-4 space-y-4">
             <div className="flex justify-end">
-              <Button size="sm" className="gap-2" onClick={abrirNovaCategoria}>
-                <Plus className="h-4 w-4" /> Nova Categoria
+              <Button size="sm" className="gap-2" onClick={abrirNovaContaRaiz}>
+                <Plus className="h-4 w-4" /> Nova Conta Raiz
               </Button>
             </div>
             <div className="rounded-lg border overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40 text-muted-foreground text-xs uppercase tracking-wide">
+                    <th className="px-4 py-3 text-left font-semibold">Código</th>
                     <th className="px-4 py-3 text-left font-semibold">Nome</th>
-                    <th className="px-4 py-3 text-left font-semibold">Grupo</th>
+                    <th className="px-4 py-3 text-left font-semibold">Tipo</th>
                     <th className="px-4 py-3 text-left font-semibold">Status</th>
                     <th className="px-4 py-3 text-left font-semibold">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {categorias.length === 0 ? (
-                    <tr><td colSpan={4} className="px-4 py-8 text-center text-muted-foreground">Nenhuma categoria cadastrada.</td></tr>
+                  {categoriasOrdenadas.length === 0 ? (
+                    <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">Nenhuma conta cadastrada.</td></tr>
                   ) : (
-                    categorias.map((c) => (
-                      <tr key={c.id_categoria} className="border-b last:border-0 hover:bg-muted/30">
-                        <td className="px-4 py-3 font-medium">{c.nome}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{c.grupo ?? "—"}</td>
+                    categoriasOrdenadas.map((c) => (
+                      <tr key={c.id_conta_contabil} className="border-b last:border-0 hover:bg-muted/30">
+                        <td className="px-4 py-3 text-muted-foreground font-mono text-xs">{c.codigo}</td>
+                        <td className="px-4 py-3 font-medium" style={{ paddingLeft: `${16 + planoContaDepth(c) * 20}px` }}>
+                          {c.nome}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant="outline" className="capitalize">{c.tipo}</Badge>
+                        </td>
                         <td className="px-4 py-3">
                           {c.ativo ? <Badge className="bg-green-100 text-green-700 border-green-200">Ativa</Badge> : <Badge variant="secondary">Inativa</Badge>}
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1">
-                            <Button size="sm" variant="outline" onClick={() => toggleCategoriaMutation.mutate({ id: c.id_categoria, ativo: !c.ativo })}>
+                            <Button size="sm" variant="outline" onClick={() => abrirNovaSubconta(c)}>
+                              + Sub-conta
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => toggleCategoriaMutation.mutate({ id: c.id_conta_contabil, ativo: !c.ativo })}>
                               {c.ativo ? "Desativar" : "Ativar"}
                             </Button>
                             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => abrirEditarCategoria(c)}><Pencil className="h-4 w-4" /></Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => excluirCategoriaMutation.mutate(c.id_categoria)}>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => excluirCategoriaMutation.mutate(c.id_conta_contabil)}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -827,9 +863,14 @@ export default function Despesas() {
                 <Select value={formDespesa.id_categoria} onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_categoria: v }))}>
                   <SelectTrigger><SelectValue placeholder="Selecione…" /></SelectTrigger>
                   <SelectContent>
-                    {categoriasAtivas.map((c) => (
-                      <SelectItem key={c.id_categoria} value={String(c.id_categoria)}>{c.nome}</SelectItem>
-                    ))}
+                    {categoriasAtivas
+                      .slice()
+                      .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
+                      .map((c) => (
+                        <SelectItem key={c.id_conta_contabil} value={String(c.id_conta_contabil)}>
+                          {"  ".repeat(planoContaDepth(c))}{planoContaLabel(c)}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -984,21 +1025,31 @@ export default function Despesas() {
         </DialogContent>
       </Dialog>
 
-      {/* Dialog: Nova/Editar Categoria */}
+      {/* Dialog: Nova/Editar Conta do Plano de Contas */}
       <Dialog open={dialogCategoriaAberto} onOpenChange={setDialogCategoriaAberto}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>{categoriaEditandoId ? "Editar Categoria" : "Nova Categoria"}</DialogTitle>
+            <DialogTitle>
+              {categoriaEditandoId ? "Editar Conta" : categoriaPaiId ? "Nova Sub-conta" : "Nova Conta Raiz"}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
               <Label>Nome *</Label>
               <Input value={formCategoria.nome} onChange={(e) => setFormCategoria((f) => ({ ...f, nome: e.target.value }))} />
             </div>
-            <div>
-              <Label>Grupo</Label>
-              <Input value={formCategoria.grupo} onChange={(e) => setFormCategoria((f) => ({ ...f, grupo: e.target.value }))} placeholder="Ex: Infraestrutura" />
-            </div>
+            {!categoriaEditandoId && !categoriaPaiId && (
+              <div>
+                <Label>Tipo</Label>
+                <Select value={formCategoria.tipo} onValueChange={(v: "receita" | "despesa") => setFormCategoria((f) => ({ ...f, tipo: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="despesa">Despesa</SelectItem>
+                    <SelectItem value="receita">Receita</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogCategoriaAberto(false)}>Cancelar</Button>

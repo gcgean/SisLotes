@@ -38,7 +38,7 @@ interface Lancamento {
   id_conta: number;
   id_loteamento?: number | null;
   tipo: "receita" | "despesa";
-  categoria?: string | null;
+  id_conta_contabil?: number | null;
   descricao: string;
   valor: string;
   data: string;
@@ -55,11 +55,19 @@ interface Loteamento {
   nome: string;
 }
 
+interface PlanoConta {
+  id_conta_contabil: number;
+  codigo: string;
+  nome: string;
+  tipo: "receita" | "despesa";
+  ativo: boolean;
+}
+
 const emptyForm = {
   id_conta: "",
   id_loteamento: "",
   tipo: "receita" as "receita" | "despesa",
-  categoria: "",
+  id_conta_contabil: "",
   descricao: "",
   valor: "",
   data: new Date().toISOString().slice(0, 10),
@@ -107,8 +115,23 @@ export function LancamentosTab() {
     },
   });
 
+  const { data: planoContas = [] } = useQuery<PlanoConta[]>({
+    queryKey: ["despesas-categorias"],
+    queryFn: async () => {
+      const r = await fetch("/api/despesas/plano-de-contas", { headers });
+      if (!r.ok) return [];
+      return r.json();
+    },
+  });
+
   const contaNome = (id: number) => contas.find((c) => c.id_conta === id)?.apelido ?? `#${id}`;
   const loteamentoNome = (id?: number | null) => (id ? loteamentos.find((l) => l.id_loteamento === id)?.nome ?? `#${id}` : null);
+  const contaContabilNome = (id?: number | null) =>
+    id ? planoContas.find((p) => p.id_conta_contabil === id)?.nome ?? null : null;
+  const contaContabilOptions = planoContas
+    .filter((p) => p.ativo && p.tipo === form.tipo)
+    .slice()
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }));
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -116,7 +139,7 @@ export function LancamentosTab() {
         id_conta: Number(form.id_conta),
         id_loteamento: form.id_loteamento ? Number(form.id_loteamento) : null,
         tipo: form.tipo,
-        categoria: form.categoria.trim() || null,
+        id_conta_contabil: form.id_conta_contabil ? Number(form.id_conta_contabil) : null,
         descricao: form.descricao.trim(),
         valor: Number(form.valor.replace(",", ".")),
         data: form.data,
@@ -163,7 +186,7 @@ export function LancamentosTab() {
       id_conta: String(l.id_conta),
       id_loteamento: l.id_loteamento ? String(l.id_loteamento) : "",
       tipo: l.tipo,
-      categoria: l.categoria ?? "",
+      id_conta_contabil: l.id_conta_contabil ? String(l.id_conta_contabil) : "",
       descricao: l.descricao,
       valor: l.valor,
       data: l.data.slice(0, 10),
@@ -217,7 +240,9 @@ export function LancamentosTab() {
                   </td>
                   <td className="px-4 py-3">
                     {l.descricao}
-                    {l.categoria && <div className="text-xs text-muted-foreground">{l.categoria}</div>}
+                    {contaContabilNome(l.id_conta_contabil) && (
+                      <div className="text-xs text-muted-foreground">{contaContabilNome(l.id_conta_contabil)}</div>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground">{contaNome(l.id_conta)}</td>
                   <td className="px-4 py-3 text-muted-foreground">{loteamentoNome(l.id_loteamento) ?? "—"}</td>
@@ -261,7 +286,7 @@ export function LancamentosTab() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Tipo</Label>
-                <Select value={form.tipo} onValueChange={(v: "receita" | "despesa") => setForm((f) => ({ ...f, tipo: v }))}>
+                <Select value={form.tipo} onValueChange={(v: "receita" | "despesa") => setForm((f) => ({ ...f, tipo: v, id_conta_contabil: "" }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="receita">Receita</SelectItem>
@@ -323,12 +348,21 @@ export function LancamentosTab() {
                 </Select>
               </div>
               <div>
-                <Label>Categoria (opcional)</Label>
-                <Input
-                  value={form.categoria}
-                  onChange={(e) => setForm((f) => ({ ...f, categoria: e.target.value }))}
-                  placeholder="Ex: Aluguel, Tarifa…"
-                />
+                <Label>Conta contábil (opcional)</Label>
+                <Select
+                  value={form.id_conta_contabil || "none"}
+                  onValueChange={(v) => setForm((f) => ({ ...f, id_conta_contabil: v === "none" ? "" : v }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Nenhuma" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhuma</SelectItem>
+                    {contaContabilOptions.map((p) => (
+                      <SelectItem key={p.id_conta_contabil} value={String(p.id_conta_contabil)}>
+                        {p.codigo} — {p.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <DialogFooter>

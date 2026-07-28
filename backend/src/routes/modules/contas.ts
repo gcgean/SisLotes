@@ -127,7 +127,8 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
       SELECT * FROM (
         SELECT p.pago_data AS data, 'entrada' AS movimento, 'venda' AS origem,
                CONCAT('Recebimento venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
-               COALESCE(p.valor_pago, p.valor) AS valor
+               COALESCE(p.valor_pago, p.valor) AS valor,
+               NULL::text AS conta_contabil
         FROM pagamentos p
         JOIN vendas v ON v.id_venda = p.id_venda
         WHERE p.id_conta = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
@@ -137,17 +138,21 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
 
         SELECT dp.pago_data AS data, 'saida' AS movimento, 'despesa' AS origem,
                d.descricao AS descricao,
-               dp.valor_pago AS valor
+               dp.valor_pago AS valor,
+               cat.nome AS conta_contabil
         FROM despesa_parcelas dp
         JOIN despesas d ON d.id_despesa = dp.id_despesa
+        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = d.id_categoria
         WHERE dp.id_conta = $1 AND dp.situacao = 'pago'
           AND dp.pago_data >= $2 AND dp.pago_data <= $3
 
         UNION ALL
 
         SELECT l.data AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
-               'lancamento' AS origem, l.descricao AS descricao, l.valor AS valor
+               'lancamento' AS origem, l.descricao AS descricao, l.valor AS valor,
+               cat.nome AS conta_contabil
         FROM lancamentos_manuais l
+        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = l.id_conta_contabil
         WHERE l.id_conta = $1 AND l.data >= $2 AND l.data <= $3
       ) mov
       ORDER BY data ASC
@@ -158,12 +163,12 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
 
   const saldoInicialPeriodo = saldoInicialConta + Number((antesRows[0] as { delta: string | number })?.delta ?? 0);
 
-  type MovRow = { data: string; movimento: "entrada" | "saida"; origem: string; descricao: string; valor: string | number };
+  type MovRow = { data: string; movimento: "entrada" | "saida"; origem: string; descricao: string; valor: string | number; conta_contabil: string | null };
   let saldoCorrente = saldoInicialPeriodo;
   const movimentos = (movimentosRows as MovRow[]).map((m) => {
     const valor = Number(m.valor ?? 0);
     saldoCorrente += m.movimento === "entrada" ? valor : -valor;
-    return { data: m.data, movimento: m.movimento, origem: m.origem, descricao: m.descricao, valor, saldo: saldoCorrente };
+    return { data: m.data, movimento: m.movimento, origem: m.origem, descricao: m.descricao, valor, contaContabil: m.conta_contabil, saldo: saldoCorrente };
   });
 
   return res.json({

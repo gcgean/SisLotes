@@ -16,7 +16,7 @@ import { Sugestao } from "../entities/Sugestao";
 import { TelegramConfig } from "../entities/TelegramConfig";
 import { TelegramNotificacao } from "../entities/TelegramNotificacao";
 import { LpEvento } from "../entities/LpEvento";
-import { CategoriaDespesa } from "../entities/CategoriaDespesa";
+import { PlanoDeContas } from "../entities/PlanoDeContas";
 import { Fornecedor } from "../entities/Fornecedor";
 import { Despesa } from "../entities/Despesa";
 import { DespesaParcela } from "../entities/DespesaParcela";
@@ -52,6 +52,7 @@ import { CreateLpEvento1700000000026 } from "../migrations/1700000000026-CreateL
 import { AddLastLoginToUsuario1700000000027 } from "../migrations/1700000000027-AddLastLoginToUsuario";
 import { CreateDespesas1700000000028 } from "../migrations/1700000000028-CreateDespesas";
 import { AddSaldoLancamentos1700000000029 } from "../migrations/1700000000029-AddSaldoLancamentos";
+import { CreatePlanoDeContas1700000000030 } from "../migrations/1700000000030-CreatePlanoDeContas";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -60,7 +61,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, CategoriaDespesa, Fornecedor, Despesa, DespesaParcela, LancamentoManual],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -93,6 +94,7 @@ export const AppDataSource = new DataSource({
     AddLastLoginToUsuario1700000000027,
     CreateDespesas1700000000028,
     AddSaldoLancamentos1700000000029,
+    CreatePlanoDeContas1700000000030,
   ],
   synchronize: false,
   logging: false,

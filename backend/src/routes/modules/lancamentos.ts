@@ -12,7 +12,7 @@ const lancamentoBodySchema = z.object({
   id_conta: z.number().int().positive(),
   id_loteamento: z.number().int().positive().optional().nullable(),
   tipo: z.enum(["receita", "despesa"]),
-  categoria: z.string().max(100).optional().nullable(),
+  id_conta_contabil: z.number().int().positive().optional().nullable(),
   descricao: z.string().min(1).max(300),
   valor: z.number().positive(),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

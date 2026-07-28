@@ -31,6 +31,7 @@ interface Movimento {
   origem: "venda" | "despesa" | "lancamento";
   descricao: string;
   valor: number;
+  contaContabil: string | null;
   saldo: number;
 }
 
@@ -185,7 +186,7 @@ export function ContasTab() {
                       {extrato.movimentos.map((m, i) => (
                         <tr key={i} className="border-b last:border-0">
                           <td className="px-3 py-2 text-muted-foreground text-xs">{formatDateBR(m.data, m.data)}</td>
-                          <td className="px-3 py-2 text-muted-foreground text-xs">{ORIGEM_LABEL[m.origem] ?? m.origem}</td>
+                          <td className="px-3 py-2 text-muted-foreground text-xs">{m.contaContabil ?? ORIGEM_LABEL[m.origem] ?? m.origem}</td>
                           <td className="px-3 py-2">{m.descricao}</td>
                           <td className={`px-3 py-2 text-right ${m.movimento === "entrada" ? "text-emerald-600" : "text-red-500"}`}>
                             {m.movimento === "entrada" ? "+" : "−"}{fmt(m.valor)}

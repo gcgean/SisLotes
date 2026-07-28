@@ -29,8 +29,8 @@ export class LancamentoManual {
   @Column({ type: "varchar", length: 10 })
   tipo!: LancamentoTipo;
 
-  @Column({ type: "varchar", length: 100, nullable: true })
-  categoria?: string | null;
+  @Column({ type: "integer", name: "id_conta_contabil", nullable: true })
+  id_conta_contabil?: number | null;
 
   @Column({ type: "varchar", length: 300 })
   descricao!: string;

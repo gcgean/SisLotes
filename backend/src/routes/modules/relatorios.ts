@@ -1091,17 +1091,18 @@ relatoriosRouter.get(
 
     const query = `
       SELECT
-        cat.id_categoria,
+        cat.id_conta_contabil AS id_categoria,
         cat.nome AS categoria,
-        cat.grupo,
+        COALESCE(cg.nome, cat.nome) AS grupo,
         COUNT(DISTINCT d.id_despesa) AS qtd_despesas,
         SUM(dp.valor) AS valor_total,
         SUM(dp.valor) FILTER (WHERE dp.situacao = 'pago') AS valor_pago
       FROM despesa_parcelas dp
       JOIN despesas d ON d.id_despesa = dp.id_despesa
-      JOIN categorias_despesa cat ON cat.id_categoria = d.id_categoria
+      JOIN plano_de_contas cat ON cat.id_conta_contabil = d.id_categoria
+      LEFT JOIN plano_de_contas cg ON cg.id_conta_contabil = cat.id_pai
       WHERE ${conditions.join(" AND ")}
-      GROUP BY cat.id_categoria, cat.nome, cat.grupo
+      GROUP BY cat.id_conta_contabil, cat.nome, cg.nome
       ORDER BY valor_total DESC
     `;
 
@@ -1157,66 +1158,70 @@ relatoriosRouter.get(
     const from = parseResult.data.from ?? new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1).toISOString().slice(0, 10);
     const to = parseResult.data.to ?? hoje.toISOString().slice(0, 10);
 
+    // Resolve, para qualquer conta do plano, o nome da conta raiz (grupo) subindo a árvore.
+    const raizCte = `
+      WITH RECURSIVE ancestro AS (
+        SELECT id_conta_contabil AS origem, id_conta_contabil AS atual, id_pai, nome
+        FROM plano_de_contas WHERE id_empresa = $1
+        UNION ALL
+        SELECT a.origem, pc.id_conta_contabil, pc.id_pai, pc.nome
+        FROM ancestro a JOIN plano_de_contas pc ON pc.id_conta_contabil = a.id_pai
+      )
+    `;
+    const raizSubquery = `(SELECT origem AS id_conta_contabil, nome AS raiz_nome FROM ancestro WHERE id_pai IS NULL)`;
+
     const receitaVendasQuery = typeof id_loteamento === "number"
-      ? `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, SUM(COALESCE(p.valor_pago, p.valor)) AS total
+      ? `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, 'Vendas de Lotes' AS grupo, SUM(COALESCE(p.valor_pago, p.valor)) AS total
          FROM pagamentos p
          JOIN vendas v ON v.id_venda = p.id_venda
          JOIN lotes l ON l.id_lote = v.id_lote
          WHERE p.situacao = 'pago' AND p.id_empresa = $1 AND v.status <> 'cancelada' AND l.id_loteamento = $2
            AND p.pago_data >= $3 AND p.pago_data <= $4
          GROUP BY mes`
-      : `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, SUM(COALESCE(p.valor_pago, p.valor)) AS total
+      : `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, 'Vendas de Lotes' AS grupo, SUM(COALESCE(p.valor_pago, p.valor)) AS total
          FROM pagamentos p
          JOIN vendas v ON v.id_venda = p.id_venda
          WHERE p.situacao = 'pago' AND p.id_empresa = $1 AND v.status <> 'cancelada'
            AND p.pago_data >= $2 AND p.pago_data <= $3
          GROUP BY mes`;
-    const receitaVendasParams = typeof id_loteamento === "number"
-      ? [idEmpresa, id_loteamento, from, to]
-      : [idEmpresa, from, to];
+    const semLoteamentoParams = [idEmpresa, from, to];
+    const comLoteamentoParams = [idEmpresa, id_loteamento, from, to];
+    const receitaVendasParams = typeof id_loteamento === "number" ? comLoteamentoParams : semLoteamentoParams;
 
-    const lancQuery = (tipo: "receita" | "despesa") => typeof id_loteamento === "number"
-      ? `SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, SUM(l.valor) AS total
-         FROM lancamentos_manuais l
-         WHERE l.tipo = '${tipo}' AND l.id_empresa = $1 AND l.id_loteamento = $2 AND l.data >= $3 AND l.data <= $4
-         GROUP BY mes`
-      : `SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, SUM(l.valor) AS total
-         FROM lancamentos_manuais l
-         WHERE l.tipo = '${tipo}' AND l.id_empresa = $1 AND l.data >= $2 AND l.data <= $3
-         GROUP BY mes`;
-    const lancParams = typeof id_loteamento === "number"
-      ? [idEmpresa, id_loteamento, from, to]
-      : [idEmpresa, from, to];
+    const lancPorGrupoQuery = (tipo: "receita" | "despesa", fallback: string) => {
+      const filtroLoteamento = typeof id_loteamento === "number" ? "AND l.id_loteamento = $2" : "";
+      const dataParams = typeof id_loteamento === "number" ? "$3 AND l.data <= $4" : "$2 AND l.data <= $3";
+      return `${raizCte}
+        SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, COALESCE(rz.raiz_nome, '${fallback}') AS grupo, SUM(l.valor) AS total
+        FROM lancamentos_manuais l
+        LEFT JOIN ${raizSubquery} rz ON rz.id_conta_contabil = l.id_conta_contabil
+        WHERE l.tipo = '${tipo}' AND l.id_empresa = $1 ${filtroLoteamento} AND l.data >= ${dataParams}
+        GROUP BY mes, grupo`;
+    };
+    const lancParams = typeof id_loteamento === "number" ? comLoteamentoParams : semLoteamentoParams;
 
-    const despesasPorGrupoQuery = typeof id_loteamento === "number"
-      ? `SELECT TO_CHAR(dp.pago_data, 'YYYY-MM') AS mes, COALESCE(cat.grupo, 'Outras') AS grupo, SUM(dp.valor_pago) AS total
-         FROM despesa_parcelas dp
-         JOIN despesas d ON d.id_despesa = dp.id_despesa
-         LEFT JOIN categorias_despesa cat ON cat.id_categoria = d.id_categoria
-         WHERE dp.situacao = 'pago' AND dp.id_empresa = $1 AND d.id_loteamento = $2
-           AND dp.pago_data >= $3 AND dp.pago_data <= $4
-         GROUP BY mes, grupo`
-      : `SELECT TO_CHAR(dp.pago_data, 'YYYY-MM') AS mes, COALESCE(cat.grupo, 'Outras') AS grupo, SUM(dp.valor_pago) AS total
-         FROM despesa_parcelas dp
-         JOIN despesas d ON d.id_despesa = dp.id_despesa
-         LEFT JOIN categorias_despesa cat ON cat.id_categoria = d.id_categoria
-         WHERE dp.situacao = 'pago' AND dp.id_empresa = $1
-           AND dp.pago_data >= $2 AND dp.pago_data <= $3
-         GROUP BY mes, grupo`;
+    const despesasPorGrupoQuery = `${raizCte}
+      SELECT TO_CHAR(dp.pago_data, 'YYYY-MM') AS mes, COALESCE(rz.raiz_nome, 'Outras') AS grupo, SUM(dp.valor_pago) AS total
+      FROM despesa_parcelas dp
+      JOIN despesas d ON d.id_despesa = dp.id_despesa
+      LEFT JOIN ${raizSubquery} rz ON rz.id_conta_contabil = d.id_categoria
+      WHERE dp.situacao = 'pago' AND dp.id_empresa = $1 ${typeof id_loteamento === "number" ? "AND d.id_loteamento = $2" : ""}
+        AND dp.pago_data >= ${typeof id_loteamento === "number" ? "$3 AND dp.pago_data <= $4" : "$2 AND dp.pago_data <= $3"}
+      GROUP BY mes, grupo`;
 
     const [receitaVendasRows, lancReceitaRows, lancDespesaRows, despesasGrupoRows] = await Promise.all([
       AppDataSource.query(receitaVendasQuery, receitaVendasParams),
-      AppDataSource.query(lancQuery("receita"), lancParams),
-      AppDataSource.query(lancQuery("despesa"), lancParams),
+      AppDataSource.query(lancPorGrupoQuery("receita", "Outras receitas"), lancParams),
+      AppDataSource.query(lancPorGrupoQuery("despesa", LANCAMENTOS_GRUPO_LABEL), lancParams),
       AppDataSource.query(despesasPorGrupoQuery, receitaVendasParams),
     ]);
 
-    type MesRow = { mes: string; total: string | number | null };
     type GrupoRow = { mes: string; grupo: string; total: string | number | null };
 
     interface DreMes {
       mes: string;
       receita: number;
+      receitaPorGrupo: Record<string, number>;
       despesasPorGrupo: Record<string, number>;
       despesasTotal: number;
       resultado: number;
@@ -1226,24 +1231,22 @@ relatoriosRouter.get(
     function getMes(mes: string): DreMes {
       let m = porMes.get(mes);
       if (!m) {
-        m = { mes, receita: 0, despesasPorGrupo: {}, despesasTotal: 0, resultado: 0 };
+        m = { mes, receita: 0, receitaPorGrupo: {}, despesasPorGrupo: {}, despesasTotal: 0, resultado: 0 };
         porMes.set(mes, m);
       }
       return m;
     }
 
-    for (const r of receitaVendasRows as MesRow[]) getMes(r.mes).receita += Number(r.total ?? 0);
-    for (const r of lancReceitaRows as MesRow[]) getMes(r.mes).receita += Number(r.total ?? 0);
-    for (const r of despesasGrupoRows as GrupoRow[]) {
+    for (const r of [...(receitaVendasRows as GrupoRow[]), ...(lancReceitaRows as GrupoRow[])]) {
+      const m = getMes(r.mes);
+      const valor = Number(r.total ?? 0);
+      m.receitaPorGrupo[r.grupo] = (m.receitaPorGrupo[r.grupo] ?? 0) + valor;
+      m.receita += valor;
+    }
+    for (const r of [...(despesasGrupoRows as GrupoRow[]), ...(lancDespesaRows as GrupoRow[])]) {
       const m = getMes(r.mes);
       const valor = Number(r.total ?? 0);
       m.despesasPorGrupo[r.grupo] = (m.despesasPorGrupo[r.grupo] ?? 0) + valor;
-      m.despesasTotal += valor;
-    }
-    for (const r of lancDespesaRows as MesRow[]) {
-      const m = getMes(r.mes);
-      const valor = Number(r.total ?? 0);
-      m.despesasPorGrupo[LANCAMENTOS_GRUPO_LABEL] = (m.despesasPorGrupo[LANCAMENTOS_GRUPO_LABEL] ?? 0) + valor;
       m.despesasTotal += valor;
     }
 
