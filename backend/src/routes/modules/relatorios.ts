@@ -708,7 +708,15 @@ relatoriosRouter.get(
             AND p.situacao = 'aberto'
             AND v.status <> 'cancelada'
             AND p.vencimento < CURRENT_DATE
-        ) AS titulos_atraso_valor
+        ) AS titulos_atraso_valor,
+        (
+          SELECT COALESCE(SUM(dp.valor_pago), 0)
+          FROM despesa_parcelas dp
+          WHERE dp.id_empresa = $1
+            AND dp.situacao = 'pago'
+            AND dp.pago_data >= date_trunc('month', CURRENT_DATE)
+            AND dp.pago_data < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')
+        ) AS despesas_mes
     `;
 
     const rows = await AppDataSource.query(query, [idEmpresa]);
@@ -720,6 +728,7 @@ relatoriosRouter.get(
         recebidoMes: 0,
         titulosAtrasoQtd: 0,
         titulosAtrasoValor: 0,
+        despesasMes: 0,
       });
     }
 
@@ -729,6 +738,7 @@ relatoriosRouter.get(
       recebido_mes: string | number | null;
       titulos_atraso_qtd: string | number | null;
       titulos_atraso_valor: string | number | null;
+      despesas_mes: string | number | null;
     };
 
     const row = rows[0] as DashboardRow;
@@ -739,6 +749,7 @@ relatoriosRouter.get(
       recebidoMes: Number(row.recebido_mes ?? 0),
       titulosAtrasoQtd: Number(row.titulos_atraso_qtd ?? 0),
       titulosAtrasoValor: Number(row.titulos_atraso_valor ?? 0),
+      despesasMes: Number(row.despesas_mes ?? 0),
     });
   },
 );
@@ -787,6 +798,294 @@ relatoriosRouter.get(
       lote: row.lote,
       data_venda: row.data_venda,
       valor_total: Number(row.valor_total ?? 0),
+    }));
+
+    return res.json(resultado);
+  },
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Despesas — Resultado por Loteamento, Contas a Pagar, Fluxo de Caixa,
+//  Despesas por Categoria
+// ═══════════════════════════════════════════════════════════════════════════
+
+const resultadoLoteamentoQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),
+  id_loteamento: z.string().regex(/^\d+$/).transform((v) => parseInt(v, 10)).optional(),
+});
+
+relatoriosRouter.get(
+  "/resultado-por-loteamento",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = resultadoLoteamentoQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+    const { from, to, id_loteamento } = parseResult.data;
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    // Um único array de parâmetros compartilhado pelas 3 cláusulas WHERE da query (evita
+    // colisão de índices $N entre as subqueries e o WHERE externo).
+    const params: unknown[] = [idEmpresa];
+    const idEmpresaParam = 1;
+
+    let fromReceita = "";
+    let toReceita = "";
+    if (from) { params.push(from); fromReceita = `AND p.pago_data >= $${params.length}`; }
+    if (to) { params.push(to); toReceita = `AND p.pago_data <= $${params.length}`; }
+
+    let fromDespesa = "";
+    let toDespesa = "";
+    if (from) { params.push(from); fromDespesa = `AND dp.pago_data >= $${params.length}`; }
+    if (to) { params.push(to); toDespesa = `AND dp.pago_data <= $${params.length}`; }
+
+    let loteamentoFilter = "";
+    if (typeof id_loteamento === "number") {
+      params.push(id_loteamento);
+      loteamentoFilter = ` AND lot.id_loteamento = $${params.length}`;
+    }
+
+    const query = `
+      SELECT
+        lot.id_loteamento,
+        lot.nome AS loteamento,
+        COALESCE(receita.total, 0) AS receita,
+        COALESCE(despesa.total, 0) AS despesas
+      FROM loteamentos lot
+      LEFT JOIN (
+        SELECT lo.id_loteamento, SUM(COALESCE(p.valor_pago, p.valor)) AS total
+        FROM pagamentos p
+        JOIN vendas v ON v.id_venda = p.id_venda
+        JOIN lotes l ON l.id_lote = v.id_lote
+        JOIN loteamentos lo ON lo.id_loteamento = l.id_loteamento
+        WHERE p.situacao = 'pago' AND p.id_empresa = $${idEmpresaParam} AND v.status <> 'cancelada' ${fromReceita} ${toReceita}
+        GROUP BY lo.id_loteamento
+      ) receita ON receita.id_loteamento = lot.id_loteamento
+      LEFT JOIN (
+        SELECT d.id_loteamento, SUM(dp.valor_pago) AS total
+        FROM despesa_parcelas dp
+        JOIN despesas d ON d.id_despesa = dp.id_despesa
+        WHERE dp.situacao = 'pago' AND dp.id_empresa = $${idEmpresaParam} AND d.id_loteamento IS NOT NULL ${fromDespesa} ${toDespesa}
+        GROUP BY d.id_loteamento
+      ) despesa ON despesa.id_loteamento = lot.id_loteamento
+      WHERE lot.id_empresa = $${idEmpresaParam}${loteamentoFilter}
+      ORDER BY lot.nome ASC
+    `;
+
+    const rows = await AppDataSource.query(query, params);
+
+    type ResultadoRow = { id_loteamento: number | string; loteamento: string; receita: string | number; despesas: string | number };
+    const resultado = (rows as ResultadoRow[]).map((row) => {
+      const receita = Number(row.receita ?? 0);
+      const despesas = Number(row.despesas ?? 0);
+      return {
+        id_loteamento: Number(row.id_loteamento),
+        loteamento: row.loteamento,
+        receita,
+        despesas,
+        resultado: receita - despesas,
+      };
+    });
+
+    return res.json(resultado);
+  },
+);
+
+const despesasEmAbertoQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),
+  id_loteamento: z.string().regex(/^\d+$/).transform((v) => parseInt(v, 10)).optional(),
+  apenas_atraso: z.enum(["true", "false"]).optional(),
+});
+
+relatoriosRouter.get(
+  "/despesas-em-aberto",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = despesasEmAbertoQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+    const { from, to, id_loteamento, apenas_atraso } = parseResult.data;
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const params: unknown[] = [idEmpresa];
+    const conditions = ["dp.situacao = 'aberto'", "dp.id_empresa = $1"];
+
+    if (from) { params.push(from); conditions.push(`dp.vencimento >= $${params.length}`); }
+    if (to) { params.push(to); conditions.push(`dp.vencimento <= $${params.length}`); }
+    if (typeof id_loteamento === "number") { params.push(id_loteamento); conditions.push(`d.id_loteamento = $${params.length}`); }
+    if (apenas_atraso === "true") { conditions.push("dp.vencimento < CURRENT_DATE"); }
+
+    const query = `
+      SELECT
+        dp.id_despesa_parcela,
+        d.descricao,
+        COALESCE(lo.nome, 'Administrativa') AS loteamento,
+        cat.nome AS categoria,
+        forn.nome AS fornecedor,
+        CONCAT(dp.numero_parcela, '/', d.numero_parcelas) AS parcela,
+        TO_CHAR(dp.vencimento, 'DD/MM/YYYY') AS vencimento,
+        dp.valor,
+        GREATEST(0, (CURRENT_DATE - dp.vencimento)) AS dias_atraso
+      FROM despesa_parcelas dp
+      JOIN despesas d ON d.id_despesa = dp.id_despesa
+      LEFT JOIN loteamentos lo ON lo.id_loteamento = d.id_loteamento
+      LEFT JOIN categorias_despesa cat ON cat.id_categoria = d.id_categoria
+      LEFT JOIN fornecedores forn ON forn.id_fornecedor = d.id_fornecedor
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY dp.vencimento ASC
+    `;
+
+    const rows = await AppDataSource.query(query, params);
+
+    type DespesaAbertaRow = {
+      id_despesa_parcela: number;
+      descricao: string;
+      loteamento: string;
+      categoria: string | null;
+      fornecedor: string | null;
+      parcela: string;
+      vencimento: string;
+      valor: string | number;
+      dias_atraso: number | string;
+    };
+
+    const resultado = (rows as DespesaAbertaRow[]).map((row) => ({
+      id_despesa_parcela: Number(row.id_despesa_parcela),
+      descricao: row.descricao,
+      loteamento: row.loteamento,
+      categoria: row.categoria ?? "—",
+      fornecedor: row.fornecedor ?? "—",
+      parcela: row.parcela,
+      vencimento: row.vencimento,
+      valor: Number(row.valor),
+      diasAtraso: Number(row.dias_atraso),
+    }));
+
+    return res.json(resultado);
+  },
+);
+
+const fluxoCaixaQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),
+});
+
+relatoriosRouter.get(
+  "/fluxo-de-caixa",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = fluxoCaixaQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const hoje = new Date();
+    const from = parseResult.data.from ?? new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1).toISOString().slice(0, 10);
+    const to = parseResult.data.to ?? hoje.toISOString().slice(0, 10);
+
+    const [entradasRows, saidasRows] = await Promise.all([
+      AppDataSource.query(
+        `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, SUM(COALESCE(p.valor_pago, p.valor)) AS total
+         FROM pagamentos p
+         JOIN vendas v ON v.id_venda = p.id_venda
+         WHERE p.situacao = 'pago' AND p.id_empresa = $1 AND v.status <> 'cancelada'
+           AND p.pago_data >= $2 AND p.pago_data <= $3
+         GROUP BY mes ORDER BY mes`,
+        [idEmpresa, from, to]
+      ),
+      AppDataSource.query(
+        `SELECT TO_CHAR(dp.pago_data, 'YYYY-MM') AS mes, SUM(dp.valor_pago) AS total
+         FROM despesa_parcelas dp
+         WHERE dp.situacao = 'pago' AND dp.id_empresa = $1
+           AND dp.pago_data >= $2 AND dp.pago_data <= $3
+         GROUP BY mes ORDER BY mes`,
+        [idEmpresa, from, to]
+      ),
+    ]);
+
+    type MesRow = { mes: string; total: string | number | null };
+    const entradasMap = new Map((entradasRows as MesRow[]).map((r) => [r.mes, Number(r.total ?? 0)]));
+    const saidasMap = new Map((saidasRows as MesRow[]).map((r) => [r.mes, Number(r.total ?? 0)]));
+
+    const meses = new Set([...entradasMap.keys(), ...saidasMap.keys()]);
+    const resultado = Array.from(meses)
+      .sort()
+      .map((mes) => {
+        const entradas = entradasMap.get(mes) ?? 0;
+        const saidas = saidasMap.get(mes) ?? 0;
+        return { mes, entradas, saidas, saldo: entradas - saidas };
+      });
+
+    return res.json(resultado);
+  },
+);
+
+const despesasPorCategoriaQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),
+  id_loteamento: z.string().regex(/^\d+$/).transform((v) => parseInt(v, 10)).optional(),
+});
+
+relatoriosRouter.get(
+  "/despesas-por-categoria",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = despesasPorCategoriaQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+    const { from, to, id_loteamento } = parseResult.data;
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const params: unknown[] = [idEmpresa];
+    const conditions = ["dp.id_empresa = $1"];
+    if (from) { params.push(from); conditions.push(`d.created_at::date >= $${params.length}`); }
+    if (to) { params.push(to); conditions.push(`d.created_at::date <= $${params.length}`); }
+    if (typeof id_loteamento === "number") { params.push(id_loteamento); conditions.push(`d.id_loteamento = $${params.length}`); }
+
+    const query = `
+      SELECT
+        cat.id_categoria,
+        cat.nome AS categoria,
+        cat.grupo,
+        COUNT(DISTINCT d.id_despesa) AS qtd_despesas,
+        SUM(dp.valor) AS valor_total,
+        SUM(dp.valor) FILTER (WHERE dp.situacao = 'pago') AS valor_pago
+      FROM despesa_parcelas dp
+      JOIN despesas d ON d.id_despesa = dp.id_despesa
+      JOIN categorias_despesa cat ON cat.id_categoria = d.id_categoria
+      WHERE ${conditions.join(" AND ")}
+      GROUP BY cat.id_categoria, cat.nome, cat.grupo
+      ORDER BY valor_total DESC
+    `;
+
+    const rows = await AppDataSource.query(query, params);
+
+    type CategoriaRow = {
+      id_categoria: number;
+      categoria: string;
+      grupo: string | null;
+      qtd_despesas: string | number;
+      valor_total: string | number | null;
+      valor_pago: string | number | null;
+    };
+
+    const resultado = (rows as CategoriaRow[]).map((row) => ({
+      id_categoria: Number(row.id_categoria),
+      categoria: row.categoria,
+      grupo: row.grupo ?? "—",
+      qtdDespesas: Number(row.qtd_despesas ?? 0),
+      valorTotal: Number(row.valor_total ?? 0),
+      valorPago: Number(row.valor_pago ?? 0),
     }));
 
     return res.json(resultado);

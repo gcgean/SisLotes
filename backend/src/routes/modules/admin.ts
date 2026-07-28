@@ -248,6 +248,7 @@ interface EmpresaJourney {
   lotes: number;
   vendas: number;
   pagamentos_pagos: number;
+  despesas: number;
   motivos_ajuda: string[];
 }
 
@@ -261,13 +262,15 @@ async function getEmpresasJourney(): Promise<EmpresaJourney[]> {
       COALESCE(lot.cnt, 0)::int AS loteamentos,
       COALESCE(lt.cnt, 0)::int  AS lotes,
       COALESCE(v.cnt, 0)::int   AS vendas,
-      COALESCE(p.cnt, 0)::int   AS pagamentos_pagos
+      COALESCE(p.cnt, 0)::int   AS pagamentos_pagos,
+      COALESCE(d.cnt, 0)::int   AS despesas
     FROM empresas e
     LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM loteamentos GROUP BY id_empresa) lot ON lot.id_empresa = e.id_empresa
     LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM lotes GROUP BY id_empresa) lt ON lt.id_empresa = e.id_empresa
     LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM vendas GROUP BY id_empresa) v ON v.id_empresa = e.id_empresa
     LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM pagamentos WHERE situacao = 'pago' GROUP BY id_empresa) p ON p.id_empresa = e.id_empresa
-  `)) as Array<{ id_empresa: number; loteamentos: number; lotes: number; vendas: number; pagamentos_pagos: number }>;
+    LEFT JOIN (SELECT id_empresa, COUNT(*) cnt FROM despesas GROUP BY id_empresa) d ON d.id_empresa = e.id_empresa
+  `)) as Array<{ id_empresa: number; loteamentos: number; lotes: number; vendas: number; pagamentos_pagos: number; despesas: number }>;
   const countsMap = new Map(counts.map((c) => [c.id_empresa, c]));
 
   // Contato do usuário master de cada empresa (fallback para contato da empresa)
@@ -282,7 +285,7 @@ async function getEmpresasJourney(): Promise<EmpresaJourney[]> {
   const agora = new Date();
 
   return empresas.map((e) => {
-    const c = countsMap.get(e.id_empresa) ?? { loteamentos: 0, lotes: 0, vendas: 0, pagamentos_pagos: 0 };
+    const c = countsMap.get(e.id_empresa) ?? { loteamentos: 0, lotes: 0, vendas: 0, pagamentos_pagos: 0, despesas: 0 };
     const isTrial = isTrialLicenseStatusAdmin(e);
     const isPaid = isPaidLicenseStatusAdmin(e) || (!isTrial && Boolean(e.plano) && e.plano !== "TESTE");
     const diasRestantes = resolveDaysLeft(e);
@@ -318,6 +321,7 @@ async function getEmpresasJourney(): Promise<EmpresaJourney[]> {
       lotes: c.lotes,
       vendas: c.vendas,
       pagamentos_pagos: c.pagamentos_pagos,
+      despesas: c.despesas,
       motivos_ajuda: motivos,
     };
   });

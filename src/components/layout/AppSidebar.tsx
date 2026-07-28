@@ -7,6 +7,7 @@ import {
   CreditCard,
   FileText,
   Wallet,
+  Receipt,
   Settings,
   Building2,
   Activity,
@@ -38,6 +39,7 @@ const mainItems = [
   { title: "Lotes", url: "/lotes", icon: Grid3X3 },
   { title: "Vendas", url: "/vendas", icon: ShoppingCart },
   { title: "Pagamentos", url: "/pagamentos", icon: CreditCard },
+  { title: "Despesas", url: "/despesas", icon: Receipt },
 ];
 
 const secondaryItems = [
@@ -55,11 +57,12 @@ export function AppSidebar() {
   const location = useLocation();
   const { setOpenMobile } = useSidebar();
   const { user } = useAuth();
-  const { canUseVendas, canUsePagamentos, canUseRelatorios, canUseAuditoria, canUsePlanos } = useLicenseFeatures();
+  const { canUseVendas, canUsePagamentos, canUseDespesas, canUseRelatorios, canUseAuditoria, canUsePlanos } = useLicenseFeatures();
   const isPlatformAdmin = user?.login?.toLowerCase() === "gcgean";
   const filteredMainItems = mainItems.filter((item) => {
     if (item.url === "/vendas") return canUseVendas;
     if (item.url === "/pagamentos") return canUsePagamentos;
+    if (item.url === "/despesas") return canUseDespesas;
     return true;
   });
   const filteredSecondaryItems = secondaryItems.filter((item) => {

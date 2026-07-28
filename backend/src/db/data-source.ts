@@ -16,6 +16,10 @@ import { Sugestao } from "../entities/Sugestao";
 import { TelegramConfig } from "../entities/TelegramConfig";
 import { TelegramNotificacao } from "../entities/TelegramNotificacao";
 import { LpEvento } from "../entities/LpEvento";
+import { CategoriaDespesa } from "../entities/CategoriaDespesa";
+import { Fornecedor } from "../entities/Fornecedor";
+import { Despesa } from "../entities/Despesa";
+import { DespesaParcela } from "../entities/DespesaParcela";
 import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateClientes";
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
@@ -45,6 +49,7 @@ import { CreateTelegramConfig1700000000024 } from "../migrations/1700000000024-C
 import { CreateTelegramNotificacao1700000000025 } from "../migrations/1700000000025-CreateTelegramNotificacao";
 import { CreateLpEvento1700000000026 } from "../migrations/1700000000026-CreateLpEvento";
 import { AddLastLoginToUsuario1700000000027 } from "../migrations/1700000000027-AddLastLoginToUsuario";
+import { CreateDespesas1700000000028 } from "../migrations/1700000000028-CreateDespesas";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -53,7 +58,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, CategoriaDespesa, Fornecedor, Despesa, DespesaParcela],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -84,6 +89,7 @@ export const AppDataSource = new DataSource({
     CreateTelegramNotificacao1700000000025,
     CreateLpEvento1700000000026,
     AddLastLoginToUsuario1700000000027,
+    CreateDespesas1700000000028,
   ],
   synchronize: false,
   logging: false,

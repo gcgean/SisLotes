@@ -8,6 +8,7 @@ import {
   TrendingUp,
   AlertTriangle,
   Building2,
+  Receipt,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,7 @@ interface DashboardKpis {
   pagamentosMes?: number;
   titulosAtrasoQtd: number;
   titulosAtrasoValor: number;
+  despesasMes?: number;
 }
 
 interface DashboardVendaRecente {
@@ -244,6 +246,13 @@ const Dashboard = () => {
       change: "",
       icon: CreditCard,
       color: "text-info" as const,
+    },
+    {
+      title: "Despesas (mês)",
+      value: kpisData ? formatCurrency(kpisData.despesasMes ?? 0) : "—",
+      change: "",
+      icon: Receipt,
+      color: "text-destructive" as const,
     },
   ];
 

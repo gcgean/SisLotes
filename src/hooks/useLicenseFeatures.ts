@@ -51,6 +51,7 @@ export function useLicenseFeatures() {
   const canUseVendas = configured ? featureEnabled("module_vendas") : true;
   const canUsePagamentos = configured ? featureEnabled("module_pagamentos") : true;
   const canUsePlanos = configured ? featureEnabled("module_planos") : true;
+  const canUseDespesas = configured ? featureEnabled("module_despesas") : true;
 
   return {
     plano: data?.plano ?? null,
@@ -64,6 +65,7 @@ export function useLicenseFeatures() {
     canUseVendas,
     canUsePagamentos,
     canUsePlanos,
+    canUseDespesas,
     featureEnabled,
   };
 }

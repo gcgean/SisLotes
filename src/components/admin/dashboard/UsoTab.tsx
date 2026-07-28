@@ -40,6 +40,7 @@ interface EmpresaJourney {
   lotes: number;
   vendas: number;
   pagamentos_pagos: number;
+  despesas: number;
   motivos_ajuda: string[];
 }
 
@@ -60,7 +61,7 @@ interface TimelineCobranca {
   created_at: string;
 }
 
-type SortKey = "nome_fantasia" | "created_at" | "ultimo_acesso" | "loteamentos" | "lotes" | "vendas" | "pagamentos_pagos";
+type SortKey = "nome_fantasia" | "created_at" | "ultimo_acesso" | "loteamentos" | "lotes" | "vendas" | "pagamentos_pagos" | "despesas";
 
 function fmt(date?: string | null) {
   if (!date) return "—";
@@ -186,17 +187,20 @@ export function UsoTab() {
               <th className="px-4 py-3 text-left">
                 <SortHeader label="Pagamentos pagos" active={sortKey === "pagamentos_pagos"} dir={sortDir} onClick={() => toggleSort("pagamentos_pagos")} />
               </th>
+              <th className="px-4 py-3 text-left">
+                <SortHeader label="Despesas" active={sortKey === "despesas"} dir={sortDir} onClick={() => toggleSort("despesas")} />
+              </th>
               <th className="px-4 py-3 text-left font-semibold">Precisa ajuda?</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td>
+                <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td>
               </tr>
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Nenhuma empresa encontrada.</td>
+                <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">Nenhuma empresa encontrada.</td>
               </tr>
             ) : (
               filtered.map((e) => (
@@ -257,6 +261,7 @@ export function UsoTab() {
                   <td className="px-4 py-3">{e.lotes}</td>
                   <td className="px-4 py-3">{e.vendas}</td>
                   <td className="px-4 py-3">{e.pagamentos_pagos}</td>
+                  <td className="px-4 py-3">{e.despesas}</td>
                   <td className="px-4 py-3">
                     {e.motivos_ajuda.length > 0 ? (
                       <Badge className="bg-amber-100 text-amber-700 border-amber-200">
@@ -304,7 +309,7 @@ export function UsoTab() {
                   )}
                 </div>
               )}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
                 <div className="rounded-lg border p-2">
                   <div className="text-lg font-bold">{selected.loteamentos}</div>
                   <div className="text-xs text-muted-foreground">Loteamentos</div>
@@ -320,6 +325,10 @@ export function UsoTab() {
                 <div className="rounded-lg border p-2">
                   <div className="text-lg font-bold">{selected.pagamentos_pagos}</div>
                   <div className="text-xs text-muted-foreground">Pagos</div>
+                </div>
+                <div className="rounded-lg border p-2">
+                  <div className="text-lg font-bold">{selected.despesas}</div>
+                  <div className="text-xs text-muted-foreground">Despesas</div>
                 </div>
               </div>
 

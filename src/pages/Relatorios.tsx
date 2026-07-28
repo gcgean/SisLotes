@@ -10,7 +10,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FileText, Download, BarChart3, DollarSign, Users, Calendar, Printer } from "lucide-react";
+import { FileText, Download, BarChart3, DollarSign, Users, Calendar, Printer, TrendingUp, AlertTriangle, LineChart, PieChart } from "lucide-react";
 import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
 import { formatDateBR } from "@/lib/date-br";
 import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
@@ -112,6 +112,30 @@ const reportTypes = [
     description: "Clientes de cada loteamento com número do lote",
     icon: Users,
   },
+  {
+    id: "resultado-loteamento",
+    title: "Resultado por Loteamento",
+    description: "Receita menos despesas de obra — margem de cada empreendimento",
+    icon: TrendingUp,
+  },
+  {
+    id: "contas-pagar",
+    title: "Contas a Pagar",
+    description: "Parcelas de despesas em aberto, com destaque para as atrasadas",
+    icon: AlertTriangle,
+  },
+  {
+    id: "fluxo-caixa",
+    title: "Fluxo de Caixa",
+    description: "Entradas x saídas por mês, com saldo do período",
+    icon: LineChart,
+  },
+  {
+    id: "despesas-categoria",
+    title: "Despesas por Categoria",
+    description: "Quanto foi gasto em cada categoria de despesa",
+    icon: PieChart,
+  },
 ];
 
 interface Loteamento {
@@ -206,6 +230,42 @@ interface JurosRecebidos {
   totalGeral: number;
 }
 
+interface ResultadoLoteamento {
+  id_loteamento: number;
+  loteamento: string;
+  receita: number;
+  despesas: number;
+  resultado: number;
+}
+
+interface DespesaEmAberto {
+  id_despesa_parcela: number;
+  descricao: string;
+  loteamento: string;
+  categoria: string;
+  fornecedor: string;
+  parcela: string;
+  vencimento: string;
+  valor: number;
+  diasAtraso: number;
+}
+
+interface FluxoCaixaMes {
+  mes: string;
+  entradas: number;
+  saidas: number;
+  saldo: number;
+}
+
+interface DespesaPorCategoria {
+  id_categoria: number;
+  categoria: string;
+  grupo: string;
+  qtdDespesas: number;
+  valorTotal: number;
+  valorPago: number;
+}
+
 const Relatorios = () => {
   const { canExportCsv, canExportPdf } = useLicenseFeatures();
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
@@ -245,11 +305,19 @@ const Relatorios = () => {
   const [hasSearchedTotalConta, setHasSearchedTotalConta] = useState(false);
   const [hasSearchedJuros, setHasSearchedJuros] = useState(false);
   const [hasSearchedClientesLoteamento, setHasSearchedClientesLoteamento] = useState(false);
+  const [hasSearchedResultadoLoteamento, setHasSearchedResultadoLoteamento] = useState(false);
+  const [hasSearchedContasPagar, setHasSearchedContasPagar] = useState(false);
+  const [hasSearchedFluxoCaixa, setHasSearchedFluxoCaixa] = useState(false);
+  const [hasSearchedDespesasCategoria, setHasSearchedDespesasCategoria] = useState(false);
+
+  const [apenasAtrasoInput, setApenasAtrasoInput] = useState(false);
+  const [apenasAtraso, setApenasAtraso] = useState(false);
 
   const [pageEntradas, setPageEntradas] = useState(1);
   const [pageAtraso, setPageAtraso] = useState(1);
   const [pageEnderecos, setPageEnderecos] = useState(1);
   const [pageTotalConta, setPageTotalConta] = useState(1);
+  const [pageContasPagar, setPageContasPagar] = useState(1);
 
   const printRef = useRef<HTMLDivElement | null>(null);
 
@@ -258,6 +326,7 @@ const Relatorios = () => {
     setPageAtraso(1);
     setPageEnderecos(1);
     setPageTotalConta(1);
+    setPageContasPagar(1);
   }, [ano, loteamentoId, dataIni, dataFim, diasAtraso, cliente, selectedReport]);
 
   const { data: loteamentosData = [] } = useQuery<Loteamento[]>({
@@ -279,7 +348,10 @@ const Relatorios = () => {
       selectedReport === "entradas" ||
       selectedReport === "enderecos" ||
       selectedReport === "atraso" ||
-      selectedReport === "clientes-loteamento",
+      selectedReport === "clientes-loteamento" ||
+      selectedReport === "resultado-loteamento" ||
+      selectedReport === "contas-pagar" ||
+      selectedReport === "despesas-categoria",
   });
 
   const { data: contasData = [] } = useQuery<ContaRelatorio[]>({
@@ -449,6 +521,82 @@ const Relatorios = () => {
     enabled: selectedReport === "juros" && hasSearchedJuros && !!contaIdJuros && !!anoJuros,
   });
 
+  const { data: resultadoLoteamentoData = [], isLoading: loadingResultadoLoteamento } = useQuery<ResultadoLoteamento[]>({
+    queryKey: ["relatorios", "resultado-por-loteamento", loteamentoId, dataIni, dataFim],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const fromIso = toIsoFromBr(dataIni);
+      const toIso = toIsoFromBr(dataFim);
+      if (fromIso) params.set("from", fromIso);
+      if (toIso) params.set("to", toIso);
+      if (loteamentoId !== "all") params.set("id_loteamento", loteamentoId);
+
+      const response = await fetch(`/api/relatorios/resultado-por-loteamento?${params.toString()}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) throw new Error("Erro ao carregar relatório de resultado por loteamento");
+      return response.json();
+    },
+    enabled: selectedReport === "resultado-loteamento" && hasSearchedResultadoLoteamento,
+  });
+
+  const { data: contasPagarData = [], isLoading: loadingContasPagar } = useQuery<DespesaEmAberto[]>({
+    queryKey: ["relatorios", "despesas-em-aberto", loteamentoId, dataIni, dataFim, apenasAtraso],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const fromIso = toIsoFromBr(dataIni);
+      const toIso = toIsoFromBr(dataFim);
+      if (fromIso) params.set("from", fromIso);
+      if (toIso) params.set("to", toIso);
+      if (loteamentoId !== "all") params.set("id_loteamento", loteamentoId);
+      if (apenasAtraso) params.set("apenas_atraso", "true");
+
+      const response = await fetch(`/api/relatorios/despesas-em-aberto?${params.toString()}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) throw new Error("Erro ao carregar relatório de contas a pagar");
+      return response.json();
+    },
+    enabled: selectedReport === "contas-pagar" && hasSearchedContasPagar,
+  });
+
+  const { data: fluxoCaixaData = [], isLoading: loadingFluxoCaixa } = useQuery<FluxoCaixaMes[]>({
+    queryKey: ["relatorios", "fluxo-de-caixa", dataIni, dataFim],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const fromIso = toIsoFromBr(dataIni);
+      const toIso = toIsoFromBr(dataFim);
+      if (fromIso) params.set("from", fromIso);
+      if (toIso) params.set("to", toIso);
+
+      const response = await fetch(`/api/relatorios/fluxo-de-caixa?${params.toString()}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) throw new Error("Erro ao carregar relatório de fluxo de caixa");
+      return response.json();
+    },
+    enabled: selectedReport === "fluxo-caixa" && hasSearchedFluxoCaixa,
+  });
+
+  const { data: despesasCategoriaData = [], isLoading: loadingDespesasCategoria } = useQuery<DespesaPorCategoria[]>({
+    queryKey: ["relatorios", "despesas-por-categoria", loteamentoId, dataIni, dataFim],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      const fromIso = toIsoFromBr(dataIni);
+      const toIso = toIsoFromBr(dataFim);
+      if (fromIso) params.set("from", fromIso);
+      if (toIso) params.set("to", toIso);
+      if (loteamentoId !== "all") params.set("id_loteamento", loteamentoId);
+
+      const response = await fetch(`/api/relatorios/despesas-por-categoria?${params.toString()}`, {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) throw new Error("Erro ao carregar relatório de despesas por categoria");
+      return response.json();
+    },
+    enabled: selectedReport === "despesas-categoria" && hasSearchedDespesasCategoria,
+  });
+
   const entradasPageSize = 20;
   const totalPagesEntradas = Math.max(1, Math.ceil(entradasData.length / entradasPageSize));
   const currentPageEntradas = Math.min(pageEntradas, totalPagesEntradas || 1);
@@ -484,6 +632,14 @@ const Relatorios = () => {
     currentPageTotalConta * totalContaPageSize,
   );
 
+  const contasPagarPageSize = 50;
+  const totalPagesContasPagar = Math.max(1, Math.ceil(contasPagarData.length / contasPagarPageSize));
+  const currentPageContasPagar = Math.min(pageContasPagar, totalPagesContasPagar || 1);
+  const contasPagarPage = contasPagarData.slice(
+    (currentPageContasPagar - 1) * contasPagarPageSize,
+    currentPageContasPagar * contasPagarPageSize,
+  );
+
   const canPrint =
     (selectedReport === "entradas" &&
       hasSearchedEntradas &&
@@ -509,7 +665,23 @@ const Relatorios = () => {
     (selectedReport === "clientes-loteamento" &&
       hasSearchedClientesLoteamento &&
       !loadingClientesLoteamento &&
-      clientesLoteamentoData.length > 0);
+      clientesLoteamentoData.length > 0) ||
+    (selectedReport === "resultado-loteamento" &&
+      hasSearchedResultadoLoteamento &&
+      !loadingResultadoLoteamento &&
+      resultadoLoteamentoData.length > 0) ||
+    (selectedReport === "contas-pagar" &&
+      hasSearchedContasPagar &&
+      !loadingContasPagar &&
+      contasPagarData.length > 0) ||
+    (selectedReport === "fluxo-caixa" &&
+      hasSearchedFluxoCaixa &&
+      !loadingFluxoCaixa &&
+      fluxoCaixaData.length > 0) ||
+    (selectedReport === "despesas-categoria" &&
+      hasSearchedDespesasCategoria &&
+      !loadingDespesasCategoria &&
+      despesasCategoriaData.length > 0);
 
   const handlePrint = () => {
     if (!canExportPdf) return;
@@ -628,7 +800,10 @@ const Relatorios = () => {
                 {(selectedReport === "entradas" ||
                   selectedReport === "enderecos" ||
                   selectedReport === "atraso" ||
-                  selectedReport === "clientes-loteamento") && (
+                  selectedReport === "clientes-loteamento" ||
+                  selectedReport === "resultado-loteamento" ||
+                  selectedReport === "contas-pagar" ||
+                  selectedReport === "despesas-categoria") && (
                   <LoteamentoCombobox
                     loteamentos={loteamentosData}
                     value={loteamentoIdInput}
@@ -694,6 +869,20 @@ const Relatorios = () => {
                     />
                   </>
                 )}
+                {selectedReport === "contas-pagar" && (
+                  <Select
+                    value={apenasAtrasoInput ? "atraso" : "todas"}
+                    onValueChange={(v) => setApenasAtrasoInput(v === "atraso")}
+                  >
+                    <SelectTrigger className="w-full sm:w-[180px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="todas">Todas em aberto</SelectItem>
+                      <SelectItem value="atraso">Somente atrasadas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
@@ -728,6 +917,20 @@ const Relatorios = () => {
                     if (selectedReport === "clientes-loteamento") {
                       setHasSearchedClientesLoteamento(true);
                     }
+                    setApenasAtraso(apenasAtrasoInput);
+                    if (selectedReport === "resultado-loteamento") {
+                      setHasSearchedResultadoLoteamento(true);
+                    }
+                    if (selectedReport === "contas-pagar") {
+                      setHasSearchedContasPagar(true);
+                      setPageContasPagar(1);
+                    }
+                    if (selectedReport === "fluxo-caixa") {
+                      setHasSearchedFluxoCaixa(true);
+                    }
+                    if (selectedReport === "despesas-categoria") {
+                      setHasSearchedDespesasCategoria(true);
+                    }
                   }}
                 >
                   Buscar
@@ -743,7 +946,11 @@ const Relatorios = () => {
                       selectedReport === "enderecos" && enderecosCarneData.length > 0 ||
                       selectedReport === "total-conta" && totalContaData.length > 0 ||
                       selectedReport === "juros" && jurosData && jurosData.meses.length > 0 ||
-                      selectedReport === "clientes-loteamento" && clientesLoteamentoData.length > 0
+                      selectedReport === "clientes-loteamento" && clientesLoteamentoData.length > 0 ||
+                      selectedReport === "resultado-loteamento" && resultadoLoteamentoData.length > 0 ||
+                      selectedReport === "contas-pagar" && contasPagarData.length > 0 ||
+                      selectedReport === "fluxo-caixa" && fluxoCaixaData.length > 0 ||
+                      selectedReport === "despesas-categoria" && despesasCategoriaData.length > 0
                     )
                   }
                   onClick={() => {
@@ -830,6 +1037,51 @@ const Relatorios = () => {
                           cliente: r.cliente,
                           quadra: r.quadra,
                           lote: r.lote,
+                        })),
+                      );
+                    } else if (selectedReport === "resultado-loteamento") {
+                      filename = "resultado-por-loteamento.csv";
+                      rows.push(
+                        ...resultadoLoteamentoData.map((r) => ({
+                          loteamento: r.loteamento,
+                          receita: r.receita,
+                          despesas: r.despesas,
+                          resultado: r.resultado,
+                        })),
+                      );
+                    } else if (selectedReport === "contas-pagar") {
+                      filename = "contas-a-pagar.csv";
+                      rows.push(
+                        ...contasPagarData.map((r) => ({
+                          descricao: r.descricao,
+                          loteamento: r.loteamento,
+                          categoria: r.categoria,
+                          fornecedor: r.fornecedor,
+                          parcela: r.parcela,
+                          vencimento: r.vencimento,
+                          diasAtraso: r.diasAtraso,
+                          valor: r.valor,
+                        })),
+                      );
+                    } else if (selectedReport === "fluxo-caixa") {
+                      filename = "fluxo-de-caixa.csv";
+                      rows.push(
+                        ...fluxoCaixaData.map((r) => ({
+                          mes: r.mes,
+                          entradas: r.entradas,
+                          saidas: r.saidas,
+                          saldo: r.saldo,
+                        })),
+                      );
+                    } else if (selectedReport === "despesas-categoria") {
+                      filename = "despesas-por-categoria.csv";
+                      rows.push(
+                        ...despesasCategoriaData.map((r) => ({
+                          categoria: r.categoria,
+                          grupo: r.grupo,
+                          qtdDespesas: r.qtdDespesas,
+                          valorTotal: r.valorTotal,
+                          valorPago: r.valorPago,
                         })),
                       );
                     }
@@ -1386,6 +1638,249 @@ const Relatorios = () => {
                         </div>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedReport === "resultado-loteamento" && (
+              <div className="glass-card rounded-lg overflow-hidden">
+                <div className="p-5 border-b border-border">
+                  <h2 className="font-semibold">Resultado por Loteamento</h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Receita recebida menos despesas de obra pagas — margem de cada empreendimento
+                  </p>
+                </div>
+                {loadingResultadoLoteamento ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : resultadoLoteamentoData.length === 0 ? (
+                  <div className="p-5 text-sm text-muted-foreground">
+                    Nenhum loteamento encontrado para os filtros selecionados
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Loteamento</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Receita</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Despesas</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Resultado</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {resultadoLoteamentoData.map((row) => (
+                          <tr key={row.id_loteamento} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-3 font-medium">{row.loteamento}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.receita)}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.despesas)}</td>
+                            <td className={`px-5 py-3 text-right font-bold ${row.resultado >= 0 ? "text-primary" : "text-destructive"}`}>
+                              {formatCurrency(row.resultado)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-border bg-muted/30">
+                          <td className="px-5 py-3 font-bold">Total Geral</td>
+                          <td className="px-5 py-3 text-right font-bold">
+                            {formatCurrency(resultadoLoteamentoData.reduce((s, r) => s + r.receita, 0))}
+                          </td>
+                          <td className="px-5 py-3 text-right font-bold">
+                            {formatCurrency(resultadoLoteamentoData.reduce((s, r) => s + r.despesas, 0))}
+                          </td>
+                          <td className="px-5 py-3 text-right font-bold text-primary">
+                            {formatCurrency(resultadoLoteamentoData.reduce((s, r) => s + r.resultado, 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedReport === "contas-pagar" && (
+              <div className="glass-card rounded-lg overflow-hidden">
+                <div className="p-5 border-b border-border">
+                  <h2 className="font-semibold">Contas a Pagar</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Parcelas de despesas em aberto</p>
+                </div>
+                {loadingContasPagar ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : contasPagarData.length === 0 ? (
+                  <div className="p-5 text-sm text-muted-foreground">
+                    Nenhuma conta a pagar encontrada para os filtros selecionados
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Descrição</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Loteamento</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Categoria</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Fornecedor</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Parcela</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Vencimento</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Valor</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Dias</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {contasPagarPage.map((row) => (
+                          <tr key={row.id_despesa_parcela} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-3 font-medium">{row.descricao}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.loteamento}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.categoria}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.fornecedor}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.parcela}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.vencimento}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.valor)}</td>
+                            <td className={`px-5 py-3 text-right font-medium ${row.diasAtraso > 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                              {row.diasAtraso > 0 ? row.diasAtraso : "—"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {contasPagarData.length > 0 && (
+                  <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs text-muted-foreground">
+                    <span>
+                      Página {currentPageContasPagar} de {totalPagesContasPagar}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPageContasPagar <= 1}
+                        onClick={() => setPageContasPagar(currentPageContasPagar - 1)}
+                      >
+                        Anterior
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPageContasPagar >= totalPagesContasPagar}
+                        onClick={() => setPageContasPagar(currentPageContasPagar + 1)}
+                      >
+                        Próxima
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedReport === "fluxo-caixa" && (
+              <div className="glass-card rounded-lg overflow-hidden">
+                <div className="p-5 border-b border-border">
+                  <h2 className="font-semibold">Fluxo de Caixa</h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Entradas x saídas por mês (sem período informado, últimos 12 meses)
+                  </p>
+                </div>
+                {loadingFluxoCaixa ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : fluxoCaixaData.length === 0 ? (
+                  <div className="p-5 text-sm text-muted-foreground">
+                    Nenhum lançamento encontrado para o período selecionado
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Mês</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Entradas</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Saídas</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Saldo</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {fluxoCaixaData.map((row) => (
+                          <tr key={row.mes} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-3 font-medium">{row.mes}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.entradas)}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.saidas)}</td>
+                            <td className={`px-5 py-3 text-right font-bold ${row.saldo >= 0 ? "text-primary" : "text-destructive"}`}>
+                              {formatCurrency(row.saldo)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-border bg-muted/30">
+                          <td className="px-5 py-3 font-bold">Total</td>
+                          <td className="px-5 py-3 text-right font-bold">
+                            {formatCurrency(fluxoCaixaData.reduce((s, r) => s + r.entradas, 0))}
+                          </td>
+                          <td className="px-5 py-3 text-right font-bold">
+                            {formatCurrency(fluxoCaixaData.reduce((s, r) => s + r.saidas, 0))}
+                          </td>
+                          <td className="px-5 py-3 text-right font-bold text-primary">
+                            {formatCurrency(fluxoCaixaData.reduce((s, r) => s + r.saldo, 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {selectedReport === "despesas-categoria" && (
+              <div className="glass-card rounded-lg overflow-hidden">
+                <div className="p-5 border-b border-border">
+                  <h2 className="font-semibold">Despesas por Categoria</h2>
+                  <p className="text-xs text-muted-foreground mt-1">Valor lançado e valor já pago por categoria</p>
+                </div>
+                {loadingDespesasCategoria ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : despesasCategoriaData.length === 0 ? (
+                  <div className="p-5 text-sm text-muted-foreground">
+                    Nenhuma despesa encontrada para os filtros selecionados
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Categoria</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Grupo</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Despesas</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Valor Total</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Valor Pago</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {despesasCategoriaData.map((row) => (
+                          <tr key={row.id_categoria} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-3 font-medium">{row.categoria}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.grupo}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{row.qtdDespesas}</td>
+                            <td className="px-5 py-3 text-right font-bold">{formatCurrency(row.valorTotal)}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">{formatCurrency(row.valorPago)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-border bg-muted/30">
+                          <td className="px-5 py-3 font-bold" colSpan={2}>Total Geral</td>
+                          <td className="px-5 py-3 text-right font-bold">
+                            {despesasCategoriaData.reduce((s, r) => s + r.qtdDespesas, 0)}
+                          </td>
+                          <td className="px-5 py-3 text-right font-bold text-primary">
+                            {formatCurrency(despesasCategoriaData.reduce((s, r) => s + r.valorTotal, 0))}
+                          </td>
+                          <td className="px-5 py-3 text-right font-bold">
+                            {formatCurrency(despesasCategoriaData.reduce((s, r) => s + r.valorPago, 0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
                   </div>
                 )}
               </div>

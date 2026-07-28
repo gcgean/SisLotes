@@ -6,6 +6,8 @@ import { Empresa } from "../../entities/Empresa";
 import { Usuario } from "../../entities/Usuario";
 import { HubBillingService } from "../../services/HubBillingService";
 import { TelegramService } from "../../services/TelegramService";
+import { CategoriaDespesa } from "../../entities/CategoriaDespesa";
+import { CATEGORIAS_DESPESA_PADRAO } from "../../config/categorias-despesa-padrao";
 
 export const setupRouter = Router();
 
@@ -412,6 +414,18 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
     vendas_excluir: true,
   });
   await usuarioRepo.save(usuario);
+
+  // Semeia as categorias padrão de despesa para a empresa recém-criada (não bloqueia o cadastro se falhar)
+  try {
+    const categoriaRepo = AppDataSource.getRepository(CategoriaDespesa);
+    await categoriaRepo.save(
+      CATEGORIAS_DESPESA_PADRAO.map((c) =>
+        categoriaRepo.create({ id_empresa: empresaSalva.id_empresa, nome: c.nome, grupo: c.grupo })
+      )
+    );
+  } catch (err) {
+    console.warn("[Setup] Falha ao semear categorias de despesa padrão:", err instanceof Error ? err.message : err);
+  }
 
   // Cadastro já conta como primeiro acesso (o usuário sai daqui logado)
   const agoraCadastro = new Date();

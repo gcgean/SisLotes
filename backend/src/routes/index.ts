@@ -17,6 +17,7 @@ import { adminRouter } from "./modules/admin";
 import { hubBillingRouter } from "./modules/hub-billing";
 import { sugestoesRouter } from "./modules/sugestoes";
 import { lpRouter } from "./modules/lp";
+import { despesasRouter } from "./modules/despesas";
 
 export const router = Router();
 
@@ -38,3 +39,4 @@ router.use("/auditoria", auditoriaRouter);
 router.use("/admin", adminRouter);
 router.use("/hub-billing", hubBillingRouter);
 router.use("/sugestoes", sugestoesRouter);
+router.use("/despesas", despesasRouter);

@@ -19,11 +19,12 @@ export function createApp() {
 
   app.use(morgan("dev"));
   app.use(json({
+    limit: "8mb", // acomoda anexos em base64 (logo da empresa, comprovante/NF de despesa)
     verify: (req, _res, buf) => {
       (req as RequestWithRawBody).rawBody = buf.toString("utf-8");
     },
   }));
-  app.use(urlencoded({ extended: true }));
+  app.use(urlencoded({ extended: true, limit: "8mb" }));
 
   app.use("/api", router);
 

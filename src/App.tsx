@@ -10,6 +10,7 @@ import Loteamentos from "./pages/Loteamentos";
 import Lotes from "./pages/Lotes";
 import Vendas from "./pages/Vendas";
 import Pagamentos from "./pages/Pagamentos";
+import Despesas from "./pages/Despesas";
 import Relatorios from "./pages/Relatorios";
 import Configuracoes from "./pages/Configuracoes";
 import Auditoria from "./pages/Auditoria";
@@ -121,6 +122,16 @@ const App = () => (
                 <RequireAuth>
                   <RequireFeature feature="module_pagamentos">
                     <Pagamentos />
+                  </RequireFeature>
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/despesas"
+              element={
+                <RequireAuth>
+                  <RequireFeature feature="module_despesas">
+                    <Despesas />
                   </RequireFeature>
                 </RequireAuth>
               }
