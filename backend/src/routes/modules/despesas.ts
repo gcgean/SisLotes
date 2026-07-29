@@ -6,6 +6,7 @@ import { PlanoDeContas } from "../../entities/PlanoDeContas";
 import { Fornecedor } from "../../entities/Fornecedor";
 import { Despesa } from "../../entities/Despesa";
 import { DespesaParcela } from "../../entities/DespesaParcela";
+import { DespesaRateio } from "../../entities/DespesaRateio";
 import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 
@@ -202,6 +203,11 @@ function gerarValoresParcelas(valorTotal: number, numeroParcelas: number): numbe
   return valores;
 }
 
+const rateioItemSchema = z.object({
+  id_loteamento: z.number().int().positive(),
+  percentual: z.number().positive().max(100),
+});
+
 const despesaBodyObjectSchema = z.object({
   id_loteamento: z.number().int().positive().optional().nullable(),
   id_categoria: z.number().int().positive(),
@@ -217,15 +223,28 @@ const despesaBodyObjectSchema = z.object({
   // Conta recorrente: gera 1 nova parcela por mês automaticamente. Só pode ser
   // definida na criação — usar PATCH /:id/recorrencia para pausar/retomar depois.
   recorrente: z.boolean().optional().default(false),
+  // Rateio entre loteamentos (ex: energia que atende mais de um empreendimento).
+  // Quando informado, "id_loteamento" deve ficar vazio e a soma dos percentuais = 100.
+  rateio: z.array(rateioItemSchema).optional(),
 });
 
-const despesaBodySchema = despesaBodyObjectSchema.refine(
-  (d) => !d.recorrente || d.numero_parcelas === 1,
-  {
+const despesaBodySchema = despesaBodyObjectSchema
+  .refine((d) => !d.recorrente || d.numero_parcelas === 1, {
     message: "Contas recorrentes devem iniciar com 1 parcela — as próximas são geradas automaticamente todo mês.",
     path: ["numero_parcelas"],
-  },
-);
+  })
+  .refine((d) => !d.rateio || d.rateio.length === 0 || d.id_loteamento == null, {
+    message: 'Ao ratear entre loteamentos, deixe o campo "Loteamento" em branco.',
+    path: ["id_loteamento"],
+  })
+  .refine(
+    (d) => {
+      if (!d.rateio || d.rateio.length === 0) return true;
+      const soma = d.rateio.reduce((s, r) => s + r.percentual, 0);
+      return Math.abs(soma - 100) < 0.5;
+    },
+    { message: "A soma dos percentuais do rateio deve ser 100%.", path: ["rateio"] },
+  );
 
 const listDespesasQuerySchema = z.object({
   id_loteamento: z.string().regex(/^\d+$/).transform(Number).optional(),
@@ -273,7 +292,8 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
          f.nome AS fornecedor_nome,
          COALESCE(pc.parcelas_pagas, 0)::int AS parcelas_pagas,
          COALESCE(pc.parcelas_total, d.numero_parcelas)::int AS parcelas_total,
-         COALESCE(pc.valor_pago, 0)::numeric AS valor_pago
+         COALESCE(pc.valor_pago, 0)::numeric AS valor_pago,
+         COALESCE(rt.rateado_qtd, 0)::int AS rateado_qtd
        FROM despesas d
        LEFT JOIN loteamentos lo ON lo.id_loteamento = d.id_loteamento
        LEFT JOIN plano_de_contas c ON c.id_conta_contabil = d.id_categoria
@@ -287,6 +307,9 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
          FROM despesa_parcelas
          GROUP BY id_despesa
        ) pc ON pc.id_despesa = d.id_despesa
+       LEFT JOIN (
+         SELECT id_despesa, COUNT(*) AS rateado_qtd FROM despesa_rateio GROUP BY id_despesa
+       ) rt ON rt.id_despesa = d.id_despesa
        WHERE ${conditions.join(" AND ")}
        ORDER BY d.created_at DESC`,
       params
@@ -398,7 +421,16 @@ despesasRouter.get("/:id", async (req: AuthRequest, res: Response) => {
     order: { numero_parcela: "ASC" },
   });
 
-  return res.json({ ...despesa, parcelas });
+  const rateio = await AppDataSource.query(
+    `SELECT r.id_loteamento, r.percentual, lo.nome AS loteamento_nome
+     FROM despesa_rateio r
+     JOIN loteamentos lo ON lo.id_loteamento = r.id_loteamento
+     WHERE r.id_despesa = $1
+     ORDER BY r.percentual DESC`,
+    [despesa.id_despesa]
+  );
+
+  return res.json({ ...despesa, parcelas, rateio });
 });
 
 // ─── POST / — cria despesa + gera parcelas ────────────────────────────────────
@@ -441,6 +473,20 @@ despesasRouter.post("/", async (req: AuthRequest, res: Response) => {
   );
   await parcelaRepo.save(parcelas);
 
+  if (data.rateio && data.rateio.length > 0) {
+    const rateioRepo = AppDataSource.getRepository(DespesaRateio);
+    await rateioRepo.save(
+      data.rateio.map((r) =>
+        rateioRepo.create({
+          id_empresa: idEmpresa,
+          id_despesa: despesaSalva.id_despesa,
+          id_loteamento: r.id_loteamento,
+          percentual: r.percentual.toFixed(2),
+        })
+      )
+    );
+  }
+
   return res.status(201).json({ ...despesaSalva, parcelas });
 });
 
@@ -466,10 +512,39 @@ despesasRouter.put("/:id", async (req: AuthRequest, res: Response) => {
     return res.status(409).json({ error: "Despesa já tem parcela paga — não é possível editar os valores." });
   }
 
-  const { valor_total, ...rest } = parse.data;
+  const { valor_total, rateio, ...rest } = parse.data;
+
+  if (rateio && rateio.length > 0) {
+    const soma = rateio.reduce((s, r) => s + r.percentual, 0);
+    if (Math.abs(soma - 100) >= 0.5) {
+      return res.status(400).json({ error: "A soma dos percentuais do rateio deve ser 100%." });
+    }
+    if (rest.id_loteamento != null) {
+      return res.status(400).json({ error: 'Ao ratear entre loteamentos, deixe o campo "Loteamento" em branco.' });
+    }
+    rest.id_loteamento = null;
+  }
+
   Object.assign(despesa, rest);
   if (valor_total != null) despesa.valor_total = valor_total.toFixed(2);
   const saved = await despesaRepo.save(despesa);
+
+  if (rateio !== undefined) {
+    const rateioRepo = AppDataSource.getRepository(DespesaRateio);
+    await rateioRepo.delete({ id_despesa: despesa.id_despesa });
+    if (rateio.length > 0) {
+      await rateioRepo.save(
+        rateio.map((r) =>
+          rateioRepo.create({
+            id_empresa: req.user!.id_empresa,
+            id_despesa: despesa.id_despesa,
+            id_loteamento: r.id_loteamento,
+            percentual: r.percentual.toFixed(2),
+          })
+        )
+      );
+    }
+  }
 
   return res.json(saved);
 });
@@ -523,7 +598,9 @@ despesasRouter.patch("/:id/recorrencia", async (req: AuthRequest, res: Response)
 const pagarSchema = z.object({
   pago_data: z.string(),
   valor_pago: z.number().positive(),
-  id_conta: z.number().int().positive().optional().nullable(),
+  // Obrigatório: precisa informar de qual conta saiu o pagamento para que o
+  // extrato da conta reflita as contas a pagar quitadas.
+  id_conta: z.number().int().positive({ message: "Informe a conta de onde saiu o pagamento." }),
 });
 
 despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Response) => {

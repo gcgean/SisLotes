@@ -32,6 +32,9 @@ export class LancamentoManual {
   @Column({ type: "integer", name: "id_conta_contabil", nullable: true })
   id_conta_contabil?: number | null;
 
+  @Column({ type: "integer", name: "id_fornecedor", nullable: true })
+  id_fornecedor?: number | null;
+
   @Column({ type: "varchar", length: 300 })
   descricao!: string;
 

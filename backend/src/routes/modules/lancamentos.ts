@@ -2,21 +2,45 @@ import { Response, Router } from "express";
 import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { LancamentoManual } from "../../entities/LancamentoManual";
+import { LancamentoRateio } from "../../entities/LancamentoRateio";
 import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 
 export const lancamentosRouter = Router();
 lancamentosRouter.use(requireAuth, requireFeature("module_despesas"));
 
-const lancamentoBodySchema = z.object({
+const lancamentoRateioItemSchema = z.object({
+  id_loteamento: z.number().int().positive(),
+  percentual: z.number().positive().max(100),
+});
+
+const lancamentoBodyObjectSchema = z.object({
   id_conta: z.number().int().positive(),
   id_loteamento: z.number().int().positive().optional().nullable(),
   tipo: z.enum(["receita", "despesa"]),
   id_conta_contabil: z.number().int().positive().optional().nullable(),
+  id_fornecedor: z.number().int().positive().optional().nullable(),
   descricao: z.string().min(1).max(300),
   valor: z.number().positive(),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  // Rateio entre loteamentos (ex: despesa que atende mais de um empreendimento).
+  // Quando informado, "id_loteamento" deve ficar vazio e a soma dos percentuais = 100.
+  rateio: z.array(lancamentoRateioItemSchema).optional(),
 });
+
+const lancamentoBodySchema = lancamentoBodyObjectSchema
+  .refine((d) => !d.rateio || d.rateio.length === 0 || d.id_loteamento == null, {
+    message: 'Ao ratear entre loteamentos, deixe o campo "Loteamento" em branco.',
+    path: ["id_loteamento"],
+  })
+  .refine(
+    (d) => {
+      if (!d.rateio || d.rateio.length === 0) return true;
+      const soma = d.rateio.reduce((s, r) => s + r.percentual, 0);
+      return Math.abs(soma - 100) < 0.5;
+    },
+    { message: "A soma dos percentuais do rateio deve ser 100%.", path: ["rateio"] },
+  );
 
 const listQuerySchema = z.object({
   id_conta: z.string().regex(/^\d+$/).transform((v) => parseInt(v, 10)).optional(),
@@ -45,7 +69,24 @@ lancamentosRouter.get("/", async (req: AuthRequest, res: Response) => {
   qb.orderBy("l.data", "DESC").addOrderBy("l.id_lancamento", "DESC");
 
   const lancamentos = await qb.getMany();
-  return res.json(lancamentos);
+
+  const rateioRows = (await AppDataSource.query(
+    `SELECT r.id_lancamento, r.id_loteamento, r.percentual, lo.nome AS loteamento_nome
+     FROM lancamento_rateio r
+     JOIN loteamentos lo ON lo.id_loteamento = r.id_loteamento
+     WHERE r.id_empresa = $1`,
+    [req.user!.id_empresa]
+  )) as Array<{ id_lancamento: number; id_loteamento: number; percentual: string; loteamento_nome: string }>;
+
+  const rateioPorLancamento = new Map<number, typeof rateioRows>();
+  for (const r of rateioRows) {
+    const lista = rateioPorLancamento.get(r.id_lancamento) ?? [];
+    lista.push(r);
+    rateioPorLancamento.set(r.id_lancamento, lista);
+  }
+
+  const resultado = lancamentos.map((l) => ({ ...l, rateio: rateioPorLancamento.get(l.id_lancamento) ?? [] }));
+  return res.json(resultado);
 });
 
 // ─── POST / ───────────────────────────────────────────────────────────────────
@@ -53,14 +94,31 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
   const parse = lancamentoBodySchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
 
+  const { rateio, ...data } = parse.data;
+  const idEmpresa = req.user!.id_empresa;
+
   const repo = AppDataSource.getRepository(LancamentoManual);
   const lancamento = repo.create({
-    ...parse.data,
-    valor: parse.data.valor.toFixed(2),
-    id_empresa: req.user!.id_empresa,
+    ...data,
+    valor: data.valor.toFixed(2),
+    id_empresa: idEmpresa,
     id_usuario: req.user!.id_usuario,
   });
   const saved = await repo.save(lancamento);
+
+  if (rateio && rateio.length > 0) {
+    const rateioRepo = AppDataSource.getRepository(LancamentoRateio);
+    await rateioRepo.save(
+      rateio.map((r) =>
+        rateioRepo.create({
+          id_empresa: idEmpresa,
+          id_lancamento: saved.id_lancamento,
+          id_loteamento: r.id_loteamento,
+          percentual: r.percentual.toFixed(2),
+        })
+      )
+    );
+  }
 
   const logRepo = AppDataSource.getRepository(Log);
   await logRepo.save(logRepo.create({
@@ -76,7 +134,7 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
 
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
-  const parse = lancamentoBodySchema.partial().safeParse(req.body);
+  const parse = lancamentoBodyObjectSchema.partial().safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
 
   const repo = AppDataSource.getRepository(LancamentoManual);
@@ -85,11 +143,41 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
   });
   if (!lancamento) return res.status(404).json({ error: "Lançamento não encontrado" });
 
-  const { valor, ...rest } = parse.data;
+  const { valor, rateio, ...rest } = parse.data;
+
+  if (rateio && rateio.length > 0) {
+    const soma = rateio.reduce((s, r) => s + r.percentual, 0);
+    if (Math.abs(soma - 100) >= 0.5) {
+      return res.status(400).json({ error: "A soma dos percentuais do rateio deve ser 100%." });
+    }
+    if (rest.id_loteamento != null) {
+      return res.status(400).json({ error: 'Ao ratear entre loteamentos, deixe o campo "Loteamento" em branco.' });
+    }
+    rest.id_loteamento = null;
+  }
+
   Object.assign(lancamento, rest);
   if (valor !== undefined) lancamento.valor = valor.toFixed(2);
 
   const saved = await repo.save(lancamento);
+
+  if (rateio !== undefined) {
+    const rateioRepo = AppDataSource.getRepository(LancamentoRateio);
+    await rateioRepo.delete({ id_lancamento: lancamento.id_lancamento });
+    if (rateio.length > 0) {
+      await rateioRepo.save(
+        rateio.map((r) =>
+          rateioRepo.create({
+            id_empresa: req.user!.id_empresa,
+            id_lancamento: lancamento.id_lancamento,
+            id_loteamento: r.id_loteamento,
+            percentual: r.percentual.toFixed(2),
+          })
+        )
+      );
+    }
+  }
+
   return res.json(saved);
 });
 

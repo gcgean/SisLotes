@@ -870,23 +870,63 @@ relatoriosRouter.get(
         GROUP BY lo.id_loteamento
       ) receita ON receita.id_loteamento = lot.id_loteamento
       LEFT JOIN (
-        SELECT d.id_loteamento, SUM(dp.valor_pago) AS total
-        FROM despesa_parcelas dp
-        JOIN despesas d ON d.id_despesa = dp.id_despesa
-        WHERE dp.situacao = 'pago' AND dp.id_empresa = $${idEmpresaParam} AND d.id_loteamento IS NOT NULL ${fromDespesa} ${toDespesa}
-        GROUP BY d.id_loteamento
+        SELECT alloc.id_loteamento, SUM(alloc.valor) AS total
+        FROM (
+          SELECT d.id_loteamento AS id_loteamento, dp.valor_pago AS valor, dp.pago_data AS pago_data
+          FROM despesa_parcelas dp
+          JOIN despesas d ON d.id_despesa = dp.id_despesa
+          WHERE dp.situacao = 'pago' AND dp.id_empresa = $${idEmpresaParam}
+            AND d.id_loteamento IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM despesa_rateio r0 WHERE r0.id_despesa = d.id_despesa)
+
+          UNION ALL
+
+          SELECT r.id_loteamento AS id_loteamento, dp.valor_pago * (r.percentual / 100.0) AS valor, dp.pago_data AS pago_data
+          FROM despesa_parcelas dp
+          JOIN despesas d ON d.id_despesa = dp.id_despesa
+          JOIN despesa_rateio r ON r.id_despesa = d.id_despesa
+          WHERE dp.situacao = 'pago' AND dp.id_empresa = $${idEmpresaParam}
+        ) alloc
+        WHERE 1=1 ${fromDespesa.replace(/dp\.pago_data/g, "alloc.pago_data")} ${toDespesa.replace(/dp\.pago_data/g, "alloc.pago_data")}
+        GROUP BY alloc.id_loteamento
       ) despesa ON despesa.id_loteamento = lot.id_loteamento
       LEFT JOIN (
-        SELECT l2.id_loteamento, SUM(l2.valor) AS total
-        FROM lancamentos_manuais l2
-        WHERE l2.tipo = 'receita' AND l2.id_empresa = $${idEmpresaParam} AND l2.id_loteamento IS NOT NULL ${fromLanc} ${toLanc}
-        GROUP BY l2.id_loteamento
+        SELECT alloc.id_loteamento, SUM(alloc.valor) AS total
+        FROM (
+          SELECT l2.id_loteamento AS id_loteamento, l2.valor AS valor, l2.data AS data
+          FROM lancamentos_manuais l2
+          WHERE l2.tipo = 'receita' AND l2.id_empresa = $${idEmpresaParam}
+            AND l2.id_loteamento IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM lancamento_rateio lr0 WHERE lr0.id_lancamento = l2.id_lancamento)
+
+          UNION ALL
+
+          SELECT lr.id_loteamento AS id_loteamento, l2.valor * (lr.percentual / 100.0) AS valor, l2.data AS data
+          FROM lancamentos_manuais l2
+          JOIN lancamento_rateio lr ON lr.id_lancamento = l2.id_lancamento
+          WHERE l2.tipo = 'receita' AND l2.id_empresa = $${idEmpresaParam}
+        ) alloc
+        WHERE 1=1 ${fromLanc.replace(/l2\.data/g, "alloc.data")} ${toLanc.replace(/l2\.data/g, "alloc.data")}
+        GROUP BY alloc.id_loteamento
       ) lanc_receita ON lanc_receita.id_loteamento = lot.id_loteamento
       LEFT JOIN (
-        SELECT l3.id_loteamento, SUM(l3.valor) AS total
-        FROM lancamentos_manuais l3
-        WHERE l3.tipo = 'despesa' AND l3.id_empresa = $${idEmpresaParam} AND l3.id_loteamento IS NOT NULL ${fromLanc.replace(/l2\./g, "l3.")} ${toLanc.replace(/l2\./g, "l3.")}
-        GROUP BY l3.id_loteamento
+        SELECT alloc.id_loteamento, SUM(alloc.valor) AS total
+        FROM (
+          SELECT l3.id_loteamento AS id_loteamento, l3.valor AS valor, l3.data AS data
+          FROM lancamentos_manuais l3
+          WHERE l3.tipo = 'despesa' AND l3.id_empresa = $${idEmpresaParam}
+            AND l3.id_loteamento IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM lancamento_rateio lr1 WHERE lr1.id_lancamento = l3.id_lancamento)
+
+          UNION ALL
+
+          SELECT lr.id_loteamento AS id_loteamento, l3.valor * (lr.percentual / 100.0) AS valor, l3.data AS data
+          FROM lancamentos_manuais l3
+          JOIN lancamento_rateio lr ON lr.id_lancamento = l3.id_lancamento
+          WHERE l3.tipo = 'despesa' AND l3.id_empresa = $${idEmpresaParam}
+        ) alloc
+        WHERE 1=1 ${fromLanc.replace(/l2\.data/g, "alloc.data")} ${toLanc.replace(/l2\.data/g, "alloc.data")}
+        GROUP BY alloc.id_loteamento
       ) lanc_despesa ON lanc_despesa.id_loteamento = lot.id_loteamento
       WHERE lot.id_empresa = $${idEmpresaParam}${loteamentoFilter}
       ORDER BY lot.nome ASC

@@ -42,6 +42,7 @@ import { formatDateBR } from "@/lib/date-br";
 import { VisaoGeralTab } from "@/components/financeiro/VisaoGeralTab";
 import { ContasTab } from "@/components/financeiro/ContasTab";
 import { LancamentosTab } from "@/components/financeiro/LancamentosTab";
+import { RateioLoteamentoEditor, RateioLinha } from "@/components/financeiro/RateioLoteamentoEditor";
 import {
   Plus,
   Receipt,
@@ -57,6 +58,7 @@ import {
   AlertTriangle,
   Clock,
   CalendarClock,
+  Split,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -115,6 +117,13 @@ interface DespesaResumo {
   valor_pago: string;
   recorrente: boolean;
   recorrencia_ativa: boolean;
+  rateado_qtd?: number;
+}
+
+interface DespesaRateioItem {
+  id_loteamento: number;
+  percentual: string;
+  loteamento_nome: string;
 }
 
 interface DespesaParcela {
@@ -130,6 +139,7 @@ interface DespesaParcela {
 
 interface DespesaDetalhe extends DespesaResumo {
   parcelas: DespesaParcela[];
+  rateio?: DespesaRateioItem[];
 }
 
 interface AlertaItem {
@@ -224,6 +234,8 @@ export default function Despesas() {
   const [modoDespesa, setModoDespesa] = useState<"novo" | "editar">("novo");
   const [despesaEditandoId, setDespesaEditandoId] = useState<number | null>(null);
   const [formDespesa, setFormDespesa] = useState(emptyDespesaForm);
+  const [ratearDespesa, setRatearDespesa] = useState(false);
+  const [rateioDespesa, setRateioDespesa] = useState<RateioLinha[]>([]);
   const [dialogDetalheAberto, setDialogDetalheAberto] = useState(false);
   const [despesaSelecionadaId, setDespesaSelecionadaId] = useState<number | null>(null);
   const [dialogExcluirDespesa, setDialogExcluirDespesa] = useState<{ aberto: boolean; id: number | null }>({ aberto: false, id: null });
@@ -351,6 +363,10 @@ export default function Despesas() {
     ...fornecedoresAtivos.map((f) => ({ value: String(f.id_fornecedor), label: f.nome })),
   ];
 
+  const totalRateioDespesa = rateioDespesa.reduce((s, l) => s + (Number(l.percentual.replace(",", ".")) || 0), 0);
+  const rateioDespesaValido =
+    !ratearDespesa || (rateioDespesa.length > 0 && Math.abs(totalRateioDespesa - 100) < 0.5 && rateioDespesa.every((r) => r.id_loteamento));
+
   const despesasFiltradas = despesas.filter((d) => {
     if (filtroLoteamento !== "todos") {
       if (filtroLoteamento === "administrativa" ? d.id_loteamento != null : d.id_loteamento !== Number(filtroLoteamento)) return false;
@@ -375,7 +391,7 @@ export default function Despesas() {
     mutationFn: async () => {
       const isEdicao = modoDespesa === "editar" && despesaEditandoId;
       const body: Record<string, unknown> = {
-        id_loteamento: formDespesa.id_loteamento ? Number(formDespesa.id_loteamento) : null,
+        id_loteamento: ratearDespesa ? null : formDespesa.id_loteamento ? Number(formDespesa.id_loteamento) : null,
         id_categoria: Number(formDespesa.id_categoria),
         id_fornecedor: formDespesa.id_fornecedor ? Number(formDespesa.id_fornecedor) : null,
         descricao: formDespesa.descricao.trim(),
@@ -389,6 +405,11 @@ export default function Despesas() {
         body.numero_parcelas = formDespesa.recorrente ? 1 : Number(formDespesa.numero_parcelas) || 1;
         body.data_primeiro_vencimento = formDespesa.data_primeiro_vencimento;
         body.recorrente = formDespesa.recorrente;
+        if (ratearDespesa) {
+          body.rateio = rateioDespesa
+            .filter((r) => r.id_loteamento && r.percentual)
+            .map((r) => ({ id_loteamento: Number(r.id_loteamento), percentual: Number(r.percentual.replace(",", ".")) }));
+        }
       }
 
       const url = isEdicao ? `/api/despesas/${despesaEditandoId}` : "/api/despesas";
@@ -587,6 +608,8 @@ export default function Despesas() {
     setModoDespesa("novo");
     setDespesaEditandoId(null);
     setFormDespesa(emptyDespesaForm);
+    setRatearDespesa(false);
+    setRateioDespesa([]);
     setDialogDespesaAberto(true);
   }
 
@@ -607,6 +630,8 @@ export default function Despesas() {
       anexo_base64: "",
       recorrente: d.recorrente,
     });
+    setRatearDespesa(false);
+    setRateioDespesa([]);
     setDialogDespesaAberto(true);
   }
 
@@ -835,7 +860,11 @@ export default function Despesas() {
                             {d.documento && <div className="text-xs text-muted-foreground">NF: {d.documento}</div>}
                           </td>
                           <td className="px-4 py-3">
-                            {d.loteamento_nome ? (
+                            {(d.rateado_qtd ?? 0) > 0 ? (
+                              <Badge variant="outline" className="gap-1">
+                                <Split className="h-3 w-3" /> {d.rateado_qtd} loteamentos
+                              </Badge>
+                            ) : d.loteamento_nome ? (
                               <span className="flex items-center gap-1"><Building2 className="h-3 w-3 text-muted-foreground" />{d.loteamento_nome}</span>
                             ) : (
                               <Badge variant="secondary">Administrativa</Badge>
@@ -1005,16 +1034,47 @@ export default function Despesas() {
                 <Label>Descrição *</Label>
                 <Input value={formDespesa.descricao} onChange={(e) => setFormDespesa((f) => ({ ...f, descricao: e.target.value }))} placeholder="Ex: Terraplanagem — Quadra B" />
               </div>
-              <div>
-                <Label>Loteamento (opcional)</Label>
-                <Combobox
-                  options={loteamentoOptions}
-                  value={formDespesa.id_loteamento || "none"}
-                  onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_loteamento: v === "none" ? "" : v }))}
-                  placeholder="— Administrativa —"
-                  searchPlaceholder="Buscar loteamento..."
-                  emptyText="Nenhum loteamento encontrado."
-                />
+              <div className={ratearDespesa && modoDespesa === "novo" ? "sm:col-span-2" : ""}>
+                <div className="flex items-center justify-between gap-2">
+                  <Label>{ratearDespesa ? "Rateio por loteamento" : "Loteamento (opcional)"}</Label>
+                  {modoDespesa === "novo" && (
+                    <div className="flex items-center gap-1.5">
+                      <Switch
+                        checked={ratearDespesa}
+                        onCheckedChange={(v) => {
+                          setRatearDespesa(v);
+                          if (v) {
+                            setFormDespesa((f) => ({ ...f, id_loteamento: "" }));
+                            if (rateioDespesa.length === 0) setRateioDespesa([{ id_loteamento: "", percentual: "100" }]);
+                          }
+                        }}
+                      />
+                      <span className="text-xs text-muted-foreground">Ratear entre loteamentos</span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-72 text-xs">
+                          Use quando a despesa pertence a mais de um loteamento ao mesmo tempo
+                          (ex: energia que atende vários empreendimentos). Informe o percentual de
+                          cada um — a soma precisa fechar em 100%.
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  )}
+                </div>
+                {ratearDespesa && modoDespesa === "novo" ? (
+                  <RateioLoteamentoEditor loteamentos={loteamentos} value={rateioDespesa} onChange={setRateioDespesa} />
+                ) : (
+                  <Combobox
+                    options={loteamentoOptions}
+                    value={formDespesa.id_loteamento || "none"}
+                    onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_loteamento: v === "none" ? "" : v }))}
+                    placeholder="— Administrativa —"
+                    searchPlaceholder="Buscar loteamento..."
+                    emptyText="Nenhum loteamento encontrado."
+                  />
+                )}
               </div>
               <div>
                 <Label>Categoria *</Label>
@@ -1101,7 +1161,7 @@ export default function Despesas() {
           <DialogFooter className="pt-1">
             <Button variant="outline" onClick={() => setDialogDespesaAberto(false)}>Cancelar</Button>
             <Button
-              disabled={salvarDespesaMutation.isPending || !formDespesa.descricao.trim() || !formDespesa.id_categoria || !formDespesa.valor_total}
+              disabled={salvarDespesaMutation.isPending || !formDespesa.descricao.trim() || !formDespesa.id_categoria || !formDespesa.valor_total || !rateioDespesaValido}
               onClick={() => salvarDespesaMutation.mutate()}
             >
               {salvarDespesaMutation.isPending ? "Salvando…" : "Salvar"}
@@ -1141,6 +1201,21 @@ export default function Despesas() {
                     disabled={toggleRecorrenciaMutation.isPending}
                     onCheckedChange={(checked) => toggleRecorrenciaMutation.mutate({ id: despesaDetalhe.id_despesa, ativa: checked })}
                   />
+                </div>
+              )}
+              {despesaDetalhe?.rateio && despesaDetalhe.rateio.length > 0 && (
+                <div className="rounded-lg border p-3 bg-muted/30">
+                  <p className="text-sm font-medium flex items-center gap-1.5 mb-2">
+                    <Split className="h-4 w-4 text-sky-600" /> Rateada entre {despesaDetalhe.rateio.length} loteamentos
+                  </p>
+                  <div className="space-y-1">
+                    {despesaDetalhe.rateio.map((r) => (
+                      <div key={r.id_loteamento} className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">{r.loteamento_nome}</span>
+                        <span className="font-medium">{Number(r.percentual)}%</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
               <div className="rounded-lg border overflow-x-auto">
@@ -1207,21 +1282,23 @@ export default function Despesas() {
               <Input type="number" step="0.01" value={formPagar.valor_pago} onChange={(e) => setFormPagar((f) => ({ ...f, valor_pago: e.target.value }))} />
             </div>
             <div>
-              <Label>Conta (opcional)</Label>
-              <Select value={formPagar.id_conta || "none"} onValueChange={(v) => setFormPagar((f) => ({ ...f, id_conta: v === "none" ? "" : v }))}>
-                <SelectTrigger><SelectValue placeholder="— Não informar —" /></SelectTrigger>
+              <Label>Conta / local do pagamento *</Label>
+              <Select value={formPagar.id_conta} onValueChange={(v) => setFormPagar((f) => ({ ...f, id_conta: v }))}>
+                <SelectTrigger><SelectValue placeholder="Selecione de onde saiu o pagamento…" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">— Não informar —</SelectItem>
                   {contas.map((c) => (
                     <SelectItem key={c.id_conta} value={String(c.id_conta)}>{c.apelido}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Obrigatório — é o que faz esse pagamento aparecer no extrato da conta.
+              </p>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogPagarAberto(false)}>Cancelar</Button>
-            <Button disabled={pagarParcelaMutation.isPending || !formPagar.valor_pago} onClick={() => pagarParcelaMutation.mutate()}>
+            <Button disabled={pagarParcelaMutation.isPending || !formPagar.valor_pago || !formPagar.id_conta} onClick={() => pagarParcelaMutation.mutate()}>
               {pagarParcelaMutation.isPending ? "Salvando…" : "Confirmar pagamento"}
             </Button>
           </DialogFooter>
