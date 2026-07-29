@@ -252,7 +252,7 @@ export default function Despesas() {
     queryKey: ["despesas"],
     queryFn: async () => {
       const r = await fetch("/api/despesas", { headers: getAuthHeaders() });
-      if (!r.ok) throw new Error("Erro ao carregar despesas");
+      if (!r.ok) throw new Error("Erro ao carregar contas a pagar");
       return r.json();
     },
   });
@@ -262,13 +262,13 @@ export default function Despesas() {
     enabled: despesaSelecionadaId != null && dialogDetalheAberto,
     queryFn: async () => {
       const r = await fetch(`/api/despesas/${despesaSelecionadaId}`, { headers: getAuthHeaders() });
-      if (!r.ok) throw new Error("Erro ao carregar detalhe da despesa");
+      if (!r.ok) throw new Error("Erro ao carregar detalhe da conta a pagar");
       return r.json();
     },
   });
 
   useEffect(() => {
-    if (erroDespesas) toast({ title: "Erro ao carregar despesas", description: erroDespesasMsg instanceof Error ? erroDespesasMsg.message : undefined, variant: "destructive" });
+    if (erroDespesas) toast({ title: "Erro ao carregar contas a pagar", description: erroDespesasMsg instanceof Error ? erroDespesasMsg.message : undefined, variant: "destructive" });
   }, [erroDespesas, erroDespesasMsg]);
   useEffect(() => {
     if (erroCategorias) toast({ title: "Erro ao carregar categorias", description: erroCategoriasMsg instanceof Error ? erroCategoriasMsg.message : undefined, variant: "destructive" });
@@ -332,16 +332,16 @@ export default function Despesas() {
       const url = isEdicao ? `/api/despesas/${despesaEditandoId}` : "/api/despesas";
       const r = await fetch(url, { method: isEdicao ? "PUT" : "POST", headers, body: JSON.stringify(body) });
       const data = await parseJson(r);
-      if (!r.ok) throw new Error(extractError(data, "Erro ao salvar despesa"));
+      if (!r.ok) throw new Error(extractError(data, "Erro ao salvar conta a pagar"));
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
       setDialogDespesaAberto(false);
       setFormDespesa(emptyDespesaForm);
-      toast({ title: modoDespesa === "novo" ? "Despesa cadastrada" : "Despesa atualizada" });
+      toast({ title: modoDespesa === "novo" ? "Conta a pagar cadastrada" : "Conta a pagar atualizada" });
     },
-    onError: (e: Error) => toast({ title: "Erro ao salvar despesa", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: "Erro ao salvar conta a pagar", description: e.message, variant: "destructive" }),
   });
 
   const excluirDespesaMutation = useMutation({
@@ -349,12 +349,12 @@ export default function Despesas() {
       const r = await fetch(`/api/despesas/${id}`, { method: "DELETE", headers: getAuthHeaders() });
       if (!r.ok) {
         const data = await parseJson(r);
-        throw new Error(extractError(data, "Erro ao excluir despesa"));
+        throw new Error(extractError(data, "Erro ao excluir conta a pagar"));
       }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
-      toast({ title: "Despesa excluída" });
+      toast({ title: "Conta a pagar excluída" });
     },
     onError: (e: Error) => toast({ title: "Não foi possível excluir", description: e.message, variant: "destructive" }),
   });
@@ -642,7 +642,7 @@ export default function Despesas() {
                 </Select>
               </div>
               <Button size="sm" className="gap-2" onClick={abrirNovaDespesa}>
-                <Plus className="h-4 w-4" /> Nova Despesa
+                <Plus className="h-4 w-4" /> Nova Conta a Pagar
               </Button>
             </div>
 
@@ -664,7 +664,7 @@ export default function Despesas() {
                   {isLoadingDespesas ? (
                     <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td></tr>
                   ) : despesasFiltradas.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Nenhuma despesa encontrada.</td></tr>
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Nenhuma conta a pagar encontrada.</td></tr>
                   ) : (
                     despesasFiltradas.map((d) => {
                       const situacao = d.parcelas_pagas === d.parcelas_total ? "pago" : d.parcelas_pagas === 0 ? "aberto" : "parcial";
@@ -833,13 +833,13 @@ export default function Despesas() {
         </Tabs>
       </div>
 
-      {/* Dialog: Nova/Editar Despesa */}
+      {/* Dialog: Nova/Editar Conta a Pagar */}
       <Dialog open={dialogDespesaAberto} onOpenChange={setDialogDespesaAberto}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{modoDespesa === "novo" ? "Nova Despesa" : "Editar Despesa"}</DialogTitle>
+            <DialogTitle>{modoDespesa === "novo" ? "Nova Conta a Pagar" : "Editar Conta a Pagar"}</DialogTitle>
             <DialogDescription>
-              Deixe "Loteamento" em branco para lançar como despesa administrativa da empresa.
+              Deixe "Loteamento" em branco para lançar como conta a pagar administrativa da empresa.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -937,7 +937,7 @@ export default function Despesas() {
           <DialogHeader>
             <DialogTitle>{despesaDetalhe?.descricao}</DialogTitle>
             <DialogDescription>
-              {despesaDetalhe?.loteamento_nome ?? "Despesa administrativa"} · {despesaDetalhe ? fmtMoeda(despesaDetalhe.valor_total) : ""}
+              {despesaDetalhe?.loteamento_nome ?? "Conta a pagar administrativa"} · {despesaDetalhe ? fmtMoeda(despesaDetalhe.valor_total) : ""}
             </DialogDescription>
           </DialogHeader>
           {isLoadingDetalhe ? (
@@ -1105,11 +1105,11 @@ export default function Despesas() {
         </DialogContent>
       </Dialog>
 
-      {/* AlertDialog: excluir despesa */}
+      {/* AlertDialog: excluir conta a pagar */}
       <AlertDialog open={dialogExcluirDespesa.aberto} onOpenChange={(o) => !o && setDialogExcluirDespesa({ aberto: false, id: null })}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Excluir despesa?</AlertDialogTitle>
+            <AlertDialogTitle>Excluir conta a pagar?</AlertDialogTitle>
             <AlertDialogDescription>
               Esta ação não pode ser desfeita. Só é permitida se nenhuma parcela já tiver sido paga.
             </AlertDialogDescription>

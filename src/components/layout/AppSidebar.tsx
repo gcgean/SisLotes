@@ -55,7 +55,7 @@ const mainItems = [
 
 const financeiroSubItems = [
   { title: "Visão Geral", tab: "visao-geral", icon: LayoutDashboard },
-  { title: "Despesas", tab: "despesas", icon: ReceiptText },
+  { title: "Contas a Pagar", tab: "despesas", icon: ReceiptText },
   { title: "Plano de Contas", tab: "categorias", icon: ListTree },
   { title: "Fornecedores", tab: "fornecedores", icon: Truck },
   { title: "Contas", tab: "contas", icon: Landmark },
