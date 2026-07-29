@@ -14,6 +14,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox, ComboboxOption } from "@/components/ui/combobox";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -33,6 +36,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Tabs, TabsContent } from "@/components/ui/tabs";
+import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { formatDateBR } from "@/lib/date-br";
 import { VisaoGeralTab } from "@/components/financeiro/VisaoGeralTab";
@@ -48,6 +52,8 @@ import {
   RotateCcw,
   Search,
   Building2,
+  Repeat,
+  Info,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -104,6 +110,8 @@ interface DespesaResumo {
   parcelas_pagas: number;
   parcelas_total: number;
   valor_pago: string;
+  recorrente: boolean;
+  recorrencia_ativa: boolean;
 }
 
 interface DespesaParcela {
@@ -159,6 +167,7 @@ const emptyDespesaForm = {
   observacoes: "",
   anexo_nome: "",
   anexo_base64: "",
+  recorrente: false,
 };
 
 const emptyCategoriaForm = { nome: "", tipo: "despesa" as "receita" | "despesa" };
@@ -290,6 +299,24 @@ export default function Despesas() {
     a.codigo.localeCompare(b.codigo, undefined, { numeric: true })
   );
 
+  // ─── Opções dos comboboxes pesquisáveis do formulário de conta a pagar ───────
+  const loteamentoOptions: ComboboxOption[] = [
+    { value: "none", label: "— Administrativa —" },
+    ...loteamentos.map((l) => ({ value: String(l.id_loteamento), label: l.nome })),
+  ];
+  const categoriaOptions: ComboboxOption[] = categoriasAtivas
+    .slice()
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
+    .map((c) => ({
+      value: String(c.id_conta_contabil),
+      label: planoContaLabel(c),
+      indent: planoContaDepth(c),
+    }));
+  const fornecedorOptions: ComboboxOption[] = [
+    { value: "none", label: "— Nenhum —" },
+    ...fornecedoresAtivos.map((f) => ({ value: String(f.id_fornecedor), label: f.nome })),
+  ];
+
   const despesasFiltradas = despesas.filter((d) => {
     if (filtroLoteamento !== "todos") {
       if (filtroLoteamento === "administrativa" ? d.id_loteamento != null : d.id_loteamento !== Number(filtroLoteamento)) return false;
@@ -325,8 +352,9 @@ export default function Despesas() {
         anexo_base64: formDespesa.anexo_base64 || null,
       };
       if (!isEdicao) {
-        body.numero_parcelas = Number(formDespesa.numero_parcelas) || 1;
+        body.numero_parcelas = formDespesa.recorrente ? 1 : Number(formDespesa.numero_parcelas) || 1;
         body.data_primeiro_vencimento = formDespesa.data_primeiro_vencimento;
+        body.recorrente = formDespesa.recorrente;
       }
 
       const url = isEdicao ? `/api/despesas/${despesaEditandoId}` : "/api/despesas";
@@ -357,6 +385,25 @@ export default function Despesas() {
       toast({ title: "Conta a pagar excluída" });
     },
     onError: (e: Error) => toast({ title: "Não foi possível excluir", description: e.message, variant: "destructive" }),
+  });
+
+  const toggleRecorrenciaMutation = useMutation({
+    mutationFn: async ({ id, ativa }: { id: number; ativa: boolean }) => {
+      const r = await fetch(`/api/despesas/${id}/recorrencia`, {
+        method: "PATCH",
+        headers,
+        body: JSON.stringify({ recorrencia_ativa: ativa }),
+      });
+      const data = await parseJson(r);
+      if (!r.ok) throw new Error(extractError(data, "Erro ao alterar recorrência"));
+      return data;
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["despesas"] });
+      queryClient.invalidateQueries({ queryKey: ["despesa-detalhe", variables.id] });
+      toast({ title: variables.ativa ? "Recorrência ativada" : "Recorrência pausada" });
+    },
+    onError: (e: Error) => toast({ title: "Erro ao alterar recorrência", description: e.message, variant: "destructive" }),
   });
 
   const pagarParcelaMutation = useMutation({
@@ -520,6 +567,7 @@ export default function Despesas() {
       observacoes: d.observacoes ?? "",
       anexo_nome: d.anexo_nome ?? "",
       anexo_base64: "",
+      recorrente: d.recorrente,
     });
     setDialogDespesaAberto(true);
   }
@@ -674,6 +722,16 @@ export default function Despesas() {
                             <div className="font-medium flex items-center gap-1.5">
                               {d.descricao}
                               {d.anexo_nome && <Paperclip className="h-3 w-3 text-muted-foreground shrink-0" />}
+                              {d.recorrente && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Repeat className={cn("h-3 w-3 shrink-0", d.recorrencia_ativa ? "text-emerald-600" : "text-muted-foreground")} />
+                                  </TooltipTrigger>
+                                  <TooltipContent className="text-xs">
+                                    {d.recorrencia_ativa ? "Conta recorrente (ativa)" : "Conta recorrente (pausada)"}
+                                  </TooltipContent>
+                                </Tooltip>
+                              )}
                             </div>
                             {d.documento && <div className="text-xs text-muted-foreground">NF: {d.documento}</div>}
                           </td>
@@ -850,43 +908,36 @@ export default function Despesas() {
               </div>
               <div>
                 <Label>Loteamento (opcional)</Label>
-                <Select value={formDespesa.id_loteamento || "none"} onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_loteamento: v === "none" ? "" : v }))}>
-                  <SelectTrigger><SelectValue placeholder="— Administrativa —" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— Administrativa —</SelectItem>
-                    {loteamentos.map((l) => (
-                      <SelectItem key={l.id_loteamento} value={String(l.id_loteamento)}>{l.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={loteamentoOptions}
+                  value={formDespesa.id_loteamento || "none"}
+                  onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_loteamento: v === "none" ? "" : v }))}
+                  placeholder="— Administrativa —"
+                  searchPlaceholder="Buscar loteamento..."
+                  emptyText="Nenhum loteamento encontrado."
+                />
               </div>
               <div>
                 <Label>Categoria *</Label>
-                <Select value={formDespesa.id_categoria} onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_categoria: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecione…" /></SelectTrigger>
-                  <SelectContent>
-                    {categoriasAtivas
-                      .slice()
-                      .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
-                      .map((c) => (
-                        <SelectItem key={c.id_conta_contabil} value={String(c.id_conta_contabil)}>
-                          {"  ".repeat(planoContaDepth(c))}{planoContaLabel(c)}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={categoriaOptions}
+                  value={formDespesa.id_categoria}
+                  onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_categoria: v }))}
+                  placeholder="Selecione…"
+                  searchPlaceholder="Buscar categoria..."
+                  emptyText="Nenhuma categoria encontrada."
+                />
               </div>
               <div>
                 <Label>Fornecedor (opcional)</Label>
-                <Select value={formDespesa.id_fornecedor || "none"} onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_fornecedor: v === "none" ? "" : v }))}>
-                  <SelectTrigger><SelectValue placeholder="— Nenhum —" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">— Nenhum —</SelectItem>
-                    {fornecedoresAtivos.map((f) => (
-                      <SelectItem key={f.id_fornecedor} value={String(f.id_fornecedor)}>{f.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={fornecedorOptions}
+                  value={formDespesa.id_fornecedor || "none"}
+                  onValueChange={(v) => setFormDespesa((f) => ({ ...f, id_fornecedor: v === "none" ? "" : v }))}
+                  placeholder="— Nenhum —"
+                  searchPlaceholder="Buscar fornecedor..."
+                  emptyText="Nenhum fornecedor encontrado."
+                />
               </div>
               <div>
                 <Label>Valor Total *</Label>
@@ -894,12 +945,45 @@ export default function Despesas() {
               </div>
               {modoDespesa === "novo" && (
                 <>
-                  <div>
-                    <Label>Número de Parcelas</Label>
-                    <Input type="number" min="1" max="60" value={formDespesa.numero_parcelas} onChange={(e) => setFormDespesa((f) => ({ ...f, numero_parcelas: e.target.value }))} />
+                  <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border p-3 bg-muted/30">
+                    <Switch
+                      checked={formDespesa.recorrente}
+                      onCheckedChange={(checked) =>
+                        setFormDespesa((f) => ({ ...f, recorrente: checked, numero_parcelas: checked ? "1" : f.numero_parcelas }))
+                      }
+                    />
+                    <div className="flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="cursor-pointer" onClick={() => setFormDespesa((f) => ({ ...f, recorrente: !f.recorrente, numero_parcelas: !f.recorrente ? "1" : f.numero_parcelas }))}>
+                          Conta recorrente (todo mês)
+                        </Label>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-72 text-xs">
+                            Quando ativado, o sistema gera automaticamente uma nova parcela todo mês
+                            (mesmo valor, um mês após a anterior) — ideal para contas fixas como
+                            energia, internet ou aluguel. Você pode pausar ou reativar a qualquer
+                            momento na tela de detalhes da conta.
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {formDespesa.recorrente
+                          ? "A cada mês, uma nova parcela igual a esta será criada automaticamente."
+                          : "Deixe desativado para uma conta única ou parcelada com quantidade fixa."}
+                      </p>
+                    </div>
                   </div>
+                  {!formDespesa.recorrente && (
+                    <div>
+                      <Label>Número de Parcelas</Label>
+                      <Input type="number" min="1" max="60" value={formDespesa.numero_parcelas} onChange={(e) => setFormDespesa((f) => ({ ...f, numero_parcelas: e.target.value }))} />
+                    </div>
+                  )}
                   <div>
-                    <Label>1º Vencimento</Label>
+                    <Label>{formDespesa.recorrente ? "Vencimento (1ª parcela)" : "1º Vencimento"}</Label>
                     <Input type="date" value={formDespesa.data_primeiro_vencimento} onChange={(e) => setFormDespesa((f) => ({ ...f, data_primeiro_vencimento: e.target.value }))} />
                   </div>
                 </>
@@ -943,7 +1027,28 @@ export default function Despesas() {
           {isLoadingDetalhe ? (
             <p className="text-sm text-muted-foreground text-center py-6">Carregando…</p>
           ) : (
-            <div className="rounded-lg border overflow-x-auto">
+            <>
+              {despesaDetalhe?.recorrente && (
+                <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/30">
+                  <div className="flex items-center gap-2">
+                    <Repeat className={cn("h-4 w-4", despesaDetalhe.recorrencia_ativa ? "text-emerald-600" : "text-muted-foreground")} />
+                    <div>
+                      <p className="text-sm font-medium">Conta recorrente</p>
+                      <p className="text-xs text-muted-foreground">
+                        {despesaDetalhe.recorrencia_ativa
+                          ? "Uma nova parcela é gerada automaticamente todo mês."
+                          : "Geração automática pausada — nenhuma parcela nova será criada."}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={despesaDetalhe.recorrencia_ativa}
+                    disabled={toggleRecorrenciaMutation.isPending}
+                    onCheckedChange={(checked) => toggleRecorrenciaMutation.mutate({ id: despesaDetalhe.id_despesa, ativa: checked })}
+                  />
+                </div>
+              )}
+              <div className="rounded-lg border overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b bg-muted/40 text-muted-foreground text-xs uppercase tracking-wide">
@@ -982,7 +1087,8 @@ export default function Despesas() {
                   ))}
                 </tbody>
               </table>
-            </div>
+              </div>
+            </>
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogDetalheAberto(false)}>Fechar</Button>

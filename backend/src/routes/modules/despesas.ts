@@ -186,7 +186,7 @@ despesasRouter.delete("/fornecedores/:id", async (req: AuthRequest, res: Respons
 //  Despesas + parcelas
 // ═══════════════════════════════════════════════════════════════════════════
 
-function addMonths(dateStr: string, months: number): string {
+export function addMonths(dateStr: string, months: number): string {
   const d = new Date(`${dateStr}T00:00:00`);
   d.setMonth(d.getMonth() + months);
   return d.toISOString().slice(0, 10);
@@ -202,7 +202,7 @@ function gerarValoresParcelas(valorTotal: number, numeroParcelas: number): numbe
   return valores;
 }
 
-const despesaBodySchema = z.object({
+const despesaBodyObjectSchema = z.object({
   id_loteamento: z.number().int().positive().optional().nullable(),
   id_categoria: z.number().int().positive(),
   id_fornecedor: z.number().int().positive().optional().nullable(),
@@ -214,7 +214,18 @@ const despesaBodySchema = z.object({
   anexo_nome: z.string().max(200).optional().nullable(),
   anexo_base64: z.string().optional().nullable(),
   observacoes: z.string().optional().nullable(),
+  // Conta recorrente: gera 1 nova parcela por mês automaticamente. Só pode ser
+  // definida na criação — usar PATCH /:id/recorrencia para pausar/retomar depois.
+  recorrente: z.boolean().optional().default(false),
 });
+
+const despesaBodySchema = despesaBodyObjectSchema.refine(
+  (d) => !d.recorrente || d.numero_parcelas === 1,
+  {
+    message: "Contas recorrentes devem iniciar com 1 parcela — as próximas são geradas automaticamente todo mês.",
+    path: ["numero_parcelas"],
+  },
+);
 
 const listDespesasQuerySchema = z.object({
   id_loteamento: z.string().regex(/^\d+$/).transform(Number).optional(),
@@ -256,7 +267,7 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
       `SELECT
          d.id_despesa, d.id_loteamento, d.id_categoria, d.id_fornecedor,
          d.descricao, d.valor_total, d.numero_parcelas, d.documento, d.observacoes,
-         d.anexo_nome, d.created_at, d.updated_at,
+         d.anexo_nome, d.created_at, d.updated_at, d.recorrente, d.recorrencia_ativa,
          lo.nome AS loteamento_nome,
          c.nome AS categoria_nome, COALESCE(cg.nome, c.nome) AS categoria_grupo,
          f.nome AS fornecedor_nome,
@@ -348,6 +359,8 @@ despesasRouter.post("/", async (req: AuthRequest, res: Response) => {
     anexo_nome: data.anexo_nome ?? null,
     anexo_base64: data.anexo_base64 ?? null,
     observacoes: data.observacoes ?? null,
+    recorrente: data.recorrente,
+    recorrencia_ativa: true,
   });
   const despesaSalva = await despesaRepo.save(despesa);
 
@@ -369,8 +382,8 @@ despesasRouter.post("/", async (req: AuthRequest, res: Response) => {
 
 // ─── PUT /:id — edita cabeçalho (bloqueia se já houver parcela paga) ──────────
 despesasRouter.put("/:id", async (req: AuthRequest, res: Response) => {
-  const parse = despesaBodySchema
-    .omit({ numero_parcelas: true, data_primeiro_vencimento: true })
+  const parse = despesaBodyObjectSchema
+    .omit({ numero_parcelas: true, data_primeiro_vencimento: true, recorrente: true })
     .partial()
     .safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
@@ -415,6 +428,28 @@ despesasRouter.delete("/:id", async (req: AuthRequest, res: Response) => {
 
   await despesaRepo.remove(despesa); // cascade remove as parcelas (ON DELETE CASCADE)
   return res.status(204).send();
+});
+
+// ─── PATCH /:id/recorrencia — ativar/pausar a geração automática mensal ───────
+const recorrenciaBodySchema = z.object({ recorrencia_ativa: z.boolean() });
+
+despesasRouter.patch("/:id/recorrencia", async (req: AuthRequest, res: Response) => {
+  const parse = recorrenciaBodySchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+
+  const despesaRepo = AppDataSource.getRepository(Despesa);
+  const despesa = await despesaRepo.findOne({
+    where: { id_despesa: Number(req.params.id), id_empresa: req.user!.id_empresa },
+  });
+  if (!despesa) return res.status(404).json({ error: "Despesa não encontrada" });
+  if (!despesa.recorrente) {
+    return res.status(400).json({ error: "Esta conta não é recorrente." });
+  }
+
+  despesa.recorrencia_ativa = parse.data.recorrencia_ativa;
+  const saved = await despesaRepo.save(despesa);
+
+  return res.json({ id_despesa: saved.id_despesa, recorrencia_ativa: saved.recorrencia_ativa });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════

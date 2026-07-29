@@ -4,6 +4,7 @@ import { createApp } from "./app";
 import { AppDataSource } from "./db/data-source";
 import { Usuario } from "./entities/Usuario";
 import { startTrialScheduler } from "./services/TrialScheduler";
+import { startDespesaRecorrenteScheduler } from "./services/DespesaRecorrenteScheduler";
 
 dotenv.config();
 
@@ -54,6 +55,8 @@ AppDataSource.initialize()
 
     // Agendador de avisos de trial (vencendo/expirado) via Telegram
     startTrialScheduler();
+    // Agendador de contas a pagar recorrentes (gera a próxima parcela mensal automaticamente)
+    startDespesaRecorrenteScheduler();
   })
   .catch((error) => {
     console.error("Erro ao inicializar DataSource", error);

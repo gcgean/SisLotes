@@ -53,6 +53,7 @@ import { AddLastLoginToUsuario1700000000027 } from "../migrations/1700000000027-
 import { CreateDespesas1700000000028 } from "../migrations/1700000000028-CreateDespesas";
 import { AddSaldoLancamentos1700000000029 } from "../migrations/1700000000029-AddSaldoLancamentos";
 import { CreatePlanoDeContas1700000000030 } from "../migrations/1700000000030-CreatePlanoDeContas";
+import { AddRecorrenciaToDespesas1700000000031 } from "../migrations/1700000000031-AddRecorrenciaToDespesas";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -95,6 +96,7 @@ export const AppDataSource = new DataSource({
     CreateDespesas1700000000028,
     AddSaldoLancamentos1700000000029,
     CreatePlanoDeContas1700000000030,
+    AddRecorrenciaToDespesas1700000000031,
   ],
   synchronize: false,
   logging: false,

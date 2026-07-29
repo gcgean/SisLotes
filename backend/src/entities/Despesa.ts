@@ -28,6 +28,14 @@ export class Despesa {
   @Column({ type: "integer", name: "numero_parcelas", default: 1 })
   numero_parcelas!: number;
 
+  /** Conta recorrente: gera automaticamente uma nova parcela todo mês */
+  @Column({ type: "boolean", default: false })
+  recorrente!: boolean;
+
+  /** Controla se a geração automática mensal está ativa (permite pausar sem perder o histórico) */
+  @Column({ type: "boolean", name: "recorrencia_ativa", default: true })
+  recorrencia_ativa!: boolean;
+
   /** Número da nota fiscal / documento fiscal */
   @Column({ type: "varchar", length: 60, nullable: true })
   documento?: string | null;
