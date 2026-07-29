@@ -119,6 +119,8 @@ interface DespesaResumo {
   recorrencia_ativa: boolean;
   rateado_qtd?: number;
   vencimento: string | null;
+  proxima_parcela_id?: number | null;
+  proxima_parcela_valor?: string | null;
 }
 
 interface DespesaRateioItem {
@@ -245,6 +247,12 @@ export default function Despesas() {
   const [dialogPagarAberto, setDialogPagarAberto] = useState(false);
   const [parcelaSelecionada, setParcelaSelecionada] = useState<DespesaParcela | null>(null);
   const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_pago: "", id_conta: "" });
+
+  // ─── Pagamento em lote ─────────────────────────────────────────────────────
+  const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set());
+  const [dialogPagarLoteAberto, setDialogPagarLoteAberto] = useState(false);
+  const [formPagarLote, setFormPagarLote] = useState({ pago_data: new Date().toISOString().slice(0, 10), id_conta: "" });
+  const [valoresLote, setValoresLote] = useState<Record<number, string>>({});
 
   // ─── Dialogs: plano de contas / fornecedor ─────────────────────────────────
   const [dialogCategoriaAberto, setDialogCategoriaAberto] = useState(false);
@@ -387,6 +395,36 @@ export default function Despesas() {
     return true;
   });
 
+  const hojeIsoDespesas = new Date().toISOString().slice(0, 10);
+  const despesasSelecionadasParaPagar = despesas.filter((d) => selecionadas.has(d.id_despesa) && d.proxima_parcela_id);
+  const totalSelecionadoLote = despesasSelecionadasParaPagar.reduce(
+    (s, d) => s + Number((valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total).toString().replace(",", ".") || 0),
+    0
+  );
+
+  function toggleSelecionada(id: number, checked: boolean) {
+    setSelecionadas((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  function toggleSelecionarTodas(checked: boolean) {
+    if (checked) {
+      setSelecionadas(new Set(despesasFiltradas.filter((d) => d.proxima_parcela_id).map((d) => d.id_despesa)));
+    } else {
+      setSelecionadas(new Set());
+    }
+  }
+
+  function abrirPagarLote() {
+    setFormPagarLote({ pago_data: new Date().toISOString().slice(0, 10), id_conta: "" });
+    setValoresLote({});
+    setDialogPagarLoteAberto(true);
+  }
+
   // ─── Mutations: despesa ───────────────────────────────────────────────────
   const salvarDespesaMutation = useMutation({
     mutationFn: async () => {
@@ -489,6 +527,36 @@ export default function Despesas() {
       toast({ title: "Parcela paga com sucesso" });
     },
     onError: (e: Error) => toast({ title: "Erro ao pagar parcela", description: e.message, variant: "destructive" }),
+  });
+
+  const pagarLoteMutation = useMutation({
+    mutationFn: async () => {
+      const itens = despesasSelecionadasParaPagar.map((d) => ({
+        id_despesa_parcela: d.proxima_parcela_id!,
+        valor_pago: Number((valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total).toString().replace(",", ".")),
+      }));
+      const body = {
+        pago_data: formPagarLote.pago_data,
+        id_conta: Number(formPagarLote.id_conta),
+        itens,
+      };
+      const r = await fetch("/api/despesas/parcelas/pagar-lote", { method: "POST", headers, body: JSON.stringify(body) });
+      const data = await parseJson(r);
+      if (!r.ok) throw new Error(extractError(data, "Erro ao pagar em lote"));
+      return data as { pagas: number; ignoradas: { id_despesa_parcela: number; motivo: string }[] };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["despesas"] });
+      queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
+      setDialogPagarLoteAberto(false);
+      setSelecionadas(new Set());
+      setValoresLote({});
+      toast({
+        title: `${data.pagas} parcela(s) paga(s)`,
+        description: data.ignoradas.length > 0 ? `${data.ignoradas.length} ignorada(s) (já paga ou não encontrada).` : undefined,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Erro ao pagar em lote", description: e.message, variant: "destructive" }),
   });
 
   const estornarParcelaMutation = useMutation({
@@ -814,35 +882,60 @@ export default function Despesas() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button size="sm" className="gap-2" onClick={abrirNovaDespesa}>
-                <Plus className="h-4 w-4" /> Nova Conta a Pagar
-              </Button>
+              <div className="flex items-center gap-2">
+                {selecionadas.size > 0 && (
+                  <Button size="sm" variant="secondary" className="gap-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-200" onClick={abrirPagarLote}>
+                    <CheckCircle2 className="h-4 w-4" /> Pagar selecionadas ({selecionadas.size})
+                  </Button>
+                )}
+                <Button size="sm" className="gap-2" onClick={abrirNovaDespesa}>
+                  <Plus className="h-4 w-4" /> Nova Conta a Pagar
+                </Button>
+              </div>
             </div>
 
             <div className="rounded-lg border overflow-x-auto">
-              <table className="w-full text-sm min-w-[900px]">
+              <table className="w-full text-sm min-w-[980px]">
                 <thead>
                   <tr className="border-b bg-muted/40 text-muted-foreground text-xs uppercase tracking-wide">
+                    <th className="px-4 py-3 text-left font-semibold w-8">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-gray-300 cursor-pointer"
+                        checked={despesasFiltradas.length > 0 && despesasFiltradas.filter((d) => d.proxima_parcela_id).every((d) => selecionadas.has(d.id_despesa))}
+                        onChange={(e) => toggleSelecionarTodas(e.target.checked)}
+                      />
+                    </th>
                     <th className="px-4 py-3 text-left font-semibold">Descrição</th>
                     <th className="px-4 py-3 text-left font-semibold">Loteamento</th>
                     <th className="px-4 py-3 text-left font-semibold">Categoria</th>
                     <th className="px-4 py-3 text-left font-semibold">Fornecedor</th>
                     <th className="px-4 py-3 text-left font-semibold">Valor</th>
                     <th className="px-4 py-3 text-left font-semibold">Parcelas</th>
+                    <th className="px-4 py-3 text-left font-semibold">Vencimento</th>
                     <th className="px-4 py-3 text-left font-semibold">Situação</th>
                     <th className="px-4 py-3 text-left font-semibold">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
                   {isLoadingDespesas ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td></tr>
+                    <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td></tr>
                   ) : despesasFiltradas.length === 0 ? (
-                    <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Nenhuma conta a pagar encontrada.</td></tr>
+                    <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">Nenhuma conta a pagar encontrada.</td></tr>
                   ) : (
                     despesasFiltradas.map((d) => {
                       const situacao = d.parcelas_pagas === d.parcelas_total ? "pago" : d.parcelas_pagas === 0 ? "aberto" : "parcial";
                       return (
                         <tr key={d.id_despesa} className="border-b last:border-0 hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => abrirDetalheDespesa(d.id_despesa)}>
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 rounded border-gray-300 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
+                              checked={selecionadas.has(d.id_despesa)}
+                              disabled={!d.proxima_parcela_id}
+                              onChange={(e) => toggleSelecionada(d.id_despesa, e.target.checked)}
+                            />
+                          </td>
                           <td className="px-4 py-3">
                             <div className="font-medium flex items-center gap-1.5">
                               {d.descricao}
@@ -875,6 +968,21 @@ export default function Despesas() {
                           <td className="px-4 py-3 text-muted-foreground">{d.fornecedor_nome ?? "—"}</td>
                           <td className="px-4 py-3 font-medium">{fmtMoeda(d.valor_total)}</td>
                           <td className="px-4 py-3 text-muted-foreground">{d.parcelas_pagas}/{d.parcelas_total}</td>
+                          <td className="px-4 py-3">
+                            {d.vencimento ? (
+                              <span
+                                className={cn(
+                                  situacao !== "pago" && d.vencimento < hojeIsoDespesas && "text-red-600 font-medium",
+                                  situacao !== "pago" && d.vencimento === hojeIsoDespesas && "text-amber-600 font-medium",
+                                  (situacao === "pago" || d.vencimento > hojeIsoDespesas) && "text-muted-foreground"
+                                )}
+                              >
+                                {formatDateBR(d.vencimento)}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
                           <td className="px-4 py-3">
                             {situacao === "pago" && <Badge className="bg-green-100 text-green-700 border-green-200">Paga</Badge>}
                             {situacao === "aberto" && <Badge variant="outline">Em aberto</Badge>}
@@ -1301,6 +1409,80 @@ export default function Despesas() {
             <Button variant="outline" onClick={() => setDialogPagarAberto(false)}>Cancelar</Button>
             <Button disabled={pagarParcelaMutation.isPending || !formPagar.valor_pago || !formPagar.id_conta} onClick={() => pagarParcelaMutation.mutate()}>
               {pagarParcelaMutation.isPending ? "Salvando…" : "Confirmar pagamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Pagar em lote */}
+      <Dialog open={dialogPagarLoteAberto} onOpenChange={setDialogPagarLoteAberto}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Pagar {despesasSelecionadasParaPagar.length} conta(s) selecionada(s)</DialogTitle>
+            <DialogDescription>
+              Cada uma será quitada na próxima parcela em aberto. Ajuste o valor se necessário.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Data do pagamento</Label>
+                <Input type="date" value={formPagarLote.pago_data} onChange={(e) => setFormPagarLote((f) => ({ ...f, pago_data: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Conta / local do pagamento *</Label>
+                <Select value={formPagarLote.id_conta} onValueChange={(v) => setFormPagarLote((f) => ({ ...f, id_conta: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecione…" /></SelectTrigger>
+                  <SelectContent>
+                    {contas.map((c) => (
+                      <SelectItem key={c.id_conta} value={String(c.id_conta)}>{c.apelido}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="rounded-lg border overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/40 text-muted-foreground text-xs uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left font-semibold">Descrição</th>
+                    <th className="px-3 py-2 text-left font-semibold">Vencimento</th>
+                    <th className="px-3 py-2 text-right font-semibold">Valor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {despesasSelecionadasParaPagar.map((d) => (
+                    <tr key={d.id_despesa} className="border-b last:border-0">
+                      <td className="px-3 py-2">{d.descricao}</td>
+                      <td className="px-3 py-2 text-muted-foreground text-xs">{d.vencimento ? formatDateBR(d.vencimento) : "—"}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Input
+                          type="number"
+                          step="0.01"
+                          className="w-28 h-8 text-right ml-auto"
+                          value={valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total}
+                          onChange={(e) => setValoresLote((v) => ({ ...v, [d.id_despesa]: e.target.value }))}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end text-sm">
+              <span className="text-muted-foreground mr-2">Total:</span>
+              <span className="font-semibold">{fmtMoeda(totalSelecionadoLote)}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogPagarLoteAberto(false)}>Cancelar</Button>
+            <Button
+              disabled={pagarLoteMutation.isPending || !formPagarLote.id_conta || despesasSelecionadasParaPagar.length === 0}
+              onClick={() => pagarLoteMutation.mutate()}
+            >
+              {pagarLoteMutation.isPending ? "Pagando…" : `Confirmar pagamento (${despesasSelecionadasParaPagar.length})`}
             </Button>
           </DialogFooter>
         </DialogContent>

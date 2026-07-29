@@ -294,7 +294,9 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
          COALESCE(pc.parcelas_total, d.numero_parcelas)::int AS parcelas_total,
          COALESCE(pc.valor_pago, 0)::numeric AS valor_pago,
          COALESCE(rt.rateado_qtd, 0)::int AS rateado_qtd,
-         COALESCE(pc.proximo_vencimento, pc.ultimo_vencimento) AS vencimento
+         COALESCE(prox.vencimento, pc.ultimo_vencimento) AS vencimento,
+         prox.id_despesa_parcela AS proxima_parcela_id,
+         prox.valor AS proxima_parcela_valor
        FROM despesas d
        LEFT JOIN loteamentos lo ON lo.id_loteamento = d.id_loteamento
        LEFT JOIN plano_de_contas c ON c.id_conta_contabil = d.id_categoria
@@ -305,11 +307,17 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
                 COUNT(*) FILTER (WHERE situacao = 'pago') AS parcelas_pagas,
                 COUNT(*) AS parcelas_total,
                 SUM(valor_pago) FILTER (WHERE situacao = 'pago') AS valor_pago,
-                MIN(vencimento) FILTER (WHERE situacao = 'aberto') AS proximo_vencimento,
                 MAX(vencimento) AS ultimo_vencimento
          FROM despesa_parcelas
          GROUP BY id_despesa
        ) pc ON pc.id_despesa = d.id_despesa
+       LEFT JOIN LATERAL (
+         SELECT dp.id_despesa_parcela, dp.vencimento, dp.valor
+         FROM despesa_parcelas dp
+         WHERE dp.id_despesa = d.id_despesa AND dp.situacao = 'aberto'
+         ORDER BY dp.vencimento ASC
+         LIMIT 1
+       ) prox ON true
        LEFT JOIN (
          SELECT id_despesa, COUNT(*) AS rateado_qtd FROM despesa_rateio GROUP BY id_despesa
        ) rt ON rt.id_despesa = d.id_despesa
@@ -638,6 +646,65 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
   }));
 
   return res.json(saved);
+});
+
+// ─── POST /parcelas/pagar-lote — paga várias parcelas de uma vez ─────────────
+const pagarLoteSchema = z.object({
+  pago_data: z.string(),
+  id_conta: z.number().int().positive({ message: "Informe a conta de onde saiu o pagamento." }),
+  itens: z
+    .array(
+      z.object({
+        id_despesa_parcela: z.number().int().positive(),
+        valor_pago: z.number().positive(),
+      })
+    )
+    .min(1)
+    .max(200),
+});
+
+despesasRouter.post("/parcelas/pagar-lote", async (req: AuthRequest, res: Response) => {
+  const parse = pagarLoteSchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+
+  const { pago_data, id_conta, itens } = parse.data;
+  const idEmpresa = req.user!.id_empresa;
+  const repo = AppDataSource.getRepository(DespesaParcela);
+  const logRepo = AppDataSource.getRepository(Log);
+
+  let pagas = 0;
+  const ignoradas: Array<{ id_despesa_parcela: number; motivo: string }> = [];
+
+  for (const item of itens) {
+    const parcela = await repo.findOne({
+      where: { id_despesa_parcela: item.id_despesa_parcela, id_empresa: idEmpresa },
+    });
+    if (!parcela) {
+      ignoradas.push({ id_despesa_parcela: item.id_despesa_parcela, motivo: "Parcela não encontrada" });
+      continue;
+    }
+    if (parcela.situacao === "pago") {
+      ignoradas.push({ id_despesa_parcela: item.id_despesa_parcela, motivo: "Já estava paga" });
+      continue;
+    }
+
+    parcela.situacao = "pago";
+    parcela.pago_data = pago_data;
+    parcela.valor_pago = item.valor_pago.toFixed(2);
+    parcela.id_conta = id_conta;
+    parcela.id_usuario = req.user!.id_usuario;
+    await repo.save(parcela);
+    pagas++;
+
+    await logRepo.save(logRepo.create({
+      id_usuario: req.user!.id_usuario,
+      servico: "despesa_parcela_pagar_lote",
+      url: "/api/despesas/parcelas/pagar-lote",
+      log: `Parcela de despesa ${parcela.id_despesa_parcela} (despesa ${parcela.id_despesa}) paga em lote — valor_pago=${parcela.valor_pago}`,
+    }));
+  }
+
+  return res.json({ pagas, ignoradas });
 });
 
 despesasRouter.post("/parcelas/:id/estornar", async (req: AuthRequest, res: Response) => {
