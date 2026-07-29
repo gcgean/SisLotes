@@ -893,15 +893,15 @@ export default function Despesas() {
 
       {/* Dialog: Nova/Editar Conta a Pagar */}
       <Dialog open={dialogDespesaAberto} onOpenChange={setDialogDespesaAberto}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{modoDespesa === "novo" ? "Nova Conta a Pagar" : "Editar Conta a Pagar"}</DialogTitle>
-            <DialogDescription>
-              Deixe "Loteamento" em branco para lançar como conta a pagar administrativa da empresa.
+        <DialogContent className="max-w-2xl max-h-[94vh] overflow-y-auto p-4 sm:p-5">
+          <DialogHeader className="space-y-0.5">
+            <DialogTitle className="text-base">{modoDespesa === "novo" ? "Nova Conta a Pagar" : "Editar Conta a Pagar"}</DialogTitle>
+            <DialogDescription className="text-xs leading-snug">
+              Deixe "Loteamento" em branco para lançar como conta administrativa da empresa.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
                 <Label>Descrição *</Label>
                 <Input value={formDespesa.descricao} onChange={(e) => setFormDespesa((f) => ({ ...f, descricao: e.target.value }))} placeholder="Ex: Terraplanagem — Quadra B" />
@@ -945,36 +945,30 @@ export default function Despesas() {
               </div>
               {modoDespesa === "novo" && (
                 <>
-                  <div className="sm:col-span-2 flex items-start gap-3 rounded-lg border p-3 bg-muted/30">
+                  <div className="sm:col-span-2 flex items-center gap-2.5 rounded-lg border p-2 bg-muted/30">
                     <Switch
                       checked={formDespesa.recorrente}
                       onCheckedChange={(checked) =>
                         setFormDespesa((f) => ({ ...f, recorrente: checked, numero_parcelas: checked ? "1" : f.numero_parcelas }))
                       }
                     />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-1.5">
-                        <Label className="cursor-pointer" onClick={() => setFormDespesa((f) => ({ ...f, recorrente: !f.recorrente, numero_parcelas: !f.recorrente ? "1" : f.numero_parcelas }))}>
-                          Conta recorrente (todo mês)
-                        </Label>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help" />
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-72 text-xs">
-                            Quando ativado, o sistema gera automaticamente uma nova parcela todo mês
-                            (mesmo valor, um mês após a anterior) — ideal para contas fixas como
-                            energia, internet ou aluguel. Você pode pausar ou reativar a qualquer
-                            momento na tela de detalhes da conta.
-                          </TooltipContent>
-                        </Tooltip>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {formDespesa.recorrente
-                          ? "A cada mês, uma nova parcela igual a esta será criada automaticamente."
-                          : "Deixe desativado para uma conta única ou parcelada com quantidade fixa."}
-                      </p>
-                    </div>
+                    <Label
+                      className="cursor-pointer flex-1"
+                      onClick={() => setFormDespesa((f) => ({ ...f, recorrente: !f.recorrente, numero_parcelas: !f.recorrente ? "1" : f.numero_parcelas }))}
+                    >
+                      Conta recorrente (todo mês)
+                    </Label>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Info className="h-3.5 w-3.5 text-muted-foreground cursor-help shrink-0" />
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-72 text-xs">
+                        Quando ativado, o sistema gera automaticamente uma nova parcela todo mês
+                        (mesmo valor, um mês após a anterior) — ideal para contas fixas como
+                        energia, internet ou aluguel. Você pode pausar ou reativar a qualquer
+                        momento na tela de detalhes da conta.
+                      </TooltipContent>
+                    </Tooltip>
                   </div>
                   {!formDespesa.recorrente && (
                     <div>
@@ -993,17 +987,19 @@ export default function Despesas() {
                 <Input value={formDespesa.documento} onChange={(e) => setFormDespesa((f) => ({ ...f, documento: e.target.value }))} />
               </div>
               <div>
-                <Label>Comprovante / NF (anexo)</Label>
-                <Input type="file" accept="image/*,application/pdf" onChange={handleAnexoChange} />
-                {formDespesa.anexo_nome && <p className="text-xs text-muted-foreground mt-1">{formDespesa.anexo_nome}</p>}
+                <Label className="flex items-center justify-between gap-2">
+                  <span>Comprovante / NF (anexo)</span>
+                  {formDespesa.anexo_nome && <span className="text-[11px] font-normal text-muted-foreground truncate max-w-[45%]">{formDespesa.anexo_nome}</span>}
+                </Label>
+                <Input type="file" accept="image/*,application/pdf" onChange={handleAnexoChange} className="text-sm file:text-xs" />
               </div>
               <div className="sm:col-span-2">
                 <Label>Observações</Label>
-                <Textarea rows={3} value={formDespesa.observacoes} onChange={(e) => setFormDespesa((f) => ({ ...f, observacoes: e.target.value }))} />
+                <Textarea rows={2} value={formDespesa.observacoes} onChange={(e) => setFormDespesa((f) => ({ ...f, observacoes: e.target.value }))} />
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="pt-1">
             <Button variant="outline" onClick={() => setDialogDespesaAberto(false)}>Cancelar</Button>
             <Button
               disabled={salvarDespesaMutation.isPending || !formDespesa.descricao.trim() || !formDespesa.id_categoria || !formDespesa.valor_total}
