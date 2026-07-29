@@ -293,7 +293,8 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
          COALESCE(pc.parcelas_pagas, 0)::int AS parcelas_pagas,
          COALESCE(pc.parcelas_total, d.numero_parcelas)::int AS parcelas_total,
          COALESCE(pc.valor_pago, 0)::numeric AS valor_pago,
-         COALESCE(rt.rateado_qtd, 0)::int AS rateado_qtd
+         COALESCE(rt.rateado_qtd, 0)::int AS rateado_qtd,
+         COALESCE(pc.proximo_vencimento, pc.ultimo_vencimento) AS vencimento
        FROM despesas d
        LEFT JOIN loteamentos lo ON lo.id_loteamento = d.id_loteamento
        LEFT JOIN plano_de_contas c ON c.id_conta_contabil = d.id_categoria
@@ -303,7 +304,9 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
          SELECT id_despesa,
                 COUNT(*) FILTER (WHERE situacao = 'pago') AS parcelas_pagas,
                 COUNT(*) AS parcelas_total,
-                SUM(valor_pago) FILTER (WHERE situacao = 'pago') AS valor_pago
+                SUM(valor_pago) FILTER (WHERE situacao = 'pago') AS valor_pago,
+                MIN(vencimento) FILTER (WHERE situacao = 'aberto') AS proximo_vencimento,
+                MAX(vencimento) AS ultimo_vencimento
          FROM despesa_parcelas
          GROUP BY id_despesa
        ) pc ON pc.id_despesa = d.id_despesa

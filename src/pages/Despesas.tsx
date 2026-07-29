@@ -118,6 +118,7 @@ interface DespesaResumo {
   recorrente: boolean;
   recorrencia_ativa: boolean;
   rateado_qtd?: number;
+  vencimento: string | null;
 }
 
 interface DespesaRateioItem {
