@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import {
   LayoutDashboard,
   Users,
@@ -8,17 +9,25 @@ import {
   FileText,
   Wallet,
   Receipt,
+  ReceiptText,
+  ListTree,
+  Truck,
+  Landmark,
+  ScrollText,
   Settings,
   Building2,
   Activity,
   ShieldAlert,
   MessageSquare,
   HeadphonesIcon,
+  ChevronDown,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
+import { cn } from "@/lib/utils";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -28,6 +37,9 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
@@ -39,7 +51,15 @@ const mainItems = [
   { title: "Lotes", url: "/lotes", icon: Grid3X3 },
   { title: "Vendas", url: "/vendas", icon: ShoppingCart },
   { title: "Pagamentos", url: "/pagamentos", icon: CreditCard },
-  { title: "Financeiro", url: "/despesas", icon: Receipt },
+];
+
+const financeiroSubItems = [
+  { title: "Visão Geral", tab: "visao-geral", icon: LayoutDashboard },
+  { title: "Despesas", tab: "despesas", icon: ReceiptText },
+  { title: "Plano de Contas", tab: "categorias", icon: ListTree },
+  { title: "Fornecedores", tab: "fornecedores", icon: Truck },
+  { title: "Contas", tab: "contas", icon: Landmark },
+  { title: "Lançamentos", tab: "lancamentos", icon: ScrollText },
 ];
 
 const secondaryItems = [
@@ -62,9 +82,15 @@ export function AppSidebar() {
   const filteredMainItems = mainItems.filter((item) => {
     if (item.url === "/vendas") return canUseVendas;
     if (item.url === "/pagamentos") return canUsePagamentos;
-    if (item.url === "/despesas") return canUseDespesas;
     return true;
   });
+
+  const isFinanceiroAtivo = location.pathname === "/despesas";
+  const abaFinanceiroAtiva = new URLSearchParams(location.search).get("tab") || "visao-geral";
+  const [financeiroAberto, setFinanceiroAberto] = useState(isFinanceiroAtivo);
+  useEffect(() => {
+    if (isFinanceiroAtivo) setFinanceiroAberto(true);
+  }, [isFinanceiroAtivo]);
   const filteredSecondaryItems = secondaryItems.filter((item) => {
     if (item.url === "/planos") return canUsePlanos;
     if (item.url === "/relatorios") return canUseRelatorios;
@@ -109,6 +135,45 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+
+              {canUseDespesas && (
+                <SidebarMenuItem>
+                  <Collapsible open={financeiroAberto} onOpenChange={setFinanceiroAberto}>
+                    <CollapsibleTrigger asChild>
+                      <SidebarMenuButton
+                        className={cn(
+                          "flex items-center gap-3 px-3 py-2.5 rounded-md text-base text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors cursor-pointer",
+                          isFinanceiroAtivo && "bg-sidebar-accent text-sidebar-primary font-medium"
+                        )}
+                      >
+                        <Receipt className="h-5 w-5 shrink-0" />
+                        <span>Financeiro</span>
+                        <ChevronDown className={cn("ml-auto h-4 w-4 shrink-0 transition-transform", financeiroAberto && "rotate-180")} />
+                      </SidebarMenuButton>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <SidebarMenuSub>
+                        {financeiroSubItems.map((sub) => {
+                          const ativo = isFinanceiroAtivo && abaFinanceiroAtiva === sub.tab;
+                          return (
+                            <SidebarMenuSubItem key={sub.tab}>
+                              <SidebarMenuSubButton asChild isActive={ativo}>
+                                <NavLink
+                                  to={`/despesas${sub.tab === "visao-geral" ? "" : `?tab=${sub.tab}`}`}
+                                  onClick={() => setOpenMobile(false)}
+                                >
+                                  <sub.icon className="h-4 w-4 shrink-0" />
+                                  <span>{sub.title}</span>
+                                </NavLink>
+                              </SidebarMenuSubButton>
+                            </SidebarMenuSubItem>
+                          );
+                        })}
+                      </SidebarMenuSub>
+                    </CollapsibleContent>
+                  </Collapsible>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

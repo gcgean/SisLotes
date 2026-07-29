@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 import { formatDateBR } from "@/lib/date-br";
 import { VisaoGeralTab } from "@/components/financeiro/VisaoGeralTab";
@@ -47,14 +48,7 @@ import {
   RotateCcw,
   Search,
   Building2,
-  LayoutDashboard,
-  ReceiptText,
-  ListTree,
-  Truck,
-  Landmark,
-  ScrollText,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Tipos
@@ -170,19 +164,20 @@ const emptyDespesaForm = {
 const emptyCategoriaForm = { nome: "", tipo: "despesa" as "receita" | "despesa" };
 const emptyFornecedorForm = { nome: "", documento: "", telefone: "", email: "", contato: "", observacoes: "" };
 
-const MENU_FINANCEIRO = [
-  { value: "visao-geral", label: "Visão Geral", icon: LayoutDashboard },
-  { value: "despesas", label: "Despesas", icon: ReceiptText },
-  { value: "categorias", label: "Plano de Contas", icon: ListTree },
-  { value: "fornecedores", label: "Fornecedores", icon: Truck },
-  { value: "contas", label: "Contas", icon: Landmark },
-  { value: "lancamentos", label: "Lançamentos", icon: ScrollText },
-] as const;
+const ABAS_VALIDAS = ["visao-geral", "despesas", "categorias", "fornecedores", "contas", "lancamentos"] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
 
 export default function Despesas() {
   const queryClient = useQueryClient();
+
+  // ─── Aba ativa (controlada pela URL, refletindo o submenu "Financeiro" do menu principal) ──
+  const [searchParams, setSearchParams] = useSearchParams();
+  const abaParam = searchParams.get("tab");
+  const abaAtiva = (ABAS_VALIDAS as readonly string[]).includes(abaParam ?? "") ? (abaParam as string) : "visao-geral";
+  function irParaAba(aba: string) {
+    setSearchParams(aba === "visao-geral" ? {} : { tab: aba }, { replace: true });
+  }
 
   // ─── Filtros da lista de despesas ────────────────────────────────────────
   const [search, setSearch] = useState("");
@@ -602,25 +597,7 @@ export default function Despesas() {
           </div>
         </div>
 
-        <Tabs defaultValue="visao-geral" orientation="vertical" className="flex flex-col md:flex-row gap-6 items-start">
-          <TabsList className="h-auto md:sticky md:top-4 w-full md:w-56 shrink-0 flex-row md:flex-col items-stretch justify-start gap-1 bg-transparent p-0 overflow-x-auto md:overflow-visible">
-            {MENU_FINANCEIRO.map(({ value, label, icon: Icon }) => (
-              <TabsTrigger
-                key={value}
-                value={value}
-                className={cn(
-                  "w-full justify-start gap-2.5 rounded-lg border border-transparent px-3 py-2.5 text-sm font-medium text-muted-foreground shrink-0",
-                  "data-[state=active]:bg-primary/10 data-[state=active]:text-primary data-[state=active]:border-primary/20 data-[state=active]:shadow-none",
-                  "hover:bg-muted/60 hover:text-foreground transition-colors"
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-
-          <div className="flex-1 min-w-0 w-full">
+        <Tabs value={abaAtiva} onValueChange={irParaAba}>
           <TabsContent value="visao-geral" className="mt-0">
             <VisaoGeralTab />
           </TabsContent>
@@ -853,7 +830,6 @@ export default function Despesas() {
           <TabsContent value="lancamentos" className="mt-0">
             <LancamentosTab />
           </TabsContent>
-          </div>
         </Tabs>
       </div>
 
