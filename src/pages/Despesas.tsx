@@ -54,6 +54,9 @@ import {
   Building2,
   Repeat,
   Info,
+  AlertTriangle,
+  Clock,
+  CalendarClock,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -127,6 +130,28 @@ interface DespesaParcela {
 
 interface DespesaDetalhe extends DespesaResumo {
   parcelas: DespesaParcela[];
+}
+
+interface AlertaItem {
+  id_despesa_parcela: number;
+  id_despesa: number;
+  descricao: string;
+  loteamento_nome: string | null;
+  vencimento: string;
+  valor: number;
+  diasAtraso: number;
+}
+
+interface AlertaBucket {
+  qtd: number;
+  valor: number;
+  itens: AlertaItem[];
+}
+
+interface DespesasAlertas {
+  atrasadas: AlertaBucket;
+  hoje: AlertaBucket;
+  mes: AlertaBucket;
 }
 
 function getAuthHeaders() {
@@ -266,6 +291,15 @@ export default function Despesas() {
     },
   });
 
+  const { data: alertas } = useQuery<DespesasAlertas>({
+    queryKey: ["despesas-alertas"],
+    queryFn: async () => {
+      const r = await fetch("/api/despesas/alertas", { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Erro ao carregar alertas de contas a pagar");
+      return r.json();
+    },
+  });
+
   const { data: despesaDetalhe, isLoading: isLoadingDetalhe } = useQuery<DespesaDetalhe>({
     queryKey: ["despesa-detalhe", despesaSelecionadaId],
     enabled: despesaSelecionadaId != null && dialogDetalheAberto,
@@ -365,6 +399,7 @@ export default function Despesas() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
+      queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       setDialogDespesaAberto(false);
       setFormDespesa(emptyDespesaForm);
       toast({ title: modoDespesa === "novo" ? "Conta a pagar cadastrada" : "Conta a pagar atualizada" });
@@ -382,6 +417,7 @@ export default function Despesas() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
+      queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       toast({ title: "Conta a pagar excluída" });
     },
     onError: (e: Error) => toast({ title: "Não foi possível excluir", description: e.message, variant: "destructive" }),
@@ -425,6 +461,7 @@ export default function Despesas() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
+      queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       queryClient.invalidateQueries({ queryKey: ["despesa-detalhe", despesaSelecionadaId] });
       setDialogPagarAberto(false);
       toast({ title: "Parcela paga com sucesso" });
@@ -441,6 +478,7 @@ export default function Despesas() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
+      queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       queryClient.invalidateQueries({ queryKey: ["despesa-detalhe", despesaSelecionadaId] });
       toast({ title: "Parcela estornada" });
     },
@@ -652,6 +690,67 @@ export default function Despesas() {
 
           {/* ─── Aba Despesas ─────────────────────────────────────────────── */}
           <TabsContent value="despesas" className="mt-0 space-y-4">
+            {alertas && (alertas.atrasadas.qtd > 0 || alertas.hoje.qtd > 0 || alertas.mes.qtd > 0) && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 p-3 flex items-start gap-3">
+                    <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wide">Atrasadas</p>
+                      <p className="text-lg font-bold text-red-700 dark:text-red-400 leading-tight">{alertas.atrasadas.qtd}</p>
+                      <p className="text-xs text-red-600/80 dark:text-red-400/70">{fmtMoeda(alertas.atrasadas.valor)}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 p-3 flex items-start gap-3">
+                    <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wide">Vence hoje</p>
+                      <p className="text-lg font-bold text-amber-700 dark:text-amber-400 leading-tight">{alertas.hoje.qtd}</p>
+                      <p className="text-xs text-amber-600/80 dark:text-amber-400/70">{fmtMoeda(alertas.hoje.valor)}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-sky-200 bg-sky-50 dark:bg-sky-950/20 dark:border-sky-900 p-3 flex items-start gap-3">
+                    <CalendarClock className="h-5 w-5 text-sky-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs font-medium text-sky-700 dark:text-sky-400 uppercase tracking-wide">Vence este mês</p>
+                      <p className="text-lg font-bold text-sky-700 dark:text-sky-400 leading-tight">{alertas.mes.qtd}</p>
+                      <p className="text-xs text-sky-600/80 dark:text-sky-400/70">{fmtMoeda(alertas.mes.valor)}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {(alertas.atrasadas.itens.length > 0 || alertas.hoje.itens.length > 0) && (
+                  <div className="rounded-lg border overflow-hidden">
+                    <div className="px-3 py-2 bg-muted/40 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Precisam de atenção
+                    </div>
+                    <div className="divide-y">
+                      {[...alertas.atrasadas.itens, ...alertas.hoje.itens].slice(0, 8).map((item) => (
+                        <button
+                          key={item.id_despesa_parcela}
+                          type="button"
+                          onClick={() => abrirDetalheDespesa(item.id_despesa)}
+                          className="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-muted/30 transition-colors text-left"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{item.descricao}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {item.loteamento_nome ?? "Administrativa"} · vence {formatDateBR(item.vencimento)}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {item.diasAtraso > 0 && (
+                              <Badge className="bg-red-100 text-red-700 border-red-200">{item.diasAtraso}d atraso</Badge>
+                            )}
+                            <span className="font-semibold">{fmtMoeda(item.valor)}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2 justify-between">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative w-56">

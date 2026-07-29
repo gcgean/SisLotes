@@ -309,6 +309,70 @@ despesasRouter.get("/", async (req: AuthRequest, res: Response) => {
   }
 });
 
+// ─── GET /alertas — parcelas em aberto atrasadas, vencendo hoje e no mês ──────
+// IMPORTANTE: precisa vir antes de "GET /:id" para não ser interpretada como id.
+despesasRouter.get("/alertas", async (req: AuthRequest, res: Response) => {
+  const idEmpresa = req.user!.id_empresa;
+
+  try {
+    const rows = await AppDataSource.query(
+      `SELECT
+         p.id_despesa_parcela, p.id_despesa, p.numero_parcela, p.vencimento, p.valor,
+         d.descricao,
+         lo.nome AS loteamento_nome
+       FROM despesa_parcelas p
+       JOIN despesas d ON d.id_despesa = p.id_despesa
+       LEFT JOIN loteamentos lo ON lo.id_loteamento = d.id_loteamento
+       WHERE p.id_empresa = $1
+         AND p.situacao = 'aberto'
+         AND p.vencimento <= (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month - 1 day')::date
+       ORDER BY p.vencimento ASC`,
+      [idEmpresa]
+    );
+
+    type Row = {
+      id_despesa_parcela: number;
+      id_despesa: number;
+      numero_parcela: number;
+      vencimento: string;
+      valor: string;
+      descricao: string;
+      loteamento_nome: string | null;
+    };
+
+    const hojeStr = new Date().toISOString().slice(0, 10);
+    const atrasadas: Row[] = [];
+    const hoje: Row[] = [];
+    const mes: Row[] = [];
+
+    for (const r of rows as Row[]) {
+      if (r.vencimento < hojeStr) atrasadas.push(r);
+      else if (r.vencimento === hojeStr) hoje.push(r);
+      else mes.push(r);
+    }
+
+    const somaValor = (arr: Row[]) => arr.reduce((s, r) => s + Number(r.valor), 0);
+    const mapItem = (r: Row) => ({
+      id_despesa_parcela: r.id_despesa_parcela,
+      id_despesa: r.id_despesa,
+      descricao: r.descricao,
+      loteamento_nome: r.loteamento_nome,
+      vencimento: r.vencimento,
+      valor: Number(r.valor),
+      diasAtraso: Math.max(0, Math.round((new Date(hojeStr).getTime() - new Date(r.vencimento).getTime()) / 86400000)),
+    });
+
+    return res.json({
+      atrasadas: { qtd: atrasadas.length, valor: somaValor(atrasadas), itens: atrasadas.slice(0, 8).map(mapItem) },
+      hoje: { qtd: hoje.length, valor: somaValor(hoje), itens: hoje.slice(0, 8).map(mapItem) },
+      mes: { qtd: mes.length, valor: somaValor(mes), itens: mes.slice(0, 8).map(mapItem) },
+    });
+  } catch (error) {
+    console.error("Erro ao buscar alertas de contas a pagar:", error);
+    return res.status(500).json({ error: "Erro ao buscar alertas" });
+  }
+});
+
 // ─── GET /:id — detalhe com parcelas ──────────────────────────────────────────
 despesasRouter.get("/:id", async (req: AuthRequest, res: Response) => {
   const idEmpresa = req.user!.id_empresa;
