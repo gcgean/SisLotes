@@ -59,6 +59,8 @@ import {
   Clock,
   CalendarClock,
   Split,
+  Eye,
+  Loader2,
 } from "lucide-react";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -239,6 +241,8 @@ export default function Despesas() {
   const [formDespesa, setFormDespesa] = useState(emptyDespesaForm);
   const [ratearDespesa, setRatearDespesa] = useState(false);
   const [rateioDespesa, setRateioDespesa] = useState<RateioLinha[]>([]);
+  const [dialogAnexoAberto, setDialogAnexoAberto] = useState(false);
+  const [carregandoAnexo, setCarregandoAnexo] = useState(false);
   const [dialogDetalheAberto, setDialogDetalheAberto] = useState(false);
   const [despesaSelecionadaId, setDespesaSelecionadaId] = useState<number | null>(null);
   const [dialogExcluirDespesa, setDialogExcluirDespesa] = useState<{ aberto: boolean; id: number | null }>({ aberto: false, id: null });
@@ -371,6 +375,8 @@ export default function Despesas() {
     { value: "none", label: "— Nenhum —" },
     ...fornecedoresAtivos.map((f) => ({ value: String(f.id_fornecedor), label: f.nome })),
   ];
+
+  const contaOptions: ComboboxOption[] = contas.map((c) => ({ value: String(c.id_conta), label: c.apelido }));
 
   const totalRateioDespesa = rateioDespesa.reduce((s, l) => s + (Number(l.percentual.replace(",", ".")) || 0), 0);
   const rateioDespesaValido =
@@ -723,6 +729,32 @@ export default function Despesas() {
       setFormDespesa((f) => ({ ...f, anexo_nome: file.name, anexo_base64: ev.target?.result as string }));
     };
     reader.readAsDataURL(file);
+  }
+
+  async function abrirPreviewAnexo() {
+    // Se já temos o conteúdo em memória (anexo recém-selecionado), só abre.
+    if (formDespesa.anexo_base64) {
+      setDialogAnexoAberto(true);
+      return;
+    }
+    // Editando uma despesa existente: o anexo salvo não vem na lista, busca o detalhe.
+    if (!despesaEditandoId) return;
+    setCarregandoAnexo(true);
+    try {
+      const r = await fetch(`/api/despesas/${despesaEditandoId}`, { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Erro ao carregar anexo");
+      const data = await r.json();
+      if (!data.anexo_base64) {
+        toast({ title: "Anexo indisponível", description: "Não foi possível carregar o arquivo.", variant: "destructive" });
+        return;
+      }
+      setFormDespesa((f) => ({ ...f, anexo_base64: data.anexo_base64 }));
+      setDialogAnexoAberto(true);
+    } catch (e) {
+      toast({ title: "Erro ao carregar anexo", description: e instanceof Error ? e.message : undefined, variant: "destructive" });
+    } finally {
+      setCarregandoAnexo(false);
+    }
   }
 
   function abrirNovaContaRaiz() {
@@ -1257,7 +1289,20 @@ export default function Despesas() {
               <div>
                 <Label className="flex items-center justify-between gap-2">
                   <span>Comprovante / NF (anexo)</span>
-                  {formDespesa.anexo_nome && <span className="text-[11px] font-normal text-muted-foreground truncate max-w-[45%]">{formDespesa.anexo_nome}</span>}
+                  {formDespesa.anexo_nome && (
+                    <span className="flex items-center gap-1 min-w-0">
+                      <span className="text-[11px] font-normal text-muted-foreground truncate max-w-[110px]">{formDespesa.anexo_nome}</span>
+                      <button
+                        type="button"
+                        onClick={abrirPreviewAnexo}
+                        disabled={carregandoAnexo}
+                        title="Visualizar anexo"
+                        className="shrink-0 text-primary hover:text-primary/80 disabled:opacity-50"
+                      >
+                        {carregandoAnexo ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Eye className="h-3.5 w-3.5" />}
+                      </button>
+                    </span>
+                  )}
                 </Label>
                 <Input type="file" accept="image/*,application/pdf" onChange={handleAnexoChange} className="text-sm file:text-xs" />
               </div>
@@ -1275,6 +1320,32 @@ export default function Despesas() {
             >
               {salvarDespesaMutation.isPending ? "Salvando…" : "Salvar"}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialog: Preview do anexo */}
+      <Dialog open={dialogAnexoAberto} onOpenChange={setDialogAnexoAberto}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="truncate">{formDespesa.anexo_nome || "Anexo"}</DialogTitle>
+          </DialogHeader>
+          {formDespesa.anexo_base64 ? (
+            formDespesa.anexo_base64.startsWith("data:application/pdf") ? (
+              <iframe src={formDespesa.anexo_base64} title="Anexo" className="w-full h-[70vh] rounded-md border" />
+            ) : (
+              <img src={formDespesa.anexo_base64} alt={formDespesa.anexo_nome || "Anexo"} className="w-full max-h-[70vh] object-contain rounded-md border" />
+            )
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-8">Não foi possível carregar o anexo.</p>
+          )}
+          <DialogFooter>
+            {formDespesa.anexo_base64 && (
+              <a href={formDespesa.anexo_base64} download={formDespesa.anexo_nome || "anexo"} className="inline-flex">
+                <Button type="button" variant="outline">Baixar</Button>
+              </a>
+            )}
+            <Button variant="outline" onClick={() => setDialogAnexoAberto(false)}>Fechar</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1392,14 +1463,14 @@ export default function Despesas() {
             </div>
             <div>
               <Label>Conta / local do pagamento *</Label>
-              <Select value={formPagar.id_conta} onValueChange={(v) => setFormPagar((f) => ({ ...f, id_conta: v }))}>
-                <SelectTrigger><SelectValue placeholder="Selecione de onde saiu o pagamento…" /></SelectTrigger>
-                <SelectContent>
-                  {contas.map((c) => (
-                    <SelectItem key={c.id_conta} value={String(c.id_conta)}>{c.apelido}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Combobox
+                options={contaOptions}
+                value={formPagar.id_conta}
+                onValueChange={(v) => setFormPagar((f) => ({ ...f, id_conta: v }))}
+                placeholder="Selecione de onde saiu o pagamento…"
+                searchPlaceholder="Buscar conta..."
+                emptyText="Nenhuma conta encontrada."
+              />
               <p className="text-xs text-muted-foreground mt-1">
                 Obrigatório — é o que faz esse pagamento aparecer no extrato da conta.
               </p>
@@ -1431,14 +1502,14 @@ export default function Despesas() {
               </div>
               <div>
                 <Label>Conta / local do pagamento *</Label>
-                <Select value={formPagarLote.id_conta} onValueChange={(v) => setFormPagarLote((f) => ({ ...f, id_conta: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecione…" /></SelectTrigger>
-                  <SelectContent>
-                    {contas.map((c) => (
-                      <SelectItem key={c.id_conta} value={String(c.id_conta)}>{c.apelido}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Combobox
+                  options={contaOptions}
+                  value={formPagarLote.id_conta}
+                  onValueChange={(v) => setFormPagarLote((f) => ({ ...f, id_conta: v }))}
+                  placeholder="Selecione…"
+                  searchPlaceholder="Buscar conta..."
+                  emptyText="Nenhuma conta encontrada."
+                />
               </div>
             </div>
 
