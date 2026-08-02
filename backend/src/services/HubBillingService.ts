@@ -217,6 +217,27 @@ export class HubBillingService {
     );
   }
 
+  /**
+   * Checkout de cartão com recorrência nativa do gateway (Stripe Subscriptions):
+   * o cliente cadastra o cartão uma vez e o gateway cobra sozinho todo ciclo,
+   * sem precisar gerar um novo link a cada vencimento.
+   */
+  static async createRecurringCheckout(subscriptionId: string, payload: Record<string, unknown> = {}) {
+    return this.requestAdmin<Record<string, unknown>>(
+      "POST",
+      `/subscriptions/${encodeURIComponent(subscriptionId)}/recurring-checkout`,
+      payload,
+    );
+  }
+
+  static async cancelSubscription(subscriptionId: string, payload: { reason: string; immediate?: boolean }) {
+    return this.requestAdmin<Record<string, unknown>>(
+      "PATCH",
+      `/subscriptions/${encodeURIComponent(subscriptionId)}/cancel`,
+      { immediate: false, ...payload },
+    );
+  }
+
   static async changeSubscriptionPlan(subscriptionId: string, payload: Record<string, unknown>) {
     return this.requestAdmin<Record<string, unknown>>(
       "PATCH",

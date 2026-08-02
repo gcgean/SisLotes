@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Empresa } from "../../entities/Empresa";
@@ -276,6 +276,7 @@ function extractCheckoutArtifacts(checkoutObj: Record<string, unknown>) {
 
 function toHubBillingType(method: "pix" | "boleto" | "cartao") {
   if (method === "cartao") return "CREDIT_CARD";
+  if (method === "boleto") return "BOLETO";
   return "PIX";
 }
 
@@ -289,6 +290,54 @@ function normalizeCheckoutPayload(payload: { paymentMethod: "pix" | "boleto" | "
     billingType,
     ...sanitizedExtra,
   };
+}
+
+/**
+ * Para onde o cliente volta após pagar num checkout hospedado (cartão/boleto).
+ * Sem isso o Hub usa o endereço dele e o cliente cai na tela de login do painel
+ * administrativo. Deriva da origem da própria requisição para não depender de
+ * env por ambiente.
+ */
+function resolveReturnUrl(req: Request, path = "/planos") {
+  const candidates = [String(req.headers.origin ?? ""), String(req.headers.referer ?? "")];
+  for (const candidate of candidates) {
+    const trimmed = candidate.trim();
+    if (!/^https?:\/\//i.test(trimmed)) continue;
+    try {
+      return `${new URL(trimmed).origin}${path}`;
+    } catch {
+      // segue para o próximo candidato
+    }
+  }
+  const envUrl = String(process.env.SISLOTE_APP_URL ?? "").trim();
+  if (/^https?:\/\//i.test(envUrl)) return `${envUrl.replace(/\/+$/, "")}${path}`;
+  return null;
+}
+
+/**
+ * Cartão usa a recorrência nativa do gateway (Stripe Subscriptions): a empresa
+ * cadastra o cartão uma vez e passa a ser cobrada automaticamente todo ciclo.
+ * PIX e boleto seguem no checkout avulso, que gera uma cobrança por vez.
+ */
+async function createSubscriptionCharge(params: {
+  subscriptionId: string;
+  paymentMethod: "pix" | "boleto" | "cartao";
+  checkoutPayload?: Record<string, unknown>;
+  returnUrl?: string | null;
+}) {
+  if (params.paymentMethod === "cartao") {
+    return HubBillingService.createRecurringCheckout(
+      params.subscriptionId,
+      params.returnUrl ? { returnUrl: params.returnUrl } : {},
+    );
+  }
+  return HubBillingService.createSubscriptionCheckout(
+    params.subscriptionId,
+    normalizeCheckoutPayload(
+      { paymentMethod: params.paymentMethod },
+      { ...(params.checkoutPayload ?? {}), ...(params.returnUrl ? { returnUrl: params.returnUrl } : {}) },
+    ),
+  );
 }
 
 async function findActiveSubscriptionIdForEmpresa(empresa: Empresa) {
@@ -352,6 +401,7 @@ async function createPlanCheckoutForEmpresa(params: {
   checkoutPayload?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
   originType?: "order" | "subscription";
+  returnUrl?: string | null;
 }) {
   const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || params.empresa.hub_product_code || "";
   const hubPlan = getHubPlanMap()[params.planCode.toUpperCase()];
@@ -379,7 +429,10 @@ async function createPlanCheckoutForEmpresa(params: {
 
   const checkout = await HubBillingService.createCheckout(
     orderId,
-    normalizeCheckoutPayload({ paymentMethod: params.paymentMethod }, params.checkoutPayload),
+    normalizeCheckoutPayload(
+      { paymentMethod: params.paymentMethod },
+      { ...(params.checkoutPayload ?? {}), ...(params.returnUrl ? { returnUrl: params.returnUrl } : {}) },
+    ),
   );
   const checkoutObj = checkout as Record<string, unknown>;
   const artifacts = extractCheckoutArtifacts(checkoutObj);
@@ -622,6 +675,85 @@ hubBillingRouter.get("/license-status", requireAuth, async (req: AuthRequest, re
     banner: planControlDisabled ? null : (syncResult?.banner ?? null),
     access_status: syncResult?.accessStatus ?? empresa.hub_license_status ?? null,
   });
+});
+
+hubBillingRouter.get("/assinatura", requireAuth, async (req: AuthRequest, res) => {
+  const idEmpresa = req.user?.id_empresa;
+  if (!idEmpresa) {
+    return res.status(400).json({ error: "Empresa não definida para o usuário" });
+  }
+
+  const empresa = await AppDataSource.getRepository(Empresa).findOne({ where: { id_empresa: idEmpresa } });
+  if (!empresa) {
+    return res.status(404).json({ error: "Empresa não encontrada" });
+  }
+
+  if (!HubBillingService.isConfigured() || !empresa.hub_customer_id) {
+    return res.json({ subscriptionId: null, isRecurring: false });
+  }
+
+  try {
+    const subscriptionId = await findActiveSubscriptionIdForEmpresa(empresa);
+    return res.json({ subscriptionId, isRecurring: !!subscriptionId });
+  } catch (error) {
+    console.warn("[Hub] falha ao consultar assinatura:", error instanceof Error ? error.message : error);
+    return res.json({ subscriptionId: null, isRecurring: false });
+  }
+});
+
+hubBillingRouter.post("/assinatura/cancelar", requireAuth, async (req: AuthRequest, res) => {
+  const idEmpresa = req.user?.id_empresa;
+  if (!idEmpresa) {
+    return res.status(400).json({ error: "Empresa não definida para o usuário" });
+  }
+
+  const parsed = z.object({ reason: z.string().max(500).optional() }).safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Dados inválidos" });
+  }
+
+  const empresa = await AppDataSource.getRepository(Empresa).findOne({ where: { id_empresa: idEmpresa } });
+  if (!empresa) {
+    return res.status(404).json({ error: "Empresa não encontrada" });
+  }
+
+  if (!HubBillingService.isConfigured() || !empresa.hub_customer_id) {
+    return res.status(400).json({ error: "Cobrança não configurada para esta empresa" });
+  }
+
+  try {
+    const subscriptionId = await findActiveSubscriptionIdForEmpresa(empresa);
+    if (!subscriptionId) {
+      return res.status(404).json({
+        error: "Nenhuma assinatura ativa encontrada para cancelar.",
+      });
+    }
+
+    await HubBillingService.cancelSubscription(subscriptionId, {
+      reason: parsed.data.reason || "Cancelado pelo cliente no SISLOTE",
+    });
+
+    await AppDataSource.getRepository(HubBillingEvent).save(
+      AppDataSource.getRepository(HubBillingEvent).create({
+        id_empresa: empresa.id_empresa,
+        event_type: "subscription.canceled_by_customer",
+        event_source: "system",
+        charge_id: null,
+        order_id: null,
+        subscription_id: subscriptionId,
+        status: "canceled",
+        amount: null,
+        payload: { reason: parsed.data.reason ?? null },
+      }),
+    );
+
+    return res.json({ ok: true, subscriptionId });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Falha ao cancelar assinatura";
+    // 400 em vez de 502: o proxy substitui o corpo de respostas 5xx por HTML
+    // genérico e a mensagem real do Hub nunca chega ao usuário.
+    return res.status(400).json({ error: message });
+  }
 });
 
 hubBillingRouter.post("/sync-license", requireAuth, async (req: AuthRequest, res) => {
@@ -874,6 +1006,7 @@ hubBillingRouter.post("/planos/checkout", requireAuth, async (req: AuthRequest, 
       currency: payload.currency,
       orderPayload: payload.orderPayload,
       checkoutPayload: payload.checkoutPayload,
+      returnUrl: resolveReturnUrl(req),
       metadata: { mode: "new_plan_checkout" },
     });
 
@@ -968,10 +1101,12 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
       return res.status(502).json({ error: "Hub Billing não retornou subscriptionId" });
     }
 
-    const checkout = await HubBillingService.createSubscriptionCheckout(
+    const checkout = await createSubscriptionCharge({
       subscriptionId,
-      normalizeCheckoutPayload({ paymentMethod: payload.paymentMethod }, payload.checkoutPayload),
-    );
+      paymentMethod: payload.paymentMethod,
+      checkoutPayload: payload.checkoutPayload,
+      returnUrl: resolveReturnUrl(req),
+    });
 
     const checkoutObj = checkout as Record<string, unknown>;
     const artifacts = extractCheckoutArtifacts(checkoutObj);
@@ -1090,6 +1225,7 @@ hubBillingRouter.post("/planos/alterar", requireAuth, async (req: AuthRequest, r
           amount: fullAmount,
           paymentMethod: payload.paymentMethod,
           currency: payload.currency,
+          returnUrl: resolveReturnUrl(req),
           metadata: {
             mode: "trial_same_plan_checkout",
             currentPlan,
@@ -1143,10 +1279,11 @@ hubBillingRouter.post("/planos/alterar", requireAuth, async (req: AuthRequest, r
           });
         }
 
-        const checkout = await HubBillingService.createSubscriptionCheckout(
+        const checkout = await createSubscriptionCharge({
           subscriptionId,
-          normalizeCheckoutPayload({ paymentMethod: payload.paymentMethod }),
-        );
+          paymentMethod: payload.paymentMethod,
+          returnUrl: resolveReturnUrl(req),
+        });
 
         const checkoutObj = checkout as Record<string, unknown>;
         const artifacts = extractCheckoutArtifacts(checkoutObj);
@@ -1231,6 +1368,7 @@ hubBillingRouter.post("/planos/alterar", requireAuth, async (req: AuthRequest, r
         amount: fullAmount,
         paymentMethod: payload.paymentMethod,
         currency: payload.currency,
+        returnUrl: resolveReturnUrl(req),
         metadata: {
           mode: "trial_conversion",
           currentPlan,
@@ -1298,6 +1436,7 @@ hubBillingRouter.post("/planos/alterar", requireAuth, async (req: AuthRequest, r
       amount: proration.amountToCharge,
       paymentMethod: payload.paymentMethod,
       currency: payload.currency,
+      returnUrl: resolveReturnUrl(req),
       metadata: {
         mode: "plan_change_proration",
         currentPlan,

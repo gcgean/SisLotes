@@ -131,7 +131,7 @@ const PLANOS = [
 ];
 
 const Planos = () => {
-  const [metodo, setMetodo] = useState<MetodoPagamento>("pix");
+  const [metodo, setMetodo] = useState<MetodoPagamento>("cartao");
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedPayment, setSelectedPayment] = useState<{
     chargeId: string;
@@ -141,6 +141,7 @@ const Planos = () => {
     pixQrCode: string | null;
   } | null>(null);
   const [highlightPlanCode, setHighlightPlanCode] = useState<string | null>(null);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const paymentButtonRefs = useRef<Record<string, HTMLButtonElement | null>>({});
   const queryClient = useQueryClient();
 
@@ -154,6 +155,44 @@ const Planos = () => {
       });
       if (!response.ok) throw new Error("Erro ao carregar licença");
       return response.json();
+    },
+  });
+
+  // Só existe assinatura recorrente quando o pagamento foi no cartão — PIX e
+  // boleto geram uma cobrança avulsa por ciclo, sem nada para cancelar.
+  const { data: assinatura } = useQuery<{ subscriptionId: string | null; isRecurring: boolean }>({
+    queryKey: ["hub-billing", "assinatura"],
+    queryFn: async () => {
+      const response = await fetch("/api/hub-billing/assinatura", {
+        headers: { ...getAuthHeaders() },
+      });
+      if (!response.ok) throw new Error("Erro ao carregar assinatura");
+      return response.json();
+    },
+  });
+
+  const cancelSubscriptionMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/hub-billing/assinatura/cancelar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || "Erro ao cancelar assinatura");
+      return data;
+    },
+    onSuccess: () => {
+      setShowCancelConfirm(false);
+      queryClient.invalidateQueries({ queryKey: ["hub-billing", "assinatura"] });
+      queryClient.invalidateQueries({ queryKey: ["hub-billing", "license-status"] });
+      toast({
+        title: "Assinatura cancelada",
+        description: "A cobrança automática no cartão foi encerrada. O acesso continua até o fim do período já pago.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Falha ao cancelar", description: error.message, variant: "destructive" });
     },
   });
 
@@ -509,37 +548,89 @@ const Planos = () => {
           <CardHeader>
             <CardTitle className="text-sm">Licença Atual</CardTitle>
           </CardHeader>
-          <CardContent className="flex flex-wrap gap-3 items-center">
-            <Badge variant="outline" className="capitalize">
-              Plano: {planoAtualLabel}
-            </Badge>
-            <Badge variant={licenca?.hub_license_status === "active" ? "default" : "destructive"}>
-              {licenca?.hub_license_status || "sem status"}
-            </Badge>
-            {licenca?.hub_license_reason && (
-              <Badge variant="secondary">{licenca.hub_license_reason}</Badge>
-            )}
-            {(licenca?.hub_expires_at || licenca?.data_vencimento) && (
-              <span className="text-sm text-muted-foreground">
-                Válido até{" "}
-                <span className="font-medium text-foreground">
-                  {fmtDate(licenca.hub_expires_at ?? licenca.data_vencimento)}
+          <CardContent className="space-y-3">
+            <div className="flex flex-wrap gap-3 items-center">
+              <Badge variant="outline" className="capitalize">
+                Plano: {planoAtualLabel}
+              </Badge>
+              <Badge variant={licenca?.hub_license_status === "active" ? "default" : "destructive"}>
+                {licenca?.hub_license_status || "sem status"}
+              </Badge>
+              {licenca?.hub_license_reason && (
+                <Badge variant="secondary">{licenca.hub_license_reason}</Badge>
+              )}
+              {(licenca?.hub_expires_at || licenca?.data_vencimento) && (
+                <span className="text-sm text-muted-foreground">
+                  Válido até{" "}
+                  <span className="font-medium text-foreground">
+                    {fmtDate(licenca.hub_expires_at ?? licenca.data_vencimento)}
+                  </span>
                 </span>
-              </span>
+              )}
+              {assinatura?.isRecurring && (
+                <Badge variant="secondary">Renovação automática no cartão</Badge>
+              )}
+            </div>
+
+            {assinatura?.isRecurring && !showCancelConfirm && (
+              <button
+                type="button"
+                onClick={() => setShowCancelConfirm(true)}
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-destructive"
+              >
+                Cancelar renovação automática
+              </button>
+            )}
+
+            {assinatura?.isRecurring && showCancelConfirm && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-2">
+                <p className="text-xs">
+                  Isso encerra a cobrança automática no cartão. O acesso continua até o fim do período já pago
+                  {(licenca?.hub_expires_at || licenca?.data_vencimento)
+                    ? ` (${fmtDate(licenca.hub_expires_at ?? licenca.data_vencimento)})`
+                    : ""}
+                  .
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => cancelSubscriptionMutation.mutate()}
+                    disabled={cancelSubscriptionMutation.isPending}
+                  >
+                    {cancelSubscriptionMutation.isPending ? "Cancelando…" : "Confirmar cancelamento"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowCancelConfirm(false)}
+                    disabled={cancelSubscriptionMutation.isPending}
+                  >
+                    Voltar
+                  </Button>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm text-muted-foreground">Forma de pagamento:</span>
           <Select value={metodo} onValueChange={(v) => setMetodo(v as MetodoPagamento)}>
             <SelectTrigger className="w-[180px]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="cartao">Cartão de crédito</SelectItem>
               <SelectItem value="pix">PIX</SelectItem>
+              <SelectItem value="boleto">Boleto</SelectItem>
             </SelectContent>
           </Select>
+          {metodo === "cartao" && (
+            <span className="text-xs text-muted-foreground">
+              Cartão salvo com cobrança automática a cada ciclo — cancele quando quiser.
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
