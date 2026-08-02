@@ -986,7 +986,10 @@ hubBillingRouter.post("/planos/checkout", requireAuth, async (req: AuthRequest, 
     await ensureHubCustomer(empresa, empresaRepo);
   } catch (autoErr) {
     const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
-    return res.status(502).json({ error: msg });
+    console.error("[Hub] ensureHubCustomer falhou:", msg);
+    // 400 em vez de 502: o proxy troca o corpo de respostas 5xx por HTML
+    // genérico e a mensagem real nunca chega ao usuário.
+    return res.status(400).json({ error: msg });
   }
 
   const payload = parseResult.data;
@@ -1030,7 +1033,10 @@ hubBillingRouter.post("/planos/checkout", requireAuth, async (req: AuthRequest, 
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Erro ao criar checkout do plano";
-    return res.status(502).json({ error: message });
+    console.error("[Hub] /planos/checkout falhou:", message);
+    // 400 em vez de 502: o proxy troca o corpo de respostas 5xx por HTML
+    // genérico e a mensagem real nunca chega ao usuário.
+    return res.status(400).json({ error: message });
   }
 });
 
@@ -1058,7 +1064,10 @@ hubBillingRouter.post("/planos/subscription/checkout", requireAuth, async (req: 
     await ensureHubCustomer(empresa, empresaRepo);
   } catch (autoErr) {
     const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
-    return res.status(502).json({ error: msg });
+    console.error("[Hub] ensureHubCustomer falhou:", msg);
+    // 400 em vez de 502: o proxy troca o corpo de respostas 5xx por HTML
+    // genérico e a mensagem real nunca chega ao usuário.
+    return res.status(400).json({ error: msg });
   }
 
   const payload = parseResult.data;
@@ -1195,7 +1204,10 @@ hubBillingRouter.post("/planos/alterar", requireAuth, async (req: AuthRequest, r
     await ensureHubCustomer(empresa, empresaRepo);
   } catch (autoErr) {
     const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
-    return res.status(502).json({ error: msg });
+    console.error("[Hub] ensureHubCustomer falhou:", msg);
+    // 400 em vez de 502: o proxy troca o corpo de respostas 5xx por HTML
+    // genérico e a mensagem real nunca chega ao usuário.
+    return res.status(400).json({ error: msg });
   }
 
   const payload = parseResult.data;
