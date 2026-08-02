@@ -264,7 +264,7 @@ export function AppLayout({ children }: AppLayoutProps) {
               <div className="mb-4 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex flex-wrap items-center justify-between gap-2">
                 <span>
                   {isExpired
-                    ? `Seu plano está vencido (${licenseTimeLabel.toLowerCase()}). Regularize o pagamento para não perder o acesso.`
+                    ? `Seu plano está vencido há ${licenseTimeLabel.replace(/^expirada há /i, "")}. Regularize o pagamento para não perder o acesso.`
                     : `Seu plano vence em breve (${licenseTimeLabel.toLowerCase()}). Evite bloqueio efetuando o pagamento agora.`}
                 </span>
                 {!onPlanosPage && (
