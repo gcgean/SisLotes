@@ -141,7 +141,14 @@ export function AppLayout({ children }: AppLayoutProps) {
     nowMs,
   });
   const onPlanosPage = location.pathname.startsWith("/planos");
-  const isDueSoon = daysLeft != null && daysLeft >= 0 && daysLeft <= 5;
+  // A licença é considerada vencida pela data real de expiração, não só pelo
+  // days_left — os dois podem divergir (ex.: days_left zerado enquanto a data
+  // já passou), e aí o aviso dizia "vence em breve (expirada há 72 dias)".
+  const expiresAtMs = licenseData?.hub_expires_at ? new Date(licenseData.hub_expires_at).getTime() : null;
+  const isExpired =
+    (daysLeft != null && daysLeft < 0) ||
+    (expiresAtMs != null && !Number.isNaN(expiresAtMs) && expiresAtMs < nowMs);
+  const isDueSoon = !isExpired && daysLeft != null && daysLeft >= 0 && daysLeft <= 5;
 
   useEffect(() => {
     if (!blocked) return;
@@ -153,7 +160,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   useEffect(() => {
     if (!licenseData?.hub_configured) return;
     if (!licenseData?.hub_customer_id) return;
-    if (!isDueSoon) return;
+    if (!isDueSoon && !isExpired) return;
     if (blocked) return;
     if (onPlanosPage) return;
 
@@ -163,7 +170,9 @@ export function AppLayout({ children }: AppLayoutProps) {
     window.sessionStorage.setItem(key, "1");
 
     const wantsToPay = window.confirm(
-      "Seu plano vence em breve. Deseja efetuar o pagamento agora para não perder acesso ao sistema?",
+      isExpired
+        ? "Seu plano está vencido. Deseja efetuar o pagamento agora para não perder acesso ao sistema?"
+        : "Seu plano vence em breve. Deseja efetuar o pagamento agora para não perder acesso ao sistema?",
     );
     if (wantsToPay) {
       navigate("/planos?payCurrent=1", { replace: false });
@@ -172,6 +181,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     blocked,
     daysLeft,
     isDueSoon,
+    isExpired,
     licenseData?.hub_configured,
     licenseData?.hub_customer_id,
     licenseData?.hub_expires_at,
@@ -250,10 +260,12 @@ export function AppLayout({ children }: AppLayoutProps) {
                 {licenseData.banner}
               </div>
             )}
-            {!blocked && isDueSoon && (
+            {!blocked && (isDueSoon || isExpired) && (
               <div className="mb-4 rounded-md border border-amber-300/70 bg-amber-50 px-3 py-2 text-sm text-amber-900 flex flex-wrap items-center justify-between gap-2">
                 <span>
-                  Seu plano vence em breve ({licenseTimeLabel.toLowerCase()}). Evite bloqueio efetuando o pagamento agora.
+                  {isExpired
+                    ? `Seu plano está vencido (${licenseTimeLabel.toLowerCase()}). Regularize o pagamento para não perder o acesso.`
+                    : `Seu plano vence em breve (${licenseTimeLabel.toLowerCase()}). Evite bloqueio efetuando o pagamento agora.`}
                 </span>
                 {!onPlanosPage && (
                   <Button
