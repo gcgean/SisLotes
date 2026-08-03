@@ -904,7 +904,7 @@ const Vendas = () => {
       reajustado: p.reajustado,
     }));
 
-    const ok = imprimirCarneDetalhado(empresaConfig ?? null, slips, `Carnê — Venda #${vendaCriada.id_venda}`);
+    const ok = imprimirCarneDetalhado(empresaConfig ?? null, slips, `Carnê — Venda #${vendaCriada.id_venda}`, !usarTimbradoVenda);
     if (!ok) toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
   }
 
@@ -944,7 +944,7 @@ const Vendas = () => {
       reajustado: p.reajustado,
     }));
 
-    const ok = imprimirCarneDetalhado(empresaConfig ?? null, slips, `Carnê — Venda #${vendaDetalheInfo.id_venda}`);
+    const ok = imprimirCarneDetalhado(empresaConfig ?? null, slips, `Carnê — Venda #${vendaDetalheInfo.id_venda}`, !usarTimbradoDetalhe);
     if (!ok) toast({ title: "Bloqueador de pop-ups ativado. Permita pop-ups para imprimir.", variant: "destructive" });
   }
 

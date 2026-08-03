@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -219,6 +220,7 @@ const Pagamentos = () => {
   const [carneOpen, setCarneOpen] = useState(false);
   const [carneDe, setCarneDe] = useState<number>(1);
   const [carneAte, setCarneAte] = useState<number>(9999);
+  const [usarTimbradoCarne, setUsarTimbradoCarne] = useState(true);
 
   // ── Estorno de pagamento ──
   const [estornoConfirm, setEstornoConfirm] = useState<Pagamento | null>(null);
@@ -757,7 +759,7 @@ const Pagamentos = () => {
     }
 
     const titulo = `${apenasReajustadas ? "Carnê Reajustado" : "Carnê"} — ${nomeCliente}`;
-    const ok = imprimirCarneDetalhado(empresaInfo ?? null, slips, titulo);
+    const ok = imprimirCarneDetalhado(empresaInfo ?? null, slips, titulo, !usarTimbradoCarne);
     if (!ok) toast({ title: "Popup bloqueado", description: "Permita popups para imprimir", variant: "destructive" });
   }
 
@@ -1532,6 +1534,13 @@ const Pagamentos = () => {
                 <span className="font-medium">{parcelasNoCarneRange.length} parcelas</span>
               </div>
             </div>
+            {/* Timbrado */}
+            <div className="flex items-center gap-2.5 rounded-lg border p-2 bg-muted/30">
+              <Switch checked={usarTimbradoCarne} onCheckedChange={setUsarTimbradoCarne} id="timbrado-carne" />
+              <Label htmlFor="timbrado-carne" className="cursor-pointer flex-1 text-sm font-normal">
+                Com timbrado
+              </Label>
+            </div>
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCarneOpen(false)}>Cancelar</Button>
@@ -1582,6 +1591,12 @@ const Pagamentos = () => {
               <p className="text-xs text-muted-foreground text-center">
                 Os valores já foram atualizados na listagem. Imprima o carnê com os valores reajustados.
               </p>
+              <div className="flex items-center gap-2.5 rounded-lg border p-2 bg-muted/30">
+                <Switch checked={usarTimbradoCarne} onCheckedChange={setUsarTimbradoCarne} id="timbrado-carne-reajuste" />
+                <Label htmlFor="timbrado-carne-reajuste" className="cursor-pointer flex-1 text-sm font-normal">
+                  Com timbrado
+                </Label>
+              </div>
               <DialogFooter className="gap-2 flex-col sm:flex-row">
                 <Button variant="outline" onClick={fecharReajusteDialog} className="flex-1">
                   Fechar

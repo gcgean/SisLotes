@@ -40,6 +40,7 @@ export function imprimirCarneDetalhado(
   empresa: CarneEmpresa | null,
   parcelas: CarneSlip[],
   tituloVenda: string,
+  semTimbrado: boolean = false,
 ): boolean {
   if (parcelas.length === 0) return true;
 
@@ -60,9 +61,9 @@ export function imprimirCarneDetalhado(
     return `
       <div class="carne${isPago ? " pago" : ""}">
         <div class="header">
-          <div class="empresa-nome">${empNome}</div>
-          ${empresa?.cnpj ? `<div class="empresa-sub">CNPJ: ${empresa.cnpj}</div>` : ""}
-          ${enderecoEmp ? `<div class="empresa-sub">${enderecoEmp}${empresa?.telefone ? ` · Tel: ${empresa.telefone}` : ""}</div>` : ""}
+          ${semTimbrado ? "" : `<div class="empresa-nome">${empNome}</div>`}
+          ${!semTimbrado && empresa?.cnpj ? `<div class="empresa-sub">CNPJ: ${empresa.cnpj}</div>` : ""}
+          ${!semTimbrado && enderecoEmp ? `<div class="empresa-sub">${enderecoEmp}${empresa?.telefone ? ` · Tel: ${empresa.telefone}` : ""}</div>` : ""}
           <div class="via-label">${via}</div>
         </div>
         ${isPago ? `<div class="pago-overlay">PAGO</div>` : ""}
