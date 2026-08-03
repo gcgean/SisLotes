@@ -1223,9 +1223,11 @@ hubBillingRouter.post("/planos/alterar", requireAuth, async (req: AuthRequest, r
   });
 
   if (targetPlan === currentPlan) {
-    // Durante trial, permite gerar cobrança no plano atual
-    // para o cliente converter imediatamente sem trocar de card.
-    if (isTrialLicenseStatus(empresa)) {
+    // Durante trial, ou quando a licença está bloqueada/suspensa/vencida,
+    // permite gerar cobrança no plano atual — senão o cliente não teria
+    // como pagar e reativar o próprio plano (ficava só a mensagem
+    // "Plano atual já é o selecionado", sem nenhum link de pagamento).
+    if (isTrialLicenseStatus(empresa) || HubBillingService.isLicenseDenied(empresa)) {
       try {
         const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || empresa.hub_product_code || "";
         const dynamicPlan = await resolveHubPlanDynamicByCode(targetPlan, hubProductId);
