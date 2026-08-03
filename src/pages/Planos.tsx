@@ -49,6 +49,31 @@ function fmtDate(date?: string | null) {
   return formatDateBR(date, date);
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  active: "Ativa",
+  trial: "Em teste",
+  trialing: "Em teste",
+  blocked: "Bloqueada",
+  overdue: "Em atraso",
+  canceled: "Cancelada",
+  cancelled: "Cancelada",
+};
+
+const REASON_LABEL: Record<string, string> = {
+  license_suspended: "Assinatura suspensa",
+  license_expired: "Licença expirada",
+  license_revoked: "Licença revogada",
+  license_inactive: "Licença inativa",
+  trial_expired: "Período de teste encerrado",
+  no_license: "Sem licença ativa",
+  not_mapped: "Cadastro não mapeado",
+  customer_blocked: "Cliente bloqueado",
+};
+
+function friendlyLabel(map: Record<string, string>, value: string): string {
+  return map[value.toLowerCase()] ?? value;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
   return null;
@@ -461,6 +486,11 @@ const Planos = () => {
     const match = (planosDisponiveis ?? []).find((p) => p.code.toUpperCase() === planoAtualUpper);
     return match?.title || planoAtual;
   }, [planoAtual, planoAtualUpper, planosDisponiveis]);
+
+  // A licença é considerada vencida pela data real de expiração — não faz sentido
+  // dizer "Válido até {data passada}" quando o status já indica bloqueio/atraso.
+  const dataExpiracaoLicenca = licenca?.hub_expires_at ?? licenca?.data_vencimento ?? null;
+  const licencaExpirada = dataExpiracaoLicenca ? new Date(dataExpiracaoLicenca).getTime() < Date.now() : false;
   const planosRender = useMemo(() => {
     const source = (planosDisponiveis && planosDisponiveis.length > 0 ? planosDisponiveis : PLANOS).map((p) => ({
       ...p,
@@ -554,16 +584,16 @@ const Planos = () => {
                 Plano: {planoAtualLabel}
               </Badge>
               <Badge variant={licenca?.hub_license_status === "active" ? "default" : "destructive"}>
-                {licenca?.hub_license_status || "sem status"}
+                {licenca?.hub_license_status ? friendlyLabel(STATUS_LABEL, licenca.hub_license_status) : "Sem status"}
               </Badge>
               {licenca?.hub_license_reason && (
-                <Badge variant="secondary">{licenca.hub_license_reason}</Badge>
+                <Badge variant="secondary">{friendlyLabel(REASON_LABEL, licenca.hub_license_reason)}</Badge>
               )}
-              {(licenca?.hub_expires_at || licenca?.data_vencimento) && (
+              {dataExpiracaoLicenca && (
                 <span className="text-sm text-muted-foreground">
-                  Válido até{" "}
-                  <span className="font-medium text-foreground">
-                    {fmtDate(licenca.hub_expires_at ?? licenca.data_vencimento)}
+                  {licencaExpirada ? "Vencida desde" : "Válido até"}{" "}
+                  <span className={licencaExpirada ? "font-medium text-destructive" : "font-medium text-foreground"}>
+                    {fmtDate(dataExpiracaoLicenca)}
                   </span>
                 </span>
               )}
