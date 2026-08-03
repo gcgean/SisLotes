@@ -89,7 +89,12 @@ export async function requireAuth(req: AuthRequest, res: Response, next: NextFun
         }
       }
 
-      if (!ignorePlanControl && HubBillingService.isLicenseDenied(empresa)) {
+      // Bloqueia apenas ações de escrita (criar/editar/excluir) quando a licença
+      // está suspensa/expirada — leitura continua liberada, e rotas de auth e de
+      // cobrança (para o usuário conseguir regularizar o plano) nunca são bloqueadas.
+      const isMutating = req.method !== "GET";
+      const isRotaIsenta = req.originalUrl.includes("/hub-billing") || req.originalUrl.includes("/auth/");
+      if (!ignorePlanControl && isMutating && !isRotaIsenta && HubBillingService.isLicenseDenied(empresa)) {
         return res.status(403).json({
           error: HubBillingService.getLicenseMessage(empresa),
           reason: empresa.hub_license_reason || empresa.hub_license_status,

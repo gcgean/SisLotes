@@ -142,12 +142,9 @@ authRouter.post("/login", async (req, res) => {
         console.error("Falha ao sincronizar licença Hub Billing no login:", hubError);
       }
 
-      if (HubBillingService.isLicenseDenied(empresa)) {
-        return res.status(403).json({
-          error: HubBillingService.getLicenseMessage(empresa),
-          reason: empresa.hub_license_reason || empresa.hub_license_status,
-        });
-      }
+      // Login é sempre permitido, mesmo com licença suspensa/expirada — o
+      // bloqueio de funcionalidades (criar/editar/excluir) acontece dentro do
+      // sistema, via requireAuth, para que o usuário consiga entrar e regularizar o plano.
     }
 
     // Atualiza último acesso do usuário e da empresa (todo login conta)
