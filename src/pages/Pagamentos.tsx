@@ -427,6 +427,7 @@ const Pagamentos = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pagamentos-abertos"] });
       queryClient.invalidateQueries({ queryKey: ["pagamentos-pagos"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
     },
     onError: () => {
       toast({ title: "Erro ao baixar parcela", variant: "destructive" });
@@ -577,6 +578,7 @@ const Pagamentos = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["pagamentos-abertos"] });
       queryClient.invalidateQueries({ queryKey: ["pagamentos-pagos"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       toast({ title: `${data.deletados} lançamento(s) excluído(s) com sucesso` });
       setConfirmarExcluirTodos(false);
     },
@@ -627,6 +629,7 @@ const Pagamentos = () => {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["pagamentos-abertos"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       queryClient.refetchQueries({ queryKey: ["pagamentos-abertos", clienteSelecionado?.id_cliente] });
       setReajusteConfirmado(false);
       setReajusteAplicado(true);
@@ -657,6 +660,7 @@ const Pagamentos = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pagamentos-abertos"] });
       queryClient.invalidateQueries({ queryKey: ["pagamentos-pagos"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       setEstornoConfirm(null);
       toast({ title: "Pagamento cancelado", description: "A parcela voltou para Em Aberto." });
     },

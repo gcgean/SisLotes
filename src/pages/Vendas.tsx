@@ -424,6 +424,7 @@ const Vendas = () => {
     onSuccess: (venda) => {
       queryClient.invalidateQueries({ queryKey: ["vendas"] });
       queryClient.invalidateQueries({ queryKey: ["lotes"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       setNovaVendaAberto(false);
       setVendaCriada(venda);
       if (selectedCliente) setVendaCriadaCliente({ id: selectedCliente.id_cliente, nome: selectedCliente.nome });
@@ -497,6 +498,7 @@ const Vendas = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["vendas"] });
       queryClient.invalidateQueries({ queryKey: ["lotes"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       queryClient.refetchQueries({ queryKey: ["vendas"] });
       setConfirmarCancelamento(null);
       toast({ title: "Venda cancelada com sucesso" });

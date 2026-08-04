@@ -149,7 +149,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
     AppDataSource.query(
       `
       SELECT * FROM (
-        SELECT p.pago_data AS data, 'entrada' AS movimento, 'venda' AS origem,
+        SELECT TO_CHAR(p.pago_data, 'YYYY-MM-DD') AS data, 'entrada' AS movimento, 'venda' AS origem,
                CONCAT('Recebimento venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
                COALESCE(p.valor_pago, p.valor) AS valor,
                NULL::text AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
@@ -162,7 +162,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
 
         UNION ALL
 
-        SELECT dp.pago_data AS data, 'saida' AS movimento, 'despesa' AS origem,
+        SELECT TO_CHAR(dp.pago_data, 'YYYY-MM-DD') AS data, 'saida' AS movimento, 'despesa' AS origem,
                d.descricao AS descricao, dp.valor_pago AS valor,
                cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
                NULL::int AS id_lancamento
@@ -175,7 +175,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
 
         UNION ALL
 
-        SELECT l.data AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
+        SELECT TO_CHAR(l.data, 'YYYY-MM-DD') AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
                'lancamento' AS origem, l.descricao AS descricao, l.valor AS valor,
                cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
                l.id_lancamento AS id_lancamento
@@ -292,7 +292,7 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
     AppDataSource.query(
       `
       SELECT * FROM (
-        SELECT p.pago_data AS data, 'entrada' AS movimento, 'venda' AS origem,
+        SELECT TO_CHAR(p.pago_data, 'YYYY-MM-DD') AS data, 'entrada' AS movimento, 'venda' AS origem,
                CONCAT('Recebimento venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
                COALESCE(p.valor_pago, p.valor) AS valor,
                NULL::text AS conta_contabil
@@ -303,7 +303,7 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
 
         UNION ALL
 
-        SELECT dp.pago_data AS data, 'saida' AS movimento, 'despesa' AS origem,
+        SELECT TO_CHAR(dp.pago_data, 'YYYY-MM-DD') AS data, 'saida' AS movimento, 'despesa' AS origem,
                d.descricao AS descricao,
                dp.valor_pago AS valor,
                cat.nome AS conta_contabil
@@ -315,7 +315,7 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
 
         UNION ALL
 
-        SELECT l.data AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
+        SELECT TO_CHAR(l.data, 'YYYY-MM-DD') AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
                'lancamento' AS origem, l.descricao AS descricao, l.valor AS valor,
                cat.nome AS conta_contabil
         FROM lancamentos_manuais l

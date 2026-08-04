@@ -466,6 +466,7 @@ export default function Despesas() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       setDialogDespesaAberto(false);
       setFormDespesa(emptyDespesaForm);
       toast({ title: modoDespesa === "novo" ? "Conta a pagar cadastrada" : "Conta a pagar atualizada" });
@@ -484,6 +485,7 @@ export default function Despesas() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       toast({ title: "Conta a pagar excluída" });
     },
     onError: (e: Error) => toast({ title: "Não foi possível excluir", description: e.message, variant: "destructive" }),
@@ -529,6 +531,7 @@ export default function Despesas() {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       queryClient.invalidateQueries({ queryKey: ["despesa-detalhe", despesaSelecionadaId] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       setDialogPagarAberto(false);
       toast({ title: "Parcela paga com sucesso" });
     },
@@ -554,6 +557,7 @@ export default function Despesas() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       setDialogPagarLoteAberto(false);
       setSelecionadas(new Set());
       setValoresLote({});
@@ -576,6 +580,7 @@ export default function Despesas() {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       queryClient.invalidateQueries({ queryKey: ["despesa-detalhe", despesaSelecionadaId] });
+      queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       toast({ title: "Parcela estornada" });
     },
     onError: (e: Error) => toast({ title: "Erro ao estornar", description: e.message, variant: "destructive" }),

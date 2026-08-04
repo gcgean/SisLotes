@@ -1163,7 +1163,7 @@ relatoriosRouter.get(
     const [aPagarRows, aReceberRows] = await Promise.all([
       AppDataSource.query(
         `
-        SELECT dp.vencimento AS data, d.descricao AS descricao, dp.valor AS valor, f.nome AS terceiro
+        SELECT TO_CHAR(dp.vencimento, 'YYYY-MM-DD') AS data, d.descricao AS descricao, dp.valor AS valor, f.nome AS terceiro
         FROM despesa_parcelas dp
         JOIN despesas d ON d.id_despesa = dp.id_despesa
         LEFT JOIN fornecedores f ON f.id_fornecedor = d.id_fornecedor
@@ -1175,7 +1175,7 @@ relatoriosRouter.get(
       ),
       AppDataSource.query(
         `
-        SELECT p.vencimento AS data,
+        SELECT TO_CHAR(p.vencimento, 'YYYY-MM-DD') AS data,
                CONCAT('Venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
                p.valor AS valor, cli.nome AS terceiro
         FROM pagamentos p
