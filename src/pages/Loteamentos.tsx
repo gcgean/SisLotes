@@ -32,6 +32,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DividaPorLoteamentoTab } from "@/components/loteamentos/DividaPorLoteamentoTab";
 
 interface Loteamento {
   id_loteamento: number;
@@ -376,6 +377,13 @@ const Loteamentos = () => {
           </Button>
         </div>
 
+        <Tabs defaultValue="lista">
+          <TabsList className="grid grid-cols-2 w-full max-w-md">
+            <TabsTrigger value="lista">Loteamentos</TabsTrigger>
+            <TabsTrigger value="divida">Dívida por loteamento</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="lista" className="pt-4 space-y-6">
         <div className="flex flex-col md:flex-row md:flex-wrap gap-3">
           <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -478,6 +486,12 @@ const Loteamentos = () => {
             </div>
           </div>
         )}
+          </TabsContent>
+
+          <TabsContent value="divida" className="pt-4">
+            <DividaPorLoteamentoTab />
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* Dialog - Lotes do Loteamento */}

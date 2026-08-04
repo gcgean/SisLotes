@@ -952,6 +952,92 @@ relatoriosRouter.get(
   },
 );
 
+const dividaLoteamentoQuerySchema = z.object({
+  id_loteamento: z.union([z.string(), z.array(z.string())]).optional(),
+});
+
+// ─── GET /divida-por-loteamento?id_loteamento=1&id_loteamento=2 — quanto cada
+// loteamento tem vendido, pago, atrasado e ainda a vencer (um ou mais loteamentos,
+// ou todos se nenhum for informado) ────────────────────────────────────────────
+relatoriosRouter.get(
+  "/divida-por-loteamento",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = dividaLoteamentoQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const raw = parseResult.data.id_loteamento;
+    const ids = (Array.isArray(raw) ? raw : raw ? [raw] : [])
+      .map((v) => parseInt(v, 10))
+      .filter((n) => Number.isInteger(n) && n > 0);
+
+    const params: unknown[] = [idEmpresa];
+    let loteamentoFilter = "";
+    if (ids.length > 0) {
+      params.push(ids);
+      loteamentoFilter = `AND lo.id_loteamento = ANY($${params.length}::int[])`;
+    }
+
+    const rows = await AppDataSource.query(
+      `
+      SELECT
+        lo.id_loteamento,
+        lo.nome,
+        COALESCE(SUM(p.valor), 0) AS total_vendido,
+        COALESCE(SUM(CASE WHEN p.situacao = 'pago' THEN COALESCE(p.valor_pago, p.valor) ELSE 0 END), 0) AS total_pago,
+        COALESCE(SUM(CASE WHEN p.situacao = 'aberto' AND p.vencimento < CURRENT_DATE THEN p.valor ELSE 0 END), 0) AS total_atrasado,
+        COALESCE(SUM(CASE WHEN p.situacao = 'aberto' AND p.vencimento >= CURRENT_DATE THEN p.valor ELSE 0 END), 0) AS total_a_vencer,
+        COUNT(*) FILTER (WHERE p.situacao = 'aberto' AND p.vencimento < CURRENT_DATE) AS qtd_atrasadas,
+        COUNT(*) FILTER (WHERE p.situacao = 'aberto' AND p.vencimento >= CURRENT_DATE) AS qtd_a_vencer,
+        COUNT(DISTINCT v.id_venda) AS qtd_vendas
+      FROM loteamentos lo
+      LEFT JOIN lotes l ON l.id_loteamento = lo.id_loteamento
+      LEFT JOIN vendas v ON v.id_lote = l.id_lote AND v.status <> 'cancelada'
+      LEFT JOIN pagamentos p ON p.id_venda = v.id_venda
+      WHERE lo.id_empresa = $1 ${loteamentoFilter}
+      GROUP BY lo.id_loteamento, lo.nome
+      ORDER BY lo.nome ASC
+      `,
+      params
+    );
+
+    type Row = {
+      id_loteamento: number;
+      nome: string;
+      total_vendido: string | number;
+      total_pago: string | number;
+      total_atrasado: string | number;
+      total_a_vencer: string | number;
+      qtd_atrasadas: string | number;
+      qtd_a_vencer: string | number;
+      qtd_vendas: string | number;
+    };
+
+    const resultado = (rows as Row[]).map((r) => {
+      const totalVendido = Number(r.total_vendido ?? 0);
+      const totalPago = Number(r.total_pago ?? 0);
+      return {
+        id_loteamento: Number(r.id_loteamento),
+        nome: r.nome,
+        totalVendido,
+        totalPago,
+        totalAtrasado: Number(r.total_atrasado ?? 0),
+        totalAVencer: Number(r.total_a_vencer ?? 0),
+        qtdParcelasAtrasadas: Number(r.qtd_atrasadas ?? 0),
+        qtdParcelasAVencer: Number(r.qtd_a_vencer ?? 0),
+        qtdVendas: Number(r.qtd_vendas ?? 0),
+        percentualPago: totalVendido > 0 ? (totalPago / totalVendido) * 100 : 0,
+      };
+    });
+
+    return res.json(resultado);
+  },
+);
+
 const despesasEmAbertoQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),
