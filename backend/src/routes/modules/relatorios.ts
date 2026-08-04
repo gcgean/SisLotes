@@ -1255,6 +1255,60 @@ relatoriosRouter.get(
   },
 );
 
+// ─── GET /fluxo-de-caixa-previsto — previsão mensal (próximos 12 meses) de
+// entradas (parcelas de venda em aberto), saídas (contas a pagar em aberto) e
+// saldo projetado das contas, partindo do saldo real de hoje ──────────────────
+relatoriosRouter.get(
+  "/fluxo-de-caixa-previsto",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const hoje = new Date();
+    const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0, 10);
+    const fimPeriodo = new Date(hoje.getFullYear(), hoje.getMonth() + 12, 0).toISOString().slice(0, 10);
+
+    const [saldoHoje, saidasRows, entradasRows] = await Promise.all([
+      saldoAtualGeralEmpresa(idEmpresa),
+      AppDataSource.query(
+        `SELECT TO_CHAR(dp.vencimento, 'YYYY-MM') AS mes, SUM(dp.valor) AS total
+         FROM despesa_parcelas dp
+         WHERE dp.id_empresa = $1 AND dp.situacao = 'aberto'
+           AND dp.vencimento >= $2 AND dp.vencimento <= $3
+         GROUP BY mes ORDER BY mes`,
+        [idEmpresa, inicioMes, fimPeriodo]
+      ),
+      AppDataSource.query(
+        `SELECT TO_CHAR(p.vencimento, 'YYYY-MM') AS mes, SUM(p.valor) AS total
+         FROM pagamentos p
+         JOIN vendas v ON v.id_venda = p.id_venda
+         WHERE p.id_empresa = $1 AND p.situacao = 'aberto' AND v.status <> 'cancelada'
+           AND p.vencimento >= $2 AND p.vencimento <= $3
+         GROUP BY mes ORDER BY mes`,
+        [idEmpresa, inicioMes, fimPeriodo]
+      ),
+    ]);
+
+    type MesRow = { mes: string; total: string | number | null };
+    const saidasMap = new Map((saidasRows as MesRow[]).map((r) => [r.mes, Number(r.total ?? 0)]));
+    const entradasMap = new Map((entradasRows as MesRow[]).map((r) => [r.mes, Number(r.total ?? 0)]));
+
+    let saldoCorrente = saldoHoje;
+    const meses: Array<{ mes: string; entradas: number; saidas: number; saldo: number }> = [];
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+      const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const entradas = entradasMap.get(chave) ?? 0;
+      const saidas = saidasMap.get(chave) ?? 0;
+      saldoCorrente += entradas - saidas;
+      meses.push({ mes: chave, entradas, saidas, saldo: saldoCorrente });
+    }
+
+    return res.json(meses);
+  },
+);
+
 const despesasPorCategoriaQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),

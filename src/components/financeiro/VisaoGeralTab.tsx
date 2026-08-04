@@ -166,6 +166,15 @@ export function VisaoGeralTab() {
     },
   });
 
+  const { data: fluxoPrevisto = [] } = useQuery<FluxoCaixaMes[]>({
+    queryKey: ["financeiro", "fluxo-de-caixa-previsto"],
+    queryFn: async () => {
+      const r = await fetch("/api/relatorios/fluxo-de-caixa-previsto", { headers });
+      if (!r.ok) throw new Error("Erro ao carregar previsão de fluxo de caixa");
+      return r.json();
+    },
+  });
+
   const { data: contas = [] } = useQuery<Conta[]>({
     queryKey: ["financeiro", "contas"],
     queryFn: async () => {
@@ -494,6 +503,56 @@ export function VisaoGeralTab() {
               </ResponsiveContainer>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Previsão do fluxo de caixa — próximos 12 meses */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-emerald-600" />
+            Previsão do fluxo de caixa — próximos 12 meses
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {fluxoPrevisto.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-2">Nenhuma parcela em aberto para projetar.</p>
+          ) : (
+            <div
+              style={{ height: 300 }}
+              className="[&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line]:stroke-border/50"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={fluxoPrevisto} margin={{ left: 8, right: 8 }}>
+                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                  <XAxis dataKey="mes" tick={{ fontSize: 12 }} />
+                  <YAxis yAxisId="mov" tick={{ fontSize: 12 }} tickFormatter={(v) => fmt(v)} width={90} />
+                  <YAxis yAxisId="saldo" orientation="right" tick={{ fontSize: 12 }} tickFormatter={(v) => fmt(v)} width={90} />
+                  <Tooltip
+                    contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                    labelStyle={{ color: "hsl(var(--foreground))" }}
+                    formatter={(value: number, name: string) => {
+                      if (name === "saldo") return [fmt(value), "Saldo do caixa"];
+                      return [fmt(value), name === "entradas" ? "Entradas previstas" : "Saídas previstas"];
+                    }}
+                  />
+                  <Legend
+                    formatter={(value) =>
+                      value === "saldo" ? "Saldo do caixa" : value === "entradas" ? "Entradas previstas" : "Saídas previstas"
+                    }
+                    wrapperStyle={{ fontSize: 12 }}
+                  />
+                  <Bar yAxisId="mov" dataKey="entradas" fill={COR_ENTRADA} radius={[4, 4, 0, 0]} />
+                  <Bar yAxisId="mov" dataKey="saidas" fill={COR_SAIDA} radius={[4, 4, 0, 0]} />
+                  <Line yAxisId="saldo" type="monotone" dataKey="saldo" stroke="#2563eb" strokeWidth={2} dot={{ r: 3 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground mt-2">
+            Baseado nas parcelas de venda e contas a pagar já cadastradas com vencimento em cada mês, partindo do saldo
+            atual das contas. Meses sem lançamentos futuros cadastrados aparecem com entradas/saídas zeradas.
+          </p>
         </CardContent>
       </Card>
     </div>
