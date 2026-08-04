@@ -7,11 +7,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown, AlertTriangle, CheckCircle2, Clock, Wallet } from "lucide-react";
 
-interface Loteamento {
-  id_loteamento: number;
-  nome: string;
-}
-
 interface DividaLoteamento {
   id_loteamento: number;
   nome: string;
@@ -35,26 +30,19 @@ export function DividaPorLoteamentoTab() {
 
   const [selecionados, setSelecionados] = useState<number[]>([]);
 
-  const { data: loteamentos = [] } = useQuery<Loteamento[]>({
-    queryKey: ["loteamentos"],
+  // Busca o dataset completo uma vez e filtra no cliente: a lista tem no máximo
+  // uma linha por loteamento, então o filtro é instantâneo e as opções do
+  // seletor saem sempre da mesma fonte que alimenta a tabela.
+  const { data: todos = [], isLoading } = useQuery<DividaLoteamento[]>({
+    queryKey: ["divida-por-loteamento"],
     queryFn: async () => {
-      const r = await fetch("/api/loteamentos", { headers });
-      if (!r.ok) return [];
-      return r.json();
-    },
-  });
-
-  const { data: dados = [], isLoading } = useQuery<DividaLoteamento[]>({
-    queryKey: ["divida-por-loteamento", selecionados],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      selecionados.forEach((id) => params.append("id_loteamento", String(id)));
-      const qs = params.toString();
-      const r = await fetch(`/api/relatorios/divida-por-loteamento${qs ? `?${qs}` : ""}`, { headers });
+      const r = await fetch("/api/relatorios/divida-por-loteamento", { headers });
       if (!r.ok) throw new Error("Erro ao carregar dívida por loteamento");
       return r.json();
     },
   });
+
+  const dados = selecionados.length === 0 ? todos : todos.filter((d) => selecionados.includes(d.id_loteamento));
 
   function toggle(id: number) {
     setSelecionados((atual) => (atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]));
@@ -74,7 +62,7 @@ export function DividaPorLoteamentoTab() {
     selecionados.length === 0
       ? "Todos os loteamentos"
       : selecionados.length === 1
-        ? loteamentos.find((l) => l.id_loteamento === selecionados[0])?.nome ?? "1 loteamento"
+        ? todos.find((l) => l.id_loteamento === selecionados[0])?.nome ?? "1 loteamento"
         : `${selecionados.length} loteamentos`;
 
   return (
@@ -89,17 +77,27 @@ export function DividaPorLoteamentoTab() {
           </PopoverTrigger>
           <PopoverContent className="w-[280px] p-2" align="start">
             <div className="max-h-[300px] overflow-y-auto space-y-1">
-              {loteamentos.map((l) => (
-                <label
+              {todos.length === 0 && (
+                <div className="px-2 py-3 text-xs text-muted-foreground text-center">
+                  {isLoading ? "Carregando…" : "Nenhum loteamento encontrado."}
+                </div>
+              )}
+              {/* Botão (não <label>) para o clique disparar o toggle uma única vez:
+                  um <label> em volta do Checkbox faz o evento chegar duas vezes. */}
+              {todos.map((l) => (
+                <button
                   key={l.id_loteamento}
-                  className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-pointer text-sm"
+                  type="button"
+                  onClick={() => toggle(l.id_loteamento)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-pointer text-sm text-left"
                 >
                   <Checkbox
                     checked={selecionados.includes(l.id_loteamento)}
-                    onCheckedChange={() => toggle(l.id_loteamento)}
+                    className="pointer-events-none"
+                    tabIndex={-1}
                   />
                   <span className="truncate">{l.nome}</span>
-                </label>
+                </button>
               ))}
             </div>
             {selecionados.length > 0 && (
