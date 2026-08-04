@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import {
   TrendingUp,
   TrendingDown,
@@ -14,6 +14,8 @@ import {
   CheckCircle2,
   ArrowDownCircle,
   ArrowUpCircle,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import {
   BarChart,
@@ -99,6 +101,19 @@ function mesAtualIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function somarMeses(mesIso: string, delta: number) {
+  const [ano, mes] = mesIso.split("-").map(Number);
+  const d = new Date(ano, mes - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function mesLabel(mesIso: string) {
+  const [ano, mes] = mesIso.split("-").map(Number);
+  const d = new Date(ano, mes - 1, 1);
+  const label = format(d, "MMMM 'de' yyyy", { locale: ptBR });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function diaLabel(iso: string) {
   const d = parseISO(iso);
   return { numero: format(d, "dd"), semana: format(d, "EEEEEE", { locale: ptBR }) };
@@ -171,12 +186,25 @@ export function VisaoGeralTab() {
             <CalendarClock className="h-4 w-4 text-emerald-600" />
             Fluxo de caixa futuro do mês
           </CardTitle>
-          <Input
-            type="month"
-            value={mesSelecionado}
-            onChange={(e) => setMesSelecionado(e.target.value)}
-            className="w-[160px] h-8 text-sm"
-          />
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setMesSelecionado((m) => somarMeses(m, -1))}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm font-medium min-w-[140px] text-center capitalize">{mesLabel(mesSelecionado)}</span>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setMesSelecionado((m) => somarMeses(m, 1))}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           {carregandoFluxoFuturo || !fluxoFuturo ? (
@@ -236,76 +264,62 @@ export function VisaoGeralTab() {
                 </div>
               )}
 
-              {/* Dia a dia do mês */}
-              <div className="rounded-lg border overflow-x-auto max-h-[420px] overflow-y-auto">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-background">
-                    <tr className="border-b bg-muted/40 text-muted-foreground text-xs uppercase tracking-wide">
-                      <th className="px-3 py-2 text-left font-semibold">Dia</th>
-                      <th className="px-3 py-2 text-left font-semibold">A pagar</th>
-                      <th className="px-3 py-2 text-left font-semibold">A receber</th>
-                      <th className="px-3 py-2 text-right font-semibold">Saldo do dia</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {fluxoFuturo.dias.map((d) => {
-                      const { numero, semana } = diaLabel(d.data);
-                      const semMovimento = d.aPagar === 0 && d.aReceber === 0;
-                      return (
-                        <tr
-                          key={d.data}
-                          className={`border-b last:border-0 ${d.saldoDia < 0 ? "bg-red-50 dark:bg-red-950/10" : "hover:bg-muted/30"}`}
-                        >
-                          <td className="px-3 py-2 text-xs whitespace-nowrap">
-                            <span className="font-medium">{numero}</span>{" "}
-                            <span className="text-muted-foreground uppercase">{semana}</span>
-                          </td>
-                          <td className="px-3 py-2">
-                            {d.aPagar > 0 ? (
-                              <div className="flex items-center gap-1 text-red-500 font-medium">
-                                <ArrowDownCircle className="h-3 w-3 shrink-0" /> {fmt(d.aPagar)}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">—</span>
-                            )}
-                            {d.itensPagar.length > 0 && (
-                              <div
-                                className="text-[11px] text-muted-foreground truncate max-w-[220px]"
-                                title={d.itensPagar.map((i) => `${i.descricao} (${i.terceiro ?? "—"})`).join("; ")}
-                              >
-                                {d.itensPagar.map((i) => i.descricao).join(", ")}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            {d.aReceber > 0 ? (
-                              <div className="flex items-center gap-1 text-emerald-600 font-medium">
-                                <ArrowUpCircle className="h-3 w-3 shrink-0" /> {fmt(d.aReceber)}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground text-xs">—</span>
-                            )}
-                            {d.itensReceber.length > 0 && (
-                              <div
-                                className="text-[11px] text-muted-foreground truncate max-w-[220px]"
-                                title={d.itensReceber.map((i) => `${i.descricao} (${i.terceiro ?? "—"})`).join("; ")}
-                              >
-                                {d.itensReceber.map((i) => i.descricao).join(", ")}
-                              </div>
-                            )}
-                          </td>
-                          <td
-                            className={`px-3 py-2 text-right font-semibold ${
+              {/* Dia a dia do mês — dashboard horizontal com scroll lateral */}
+              <div>
+                <div className="text-xs text-muted-foreground mb-2">Dia a dia do mês (arraste para o lado)</div>
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                  {fluxoFuturo.dias.map((d) => {
+                    const { numero, semana } = diaLabel(d.data);
+                    const semMovimento = d.aPagar === 0 && d.aReceber === 0;
+                    return (
+                      <div
+                        key={d.data}
+                        className={`shrink-0 w-[132px] rounded-lg border p-2.5 flex flex-col gap-1.5 ${
+                          d.saldoDia < 0 ? "border-red-300 bg-red-50 dark:bg-red-950/10 dark:border-red-900" : ""
+                        }`}
+                      >
+                        <div className="flex items-baseline justify-between">
+                          <span className="text-base font-bold">{numero}</span>
+                          <span className="text-[11px] text-muted-foreground uppercase">{semana}</span>
+                        </div>
+
+                        <div className="space-y-0.5 min-h-[36px]">
+                          {d.aPagar > 0 ? (
+                            <div
+                              className="flex items-center gap-1 text-red-500 font-medium text-xs"
+                              title={d.itensPagar.map((i) => `${i.descricao} (${i.terceiro ?? "—"})`).join("; ")}
+                            >
+                              <ArrowDownCircle className="h-3 w-3 shrink-0" /> {fmt(d.aPagar)}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-muted-foreground/60">Sem pagamentos</div>
+                          )}
+                          {d.aReceber > 0 ? (
+                            <div
+                              className="flex items-center gap-1 text-emerald-600 font-medium text-xs"
+                              title={d.itensReceber.map((i) => `${i.descricao} (${i.terceiro ?? "—"})`).join("; ")}
+                            >
+                              <ArrowUpCircle className="h-3 w-3 shrink-0" /> {fmt(d.aReceber)}
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-muted-foreground/60">Sem recebimentos</div>
+                          )}
+                        </div>
+
+                        <div className="pt-1.5 mt-auto border-t">
+                          <div className="text-[10px] text-muted-foreground">Saldo do dia</div>
+                          <div
+                            className={`text-sm font-semibold ${
                               semMovimento ? "text-muted-foreground" : d.saldoDia >= 0 ? "" : "text-red-500"
                             }`}
                           >
                             {fmt(d.saldoDia)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </>
           )}
