@@ -71,7 +71,7 @@ contasRouter.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 // Soma o delta (créditos - débitos) de todas as contas da empresa, respeitando o
 // corte de saldo inicial de cada conta. ateExclusive limita a data (< ateExclusive);
 // sem ateExclusive, soma o histórico inteiro (usado para o saldo atual "de hoje").
-async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: string): Promise<number> {
+export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: string): Promise<number> {
   const params: unknown[] = [idEmpresa];
   let cutoffP = "";
   let cutoffL = "";
@@ -118,6 +118,15 @@ async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: string):
   );
 
   return Number((rows[0] as { delta: string | number })?.delta ?? 0);
+}
+
+// Saldo real, hoje, somando todas as contas da empresa (saldo_inicial + movimentos
+// já realizados). Usado como ponto de partida das projeções de fluxo de caixa.
+export async function saldoAtualGeralEmpresa(idEmpresa: number): Promise<number> {
+  const rows = await AppDataSource.query(`SELECT COALESCE(SUM(saldo_inicial), 0) AS total FROM contas WHERE id_empresa = $1`, [idEmpresa]);
+  const saldoInicialTotal = Number((rows[0] as { total: string | number })?.total ?? 0);
+  const delta = await deltaMovimentosEmpresa(idEmpresa);
+  return saldoInicialTotal + delta;
 }
 
 // ─── GET /extrato-geral?from&to — extrato consolidado de todas as contas da

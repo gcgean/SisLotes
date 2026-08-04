@@ -2,6 +2,7 @@ import { Request, Response, Router } from "express";
 import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { saldoAtualGeralEmpresa } from "./contas";
 
 export const relatoriosRouter = Router();
 relatoriosRouter.use(requireAuth, requireFeature("module_relatorios"));
@@ -1102,6 +1103,155 @@ relatoriosRouter.get(
       });
 
     return res.json(resultado);
+  },
+);
+
+const fluxoCaixaFuturoQuerySchema = z.object({
+  mes: z.string().regex(/^\d{4}-\d{2}$/, "Mês inválido (use YYYY-MM)").optional(),
+});
+
+// ─── GET /fluxo-de-caixa-futuro?mes=YYYY-MM — projeção de caixa do mês: saldo
+// inicial (real, hoje, projetado até o início do mês selecionado), o que tem a
+// pagar/receber dia a dia, saldo projetado por dia e alertas de risco de caixa ─
+relatoriosRouter.get(
+  "/fluxo-de-caixa-futuro",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = fluxoCaixaFuturoQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const hoje = new Date();
+    const mesParam = parseResult.data.mes ?? `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+    const [anoSel, mesSel] = mesParam.split("-").map(Number);
+    const inicioMes = new Date(anoSel, mesSel - 1, 1).toISOString().slice(0, 10);
+    const fimMes = new Date(anoSel, mesSel, 0).toISOString().slice(0, 10);
+    const hojeIso = hoje.toISOString().slice(0, 10);
+
+    const saldoHoje = await saldoAtualGeralEmpresa(idEmpresa);
+
+    // Se o mês selecionado é futuro, soma o que está previsto (aberto) para
+    // acontecer entre hoje e o início do mês, assumindo que será pago/recebido
+    // na data de vencimento. Para o mês atual (ou passado) esse intervalo é vazio.
+    let ajustePreMes = 0;
+    if (inicioMes > hojeIso) {
+      const rows = await AppDataSource.query(
+        `
+        SELECT
+          COALESCE((
+            SELECT SUM(p.valor) FROM pagamentos p
+            JOIN vendas v ON v.id_venda = p.id_venda
+            WHERE p.id_empresa = $1 AND p.situacao = 'aberto' AND v.status <> 'cancelada'
+              AND p.vencimento >= $2 AND p.vencimento < $3
+          ), 0)
+          - COALESCE((
+            SELECT SUM(dp.valor) FROM despesa_parcelas dp
+            WHERE dp.id_empresa = $1 AND dp.situacao = 'aberto'
+              AND dp.vencimento >= $2 AND dp.vencimento < $3
+          ), 0) AS ajuste
+        `,
+        [idEmpresa, hojeIso, inicioMes]
+      );
+      ajustePreMes = Number((rows[0] as { ajuste: string | number })?.ajuste ?? 0);
+    }
+
+    const saldoInicialPeriodo = saldoHoje + ajustePreMes;
+
+    const [aPagarRows, aReceberRows] = await Promise.all([
+      AppDataSource.query(
+        `
+        SELECT dp.vencimento AS data, d.descricao AS descricao, dp.valor AS valor, f.nome AS terceiro
+        FROM despesa_parcelas dp
+        JOIN despesas d ON d.id_despesa = dp.id_despesa
+        LEFT JOIN fornecedores f ON f.id_fornecedor = d.id_fornecedor
+        WHERE dp.id_empresa = $1 AND dp.situacao = 'aberto'
+          AND dp.vencimento >= $2 AND dp.vencimento <= $3
+        ORDER BY dp.vencimento ASC
+        `,
+        [idEmpresa, inicioMes, fimMes]
+      ),
+      AppDataSource.query(
+        `
+        SELECT p.vencimento AS data,
+               CONCAT('Venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
+               p.valor AS valor, cli.nome AS terceiro
+        FROM pagamentos p
+        JOIN vendas v ON v.id_venda = p.id_venda
+        JOIN clientes cli ON cli.id_cliente = v.id_cliente
+        WHERE p.id_empresa = $1 AND p.situacao = 'aberto' AND v.status <> 'cancelada'
+          AND p.vencimento >= $2 AND p.vencimento <= $3
+        ORDER BY p.vencimento ASC
+        `,
+        [idEmpresa, inicioMes, fimMes]
+      ),
+    ]);
+
+    type ItemRow = { data: string; descricao: string; valor: string | number; terceiro: string | null };
+
+    const totalAPagar = (aPagarRows as ItemRow[]).reduce((acc, r) => acc + Number(r.valor), 0);
+    const totalAReceber = (aReceberRows as ItemRow[]).reduce((acc, r) => acc + Number(r.valor), 0);
+
+    const qtdDias = Number(fimMes.slice(-2));
+    const itensPagarPorDia = new Map<string, ItemRow[]>();
+    for (const r of aPagarRows as ItemRow[]) {
+      const lista = itensPagarPorDia.get(r.data) ?? [];
+      lista.push(r);
+      itensPagarPorDia.set(r.data, lista);
+    }
+    const itensReceberPorDia = new Map<string, ItemRow[]>();
+    for (const r of aReceberRows as ItemRow[]) {
+      const lista = itensReceberPorDia.get(r.data) ?? [];
+      lista.push(r);
+      itensReceberPorDia.set(r.data, lista);
+    }
+
+    let saldoCorrente = saldoInicialPeriodo;
+    const dias: Array<{
+      data: string;
+      aPagar: number;
+      aReceber: number;
+      resultadoDia: number;
+      saldoDia: number;
+      itensPagar: { descricao: string; valor: number; terceiro: string | null }[];
+      itensReceber: { descricao: string; valor: number; terceiro: string | null }[];
+    }> = [];
+
+    for (let dia = 1; dia <= qtdDias; dia++) {
+      const dataIso = `${inicioMes.slice(0, 8)}${String(dia).padStart(2, "0")}`;
+      const itensPagar = itensPagarPorDia.get(dataIso) ?? [];
+      const itensReceber = itensReceberPorDia.get(dataIso) ?? [];
+      const aPagar = itensPagar.reduce((acc, r) => acc + Number(r.valor), 0);
+      const aReceber = itensReceber.reduce((acc, r) => acc + Number(r.valor), 0);
+      saldoCorrente += aReceber - aPagar;
+      dias.push({
+        data: dataIso,
+        aPagar,
+        aReceber,
+        resultadoDia: aReceber - aPagar,
+        saldoDia: saldoCorrente,
+        itensPagar: itensPagar.map((r) => ({ descricao: r.descricao, valor: Number(r.valor), terceiro: r.terceiro })),
+        itensReceber: itensReceber.map((r) => ({ descricao: r.descricao, valor: Number(r.valor), terceiro: r.terceiro })),
+      });
+    }
+
+    const saldoFinalProjetado = saldoCorrente;
+    const diasNegativos = dias.filter((d) => d.saldoDia < 0).map((d) => d.data);
+    const melhorDia = dias.reduce((melhor, d) => (d.saldoDia > melhor.saldoDia ? d : melhor), dias[0] ?? null);
+
+    return res.json({
+      mes: mesParam,
+      saldoInicialPeriodo,
+      totalAPagar,
+      totalAReceber,
+      saldoFinalProjetado,
+      dias,
+      diasNegativos,
+      melhorDiaPagamento: melhorDia?.data ?? null,
+      melhorDiaSaldo: melhorDia?.saldoDia ?? null,
+    });
   },
 );
 

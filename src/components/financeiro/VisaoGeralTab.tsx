@@ -1,7 +1,20 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TrendingUp, TrendingDown, Scale, Percent, Wallet } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import {
+  TrendingUp,
+  TrendingDown,
+  Scale,
+  Percent,
+  Wallet,
+  CalendarClock,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowDownCircle,
+  ArrowUpCircle,
+} from "lucide-react";
 import {
   BarChart,
   Bar,
@@ -13,6 +26,8 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 
 interface DashboardKpis {
   recebidoMes: number;
@@ -42,6 +57,34 @@ interface Conta {
   saldo_atual?: number;
 }
 
+interface ItemDia {
+  descricao: string;
+  valor: number;
+  terceiro: string | null;
+}
+
+interface DiaFluxo {
+  data: string;
+  aPagar: number;
+  aReceber: number;
+  resultadoDia: number;
+  saldoDia: number;
+  itensPagar: ItemDia[];
+  itensReceber: ItemDia[];
+}
+
+interface FluxoCaixaFuturo {
+  mes: string;
+  saldoInicialPeriodo: number;
+  totalAPagar: number;
+  totalAReceber: number;
+  saldoFinalProjetado: number;
+  dias: DiaFluxo[];
+  diasNegativos: string[];
+  melhorDiaPagamento: string | null;
+  melhorDiaSaldo: number | null;
+}
+
 const COR_POSITIVO = "#059669"; // emerald-600
 const COR_NEGATIVO = "#ef4444"; // red-500
 const COR_ENTRADA = "#059669";
@@ -51,9 +94,30 @@ function fmt(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 }
 
+function mesAtualIso() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function diaLabel(iso: string) {
+  const d = parseISO(iso);
+  return { numero: format(d, "dd"), semana: format(d, "EEEEEE", { locale: ptBR }) };
+}
+
 export function VisaoGeralTab() {
   const { token } = useAuth();
   const headers = { Authorization: `Bearer ${token}` };
+
+  const [mesSelecionado, setMesSelecionado] = useState(mesAtualIso());
+
+  const { data: fluxoFuturo, isLoading: carregandoFluxoFuturo } = useQuery<FluxoCaixaFuturo>({
+    queryKey: ["financeiro", "fluxo-de-caixa-futuro", mesSelecionado],
+    queryFn: async () => {
+      const r = await fetch(`/api/relatorios/fluxo-de-caixa-futuro?mes=${mesSelecionado}`, { headers });
+      if (!r.ok) throw new Error("Erro ao carregar fluxo de caixa futuro");
+      return r.json();
+    },
+  });
 
   const { data: kpis } = useQuery<DashboardKpis>({
     queryKey: ["financeiro", "dashboard-kpis"],
@@ -100,6 +164,154 @@ export function VisaoGeralTab() {
 
   return (
     <div className="space-y-6">
+      {/* Fluxo de caixa futuro do mês */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <CalendarClock className="h-4 w-4 text-emerald-600" />
+            Fluxo de caixa futuro do mês
+          </CardTitle>
+          <Input
+            type="month"
+            value={mesSelecionado}
+            onChange={(e) => setMesSelecionado(e.target.value)}
+            className="w-[160px] h-8 text-sm"
+          />
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {carregandoFluxoFuturo || !fluxoFuturo ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Carregando projeção…</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="rounded-lg border p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Saldo inicial do período</div>
+                  <div className={`text-base font-bold ${fluxoFuturo.saldoInicialPeriodo >= 0 ? "" : "text-red-500"}`}>
+                    {fmt(fluxoFuturo.saldoInicialPeriodo)}
+                  </div>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <div className="text-xs text-muted-foreground">A pagar no mês</div>
+                  <div className="text-base font-bold text-red-500">{fmt(fluxoFuturo.totalAPagar)}</div>
+                </div>
+                <div className="rounded-lg border p-3 text-center">
+                  <div className="text-xs text-muted-foreground">A receber no mês</div>
+                  <div className="text-base font-bold text-emerald-600">{fmt(fluxoFuturo.totalAReceber)}</div>
+                </div>
+                <div className="rounded-lg border p-3 text-center bg-muted/30">
+                  <div className="text-xs text-muted-foreground">Saldo final projetado</div>
+                  <div className={`text-base font-bold ${fluxoFuturo.saldoFinalProjetado >= 0 ? "" : "text-red-500"}`}>
+                    {fmt(fluxoFuturo.saldoFinalProjetado)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Alerta / recomendação */}
+              {fluxoFuturo.diasNegativos.length > 0 ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 p-3 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+                  <div className="text-sm">
+                    <span className="font-semibold text-red-600">Risco de falta de caixa: </span>
+                    previsão de saldo negativo em {fluxoFuturo.diasNegativos.length}{" "}
+                    {fluxoFuturo.diasNegativos.length === 1 ? "dia" : "dias"} do mês (
+                    {fluxoFuturo.diasNegativos.map((d) => diaLabel(d).numero).join(", ")}). Considere antecipar
+                    recebíveis, negociar prazos com fornecedores ou adiar pagamentos não essenciais para depois de{" "}
+                    {fluxoFuturo.melhorDiaPagamento ? diaLabel(fluxoFuturo.melhorDiaPagamento).numero : "—"}.
+                  </div>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-900 p-3 flex items-start gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                  <div className="text-sm">
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">Fluxo de caixa positivo </span>
+                    em todo o mês.
+                    {fluxoFuturo.melhorDiaPagamento && (
+                      <>
+                        {" "}Melhor dia para concentrar pagamentos extras ou compras:{" "}
+                        <span className="font-semibold">dia {diaLabel(fluxoFuturo.melhorDiaPagamento).numero}</span>{" "}
+                        (saldo projetado de {fmt(fluxoFuturo.melhorDiaSaldo ?? 0)}).
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Dia a dia do mês */}
+              <div className="rounded-lg border overflow-x-auto max-h-[420px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 bg-background">
+                    <tr className="border-b bg-muted/40 text-muted-foreground text-xs uppercase tracking-wide">
+                      <th className="px-3 py-2 text-left font-semibold">Dia</th>
+                      <th className="px-3 py-2 text-left font-semibold">A pagar</th>
+                      <th className="px-3 py-2 text-left font-semibold">A receber</th>
+                      <th className="px-3 py-2 text-right font-semibold">Saldo do dia</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fluxoFuturo.dias.map((d) => {
+                      const { numero, semana } = diaLabel(d.data);
+                      const semMovimento = d.aPagar === 0 && d.aReceber === 0;
+                      return (
+                        <tr
+                          key={d.data}
+                          className={`border-b last:border-0 ${d.saldoDia < 0 ? "bg-red-50 dark:bg-red-950/10" : "hover:bg-muted/30"}`}
+                        >
+                          <td className="px-3 py-2 text-xs whitespace-nowrap">
+                            <span className="font-medium">{numero}</span>{" "}
+                            <span className="text-muted-foreground uppercase">{semana}</span>
+                          </td>
+                          <td className="px-3 py-2">
+                            {d.aPagar > 0 ? (
+                              <div className="flex items-center gap-1 text-red-500 font-medium">
+                                <ArrowDownCircle className="h-3 w-3 shrink-0" /> {fmt(d.aPagar)}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                            {d.itensPagar.length > 0 && (
+                              <div
+                                className="text-[11px] text-muted-foreground truncate max-w-[220px]"
+                                title={d.itensPagar.map((i) => `${i.descricao} (${i.terceiro ?? "—"})`).join("; ")}
+                              >
+                                {d.itensPagar.map((i) => i.descricao).join(", ")}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2">
+                            {d.aReceber > 0 ? (
+                              <div className="flex items-center gap-1 text-emerald-600 font-medium">
+                                <ArrowUpCircle className="h-3 w-3 shrink-0" /> {fmt(d.aReceber)}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                            {d.itensReceber.length > 0 && (
+                              <div
+                                className="text-[11px] text-muted-foreground truncate max-w-[220px]"
+                                title={d.itensReceber.map((i) => `${i.descricao} (${i.terceiro ?? "—"})`).join("; ")}
+                              >
+                                {d.itensReceber.map((i) => i.descricao).join(", ")}
+                              </div>
+                            )}
+                          </td>
+                          <td
+                            className={`px-3 py-2 text-right font-semibold ${
+                              semMovimento ? "text-muted-foreground" : d.saldoDia >= 0 ? "" : "text-red-500"
+                            }`}
+                          >
+                            {fmt(d.saldoDia)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Card>
@@ -215,7 +427,7 @@ export function VisaoGeralTab() {
       {/* Fluxo de caixa */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-semibold">Fluxo de caixa (últimos 12 meses)</CardTitle>
+          <CardTitle className="text-sm font-semibold">Evolução do fluxo de caixa — entradas e saídas (últimos 12 meses)</CardTitle>
         </CardHeader>
         <CardContent>
           {fluxoCaixa.length === 0 ? (
