@@ -2,8 +2,8 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,7 +14,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, ArrowUpCircle, ArrowDownCircle, Split } from "lucide-react";
+import { Plus, Pencil, Trash2 } from "lucide-react";
 import { formatDateBR } from "@/lib/date-br";
 import { LancamentoDialog, Lancamento } from "@/components/financeiro/LancamentoDialog";
 
@@ -23,21 +23,45 @@ interface Conta {
   apelido: string;
   ativo: boolean;
 }
-interface Loteamento {
-  id_loteamento: number;
-  nome: string;
+
+interface MovimentoGeral {
+  data: string;
+  movimento: "entrada" | "saida";
+  origem: "venda" | "despesa" | "lancamento";
+  descricao: string;
+  valor: number;
+  contaContabil: string | null;
+  contaApelido: string;
+  idConta: number;
+  idLancamento: number | null;
+  saldo: number;
 }
-interface PlanoConta {
-  id_conta_contabil: number;
-  nome: string;
+
+interface ExtratoGeral {
+  saldoInicialPeriodo: number;
+  saldoFinalPeriodo: number;
+  totalCreditos: number;
+  totalDebitos: number;
+  saldoAtualGeral: number;
+  movimentos: MovimentoGeral[];
 }
-interface Fornecedor {
-  id_fornecedor: number;
-  nome: string;
-}
+
+const ORIGEM_LABEL: Record<string, string> = {
+  venda: "Recebimento de venda",
+  despesa: "Pagamento de despesa",
+  lancamento: "Lançamento manual",
+};
 
 function fmt(v: number) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+}
+
+function primeiroDiaMes() {
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10);
+}
+function hojeIso() {
+  return new Date().toISOString().slice(0, 10);
 }
 
 export function LancamentosTab() {
@@ -46,18 +70,12 @@ export function LancamentosTab() {
   const qc = useQueryClient();
   const headers = { Authorization: `Bearer ${token}` };
 
+  const [from, setFrom] = useState(primeiroDiaMes());
+  const [to, setTo] = useState(hojeIso());
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const { data: lancamentos = [], isLoading } = useQuery<Lancamento[]>({
-    queryKey: ["financeiro", "lancamentos"],
-    queryFn: async () => {
-      const r = await fetch("/api/lancamentos", { headers });
-      if (!r.ok) throw new Error("Erro ao carregar lançamentos");
-      return r.json();
-    },
-  });
 
   const { data: contas = [] } = useQuery<Conta[]>({
     queryKey: ["financeiro", "contas-ativas"],
@@ -68,29 +86,22 @@ export function LancamentosTab() {
     },
   });
 
-  const { data: loteamentos = [] } = useQuery<Loteamento[]>({
-    queryKey: ["loteamentos"],
+  // Fonte dos dados de edição/exclusão (só lançamentos manuais podem ser alterados).
+  const { data: lancamentos = [] } = useQuery<Lancamento[]>({
+    queryKey: ["financeiro", "lancamentos"],
     queryFn: async () => {
-      const r = await fetch("/api/loteamentos", { headers });
-      if (!r.ok) return [];
+      const r = await fetch("/api/lancamentos", { headers });
+      if (!r.ok) throw new Error("Erro ao carregar lançamentos");
       return r.json();
     },
   });
 
-  const { data: planoContas = [] } = useQuery<PlanoConta[]>({
-    queryKey: ["despesas-categorias"],
+  const { data: extrato, isLoading } = useQuery<ExtratoGeral>({
+    queryKey: ["financeiro", "extrato-geral", from, to],
     queryFn: async () => {
-      const r = await fetch("/api/despesas/plano-de-contas", { headers });
-      if (!r.ok) return [];
-      return r.json();
-    },
-  });
-
-  const { data: fornecedores = [] } = useQuery<Fornecedor[]>({
-    queryKey: ["despesas-fornecedores"],
-    queryFn: async () => {
-      const r = await fetch("/api/despesas/fornecedores", { headers });
-      if (!r.ok) return [];
+      const params = new URLSearchParams({ from, to });
+      const r = await fetch(`/api/contas/extrato-geral?${params.toString()}`, { headers });
+      if (!r.ok) throw new Error("Erro ao carregar extrato");
       return r.json();
     },
   });
@@ -108,23 +119,27 @@ export function LancamentosTab() {
     onError: () => toast({ title: "Erro ao excluir lançamento", variant: "destructive" }),
   });
 
-  const contaNome = (id: number) => contas.find((c) => c.id_conta === id)?.apelido ?? `#${id}`;
-  const loteamentoNome = (id?: number | null) => (id ? loteamentos.find((l) => l.id_loteamento === id)?.nome ?? `#${id}` : null);
-  const contaContabilNome = (id?: number | null) => (id ? planoContas.find((p) => p.id_conta_contabil === id)?.nome ?? null : null);
-  const fornecedorNome = (id?: number | null) => (id ? fornecedores.find((f) => f.id_fornecedor === id)?.nome ?? null : null);
-
   function openNew() {
     setEditing(null);
     setDialogOpen(true);
   }
-  function openEdit(l: Lancamento) {
+  function openEdit(idLancamento: number) {
+    const l = lancamentos.find((x) => x.id_lancamento === idLancamento);
+    if (!l) return;
     setEditing(l);
     setDialogOpen(true);
   }
 
+  const movimentos = extrato?.movimentos ?? [];
+
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-[160px]" />
+          <span className="text-xs text-muted-foreground">até</span>
+          <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-[160px]" />
+        </div>
         <Button onClick={openNew} className="gap-2" disabled={contas.length === 0}>
           <Plus className="h-4 w-4" /> Novo Lançamento
         </Button>
@@ -133,80 +148,104 @@ export function LancamentosTab() {
         <p className="text-xs text-muted-foreground">Cadastre uma conta na aba "Contas" antes de lançar.</p>
       )}
 
+      {extrato && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="rounded-lg border p-3 text-center">
+            <div className="text-xs text-muted-foreground">Saldo inicial do período</div>
+            <div className="text-base font-bold">{fmt(extrato.saldoInicialPeriodo)}</div>
+          </div>
+          <div className="rounded-lg border p-3 text-center">
+            <div className="text-xs text-muted-foreground">Créditos no período</div>
+            <div className="text-base font-bold text-emerald-600">{fmt(extrato.totalCreditos)}</div>
+          </div>
+          <div className="rounded-lg border p-3 text-center">
+            <div className="text-xs text-muted-foreground">Débitos no período</div>
+            <div className="text-base font-bold text-red-500">{fmt(extrato.totalDebitos)}</div>
+          </div>
+          <div className="rounded-lg border p-3 text-center">
+            <div className="text-xs text-muted-foreground">Saldo final do período</div>
+            <div className={`text-base font-bold ${extrato.saldoFinalPeriodo >= 0 ? "" : "text-red-500"}`}>
+              {fmt(extrato.saldoFinalPeriodo)}
+            </div>
+          </div>
+          <div className="rounded-lg border p-3 text-center bg-muted/30">
+            <div className="text-xs text-muted-foreground">Saldo atual geral</div>
+            <div className={`text-base font-bold ${extrato.saldoAtualGeral >= 0 ? "" : "text-red-500"}`}>
+              {fmt(extrato.saldoAtualGeral)}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-lg border overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b bg-muted/40 text-muted-foreground text-xs uppercase tracking-wide">
               <th className="px-4 py-3 text-left font-semibold">Data</th>
-              <th className="px-4 py-3 text-left font-semibold">Tipo</th>
               <th className="px-4 py-3 text-left font-semibold">Descrição</th>
               <th className="px-4 py-3 text-left font-semibold">Conta</th>
-              <th className="px-4 py-3 text-left font-semibold">Fornecedor</th>
-              <th className="px-4 py-3 text-left font-semibold">Loteamento</th>
               <th className="px-4 py-3 text-right font-semibold">Valor</th>
+              <th className="px-4 py-3 text-right font-semibold">Saldo</th>
               <th className="px-4 py-3 text-right font-semibold">Ações</th>
             </tr>
           </thead>
           <tbody>
+            <tr className="border-b bg-muted/20">
+              <td colSpan={4} className="px-4 py-2 text-xs text-muted-foreground italic">
+                Saldo inicial do período
+              </td>
+              <td className="px-4 py-2 text-right text-xs font-semibold" colSpan={2}>
+                {extrato ? fmt(extrato.saldoInicialPeriodo) : "—"}
+              </td>
+            </tr>
             {isLoading ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td></tr>
-            ) : lancamentos.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">Nenhum lançamento manual ainda.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td></tr>
+            ) : movimentos.length === 0 ? (
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Nenhum movimento no período.</td></tr>
             ) : (
-              lancamentos.map((l) => {
-                const temRateio = Boolean(l.rateio && l.rateio.length > 0);
-                return (
-                  <tr key={l.id_lancamento} className="border-b last:border-0 hover:bg-muted/30">
-                    <td className="px-4 py-3 text-muted-foreground text-xs">{formatDateBR(l.data, l.data)}</td>
-                    <td className="px-4 py-3">
-                      {l.tipo === "receita" ? (
-                        <Badge className="bg-green-100 text-green-700 border-green-200 gap-1">
-                          <ArrowUpCircle className="h-3 w-3" /> Crédito
-                        </Badge>
-                      ) : (
-                        <Badge variant="destructive" className="gap-1">
-                          <ArrowDownCircle className="h-3 w-3" /> Débito
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      {l.descricao}
-                      {contaContabilNome(l.id_conta_contabil) && (
-                        <div className="text-xs text-muted-foreground">{contaContabilNome(l.id_conta_contabil)}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{contaNome(l.id_conta)}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{fornecedorNome(l.id_fornecedor) ?? "—"}</td>
-                    <td className="px-4 py-3 text-muted-foreground">
-                      {temRateio ? (
-                        <Badge variant="outline" className="gap-1">
-                          <Split className="h-3 w-3" /> {l.rateio!.length} loteamentos
-                        </Badge>
-                      ) : (
-                        loteamentoNome(l.id_loteamento) ?? "—"
-                      )}
-                    </td>
-                    <td className={`px-4 py-3 text-right font-medium ${l.tipo === "receita" ? "text-emerald-600" : "text-red-500"}`}>
-                      {fmt(Number(l.valor))}
-                    </td>
-                    <td className="px-4 py-3">
+              movimentos.map((m, i) => (
+                <tr key={i} className="border-b last:border-0 hover:bg-muted/30">
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{formatDateBR(m.data, m.data)}</td>
+                  <td className="px-4 py-3">
+                    {m.descricao}
+                    <div className="text-xs text-muted-foreground">
+                      {m.contaContabil ?? ORIGEM_LABEL[m.origem] ?? m.origem}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-muted-foreground">{m.contaApelido}</td>
+                  <td className={`px-4 py-3 text-right font-medium ${m.movimento === "entrada" ? "text-emerald-600" : "text-red-500"}`}>
+                    {m.movimento === "entrada" ? "+" : "−"}{fmt(m.valor)}
+                  </td>
+                  <td className="px-4 py-3 text-right font-medium">{fmt(m.saldo)}</td>
+                  <td className="px-4 py-3">
+                    {m.origem === "lancamento" && m.idLancamento !== null && (
                       <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(l)}>
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(m.idLancamento!)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
                         <Button
                           size="icon"
                           variant="ghost"
                           className="h-8 w-8 text-destructive hover:text-destructive"
-                          onClick={() => setDeletingId(l.id_lancamento)}
+                          onClick={() => setDeletingId(m.idLancamento!)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    </td>
-                  </tr>
-                );
-              })
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+            {extrato && movimentos.length > 0 && (
+              <tr className="bg-muted/20 font-semibold">
+                <td colSpan={4} className="px-4 py-2 text-xs text-muted-foreground italic">
+                  Saldo final do período
+                </td>
+                <td className="px-4 py-2 text-right text-xs" colSpan={2}>
+                  {fmt(extrato.saldoFinalPeriodo)}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
