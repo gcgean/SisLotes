@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,6 +73,7 @@ export function LancamentosTab() {
 
   const [from, setFrom] = useState(primeiroDiaMes());
   const [to, setTo] = useState(hojeIso());
+  const [contaFiltro, setContaFiltro] = useState<string>("todas");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
@@ -97,9 +99,10 @@ export function LancamentosTab() {
   });
 
   const { data: extrato, isLoading } = useQuery<ExtratoGeral>({
-    queryKey: ["financeiro", "extrato-geral", from, to],
+    queryKey: ["financeiro", "extrato-geral", from, to, contaFiltro],
     queryFn: async () => {
       const params = new URLSearchParams({ from, to });
+      if (contaFiltro !== "todas") params.set("id_conta", contaFiltro);
       const r = await fetch(`/api/contas/extrato-geral?${params.toString()}`, { headers });
       if (!r.ok) throw new Error("Erro ao carregar extrato");
       return r.json();
@@ -139,6 +142,19 @@ export function LancamentosTab() {
           <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="w-[160px]" />
           <span className="text-xs text-muted-foreground">até</span>
           <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="w-[160px]" />
+          <Select value={contaFiltro} onValueChange={setContaFiltro}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as contas</SelectItem>
+              {contas.map((c) => (
+                <SelectItem key={c.id_conta} value={String(c.id_conta)}>
+                  {c.apelido}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <Button onClick={openNew} className="gap-2" disabled={contas.length === 0}>
           <Plus className="h-4 w-4" /> Novo Lançamento
@@ -169,7 +185,9 @@ export function LancamentosTab() {
             </div>
           </div>
           <div className="rounded-lg border p-3 text-center bg-muted/30">
-            <div className="text-xs text-muted-foreground">Saldo atual geral</div>
+            <div className="text-xs text-muted-foreground">
+              {contaFiltro === "todas" ? "Saldo atual geral" : "Saldo atual da conta"}
+            </div>
             <div className={`text-base font-bold ${extrato.saldoAtualGeral >= 0 ? "" : "text-red-500"}`}>
               {fmt(extrato.saldoAtualGeral)}
             </div>

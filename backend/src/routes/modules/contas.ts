@@ -68,10 +68,11 @@ contasRouter.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
   return res.json(resultado);
 });
 
-// Soma o delta (créditos - débitos) de todas as contas da empresa, respeitando o
-// corte de saldo inicial de cada conta. ateExclusive limita a data (< ateExclusive);
-// sem ateExclusive, soma o histórico inteiro (usado para o saldo atual "de hoje").
-export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: string): Promise<number> {
+// Soma o delta (créditos - débitos) das contas da empresa (ou de uma única conta,
+// se idConta for informado), respeitando o corte de saldo inicial de cada conta.
+// ateExclusive limita a data (< ateExclusive); sem ateExclusive, soma o histórico
+// inteiro (usado para o saldo atual "de hoje").
+export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: string, idConta?: number): Promise<number> {
   const params: unknown[] = [idEmpresa];
   let cutoffP = "";
   let cutoffL = "";
@@ -79,10 +80,16 @@ export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: s
   let cutoffL2 = "";
   if (ateExclusive) {
     params.push(ateExclusive);
-    cutoffP = "AND p.pago_data < $2";
-    cutoffL = "AND l.data < $2";
-    cutoffDp = "AND dp.pago_data < $2";
-    cutoffL2 = "AND l2.data < $2";
+    const idx = params.length;
+    cutoffP = `AND p.pago_data < $${idx}`;
+    cutoffL = `AND l.data < $${idx}`;
+    cutoffDp = `AND dp.pago_data < $${idx}`;
+    cutoffL2 = `AND l2.data < $${idx}`;
+  }
+  let contaClause = "";
+  if (idConta) {
+    params.push(idConta);
+    contaClause = `AND c.id_conta = $${params.length}`;
   }
 
   const rows = await AppDataSource.query(
@@ -93,25 +100,25 @@ export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: s
         JOIN vendas v ON v.id_venda = p.id_venda
         JOIN contas c ON c.id_conta = p.id_conta
         WHERE c.id_empresa = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-          AND p.pago_data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffP}
+          AND p.pago_data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffP} ${contaClause}
       ), 0)
       + COALESCE((
         SELECT SUM(l.valor) FROM lancamentos_manuais l
         JOIN contas c ON c.id_conta = l.id_conta
         WHERE c.id_empresa = $1 AND l.tipo = 'receita'
-          AND l.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffL}
+          AND l.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffL} ${contaClause}
       ), 0)
       - COALESCE((
         SELECT SUM(dp.valor_pago) FROM despesa_parcelas dp
         JOIN contas c ON c.id_conta = dp.id_conta
         WHERE c.id_empresa = $1 AND dp.situacao = 'pago'
-          AND dp.pago_data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffDp}
+          AND dp.pago_data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffDp} ${contaClause}
       ), 0)
       - COALESCE((
         SELECT SUM(l2.valor) FROM lancamentos_manuais l2
         JOIN contas c ON c.id_conta = l2.id_conta
         WHERE c.id_empresa = $1 AND l2.tipo = 'despesa'
-          AND l2.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffL2}
+          AND l2.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffL2} ${contaClause}
       ), 0) AS delta
     `,
     params
@@ -122,10 +129,19 @@ export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: s
 
 // Saldo real, hoje, somando todas as contas da empresa (saldo_inicial + movimentos
 // já realizados). Usado como ponto de partida das projeções de fluxo de caixa.
-export async function saldoAtualGeralEmpresa(idEmpresa: number): Promise<number> {
-  const rows = await AppDataSource.query(`SELECT COALESCE(SUM(saldo_inicial), 0) AS total FROM contas WHERE id_empresa = $1`, [idEmpresa]);
+export async function saldoAtualGeralEmpresa(idEmpresa: number, idConta?: number): Promise<number> {
+  const params: unknown[] = [idEmpresa];
+  let contaClause = "";
+  if (idConta) {
+    params.push(idConta);
+    contaClause = `AND id_conta = $${params.length}`;
+  }
+  const rows = await AppDataSource.query(
+    `SELECT COALESCE(SUM(saldo_inicial), 0) AS total FROM contas WHERE id_empresa = $1 ${contaClause}`,
+    params
+  );
   const saldoInicialTotal = Number((rows[0] as { total: string | number })?.total ?? 0);
-  const delta = await deltaMovimentosEmpresa(idEmpresa);
+  const delta = await deltaMovimentosEmpresa(idEmpresa, undefined, idConta);
   return saldoInicialTotal + delta;
 }
 
@@ -138,14 +154,24 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
   const querySchema = z.object({
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    id_conta: z.coerce.number().int().positive().optional(),
   });
   const parse = querySchema.safeParse(req.query);
   if (!parse.success) return res.status(400).json({ error: "Informe from e to (YYYY-MM-DD)" });
-  const { from, to } = parse.data;
+  const { from, to, id_conta: idConta } = parse.data;
+
+  const saldoInicialParams: unknown[] = [idEmpresa];
+  const saldoInicialContaClause = idConta ? (saldoInicialParams.push(idConta), `AND id_conta = $${saldoInicialParams.length}`) : "";
+
+  const movParams: unknown[] = [idEmpresa, from, to];
+  const movContaClause = idConta ? (movParams.push(idConta), `AND c.id_conta = $${movParams.length}`) : "";
 
   const [saldoInicialRows, deltaAntes, movimentosRows] = await Promise.all([
-    AppDataSource.query(`SELECT COALESCE(SUM(saldo_inicial), 0) AS total FROM contas WHERE id_empresa = $1`, [idEmpresa]),
-    deltaMovimentosEmpresa(idEmpresa, from),
+    AppDataSource.query(
+      `SELECT COALESCE(SUM(saldo_inicial), 0) AS total FROM contas WHERE id_empresa = $1 ${saldoInicialContaClause}`,
+      saldoInicialParams
+    ),
+    deltaMovimentosEmpresa(idEmpresa, from, idConta),
     AppDataSource.query(
       `
       SELECT * FROM (
@@ -158,7 +184,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
         JOIN vendas v ON v.id_venda = p.id_venda
         JOIN contas c ON c.id_conta = p.id_conta
         WHERE c.id_empresa = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-          AND p.pago_data >= $2 AND p.pago_data <= $3
+          AND p.pago_data >= $2 AND p.pago_data <= $3 ${movContaClause}
 
         UNION ALL
 
@@ -171,7 +197,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
         JOIN contas c ON c.id_conta = dp.id_conta
         LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = d.id_categoria
         WHERE c.id_empresa = $1 AND dp.situacao = 'pago'
-          AND dp.pago_data >= $2 AND dp.pago_data <= $3
+          AND dp.pago_data >= $2 AND dp.pago_data <= $3 ${movContaClause}
 
         UNION ALL
 
@@ -182,11 +208,11 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
         FROM lancamentos_manuais l
         JOIN contas c ON c.id_conta = l.id_conta
         LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = l.id_conta_contabil
-        WHERE c.id_empresa = $1 AND l.data >= $2 AND l.data <= $3
+        WHERE c.id_empresa = $1 AND l.data >= $2 AND l.data <= $3 ${movContaClause}
       ) mov
       ORDER BY data ASC, movimento ASC
       `,
-      [idEmpresa, from, to]
+      movParams
     ),
   ]);
 
@@ -231,7 +257,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
     };
   });
 
-  const deltaGeral = await deltaMovimentosEmpresa(idEmpresa);
+  const deltaGeral = await deltaMovimentosEmpresa(idEmpresa, undefined, idConta);
   const saldoAtualGeral = saldoInicialTotal + deltaGeral;
 
   return res.json({
