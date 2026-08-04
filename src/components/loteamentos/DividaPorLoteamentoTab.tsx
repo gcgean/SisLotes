@@ -4,12 +4,15 @@ import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ChevronDown, AlertTriangle, CheckCircle2, Clock, Wallet } from "lucide-react";
 
 interface DividaLoteamento {
   id_loteamento: number;
   nome: string;
+  cidade: string | null;
+  estado: string | null;
   totalVendido: number;
   totalPago: number;
   totalAtrasado: number;
@@ -29,6 +32,7 @@ export function DividaPorLoteamentoTab() {
   const headers = { Authorization: `Bearer ${token}` };
 
   const [selecionados, setSelecionados] = useState<number[]>([]);
+  const [busca, setBusca] = useState("");
 
   // Busca o dataset completo uma vez e filtra no cliente: a lista tem no máximo
   // uma linha por loteamento, então o filtro é instantâneo e as opções do
@@ -42,7 +46,18 @@ export function DividaPorLoteamentoTab() {
     },
   });
 
-  const dados = selecionados.length === 0 ? todos : todos.filter((d) => selecionados.includes(d.id_loteamento));
+  const localDe = (d: { cidade: string | null; estado: string | null }) =>
+    [d.cidade, d.estado].filter(Boolean).join("/");
+
+  // Busca casa com o nome do loteamento ou com a cidade/estado vinculados a ele.
+  const termo = busca.trim().toLowerCase();
+  const opcoes = termo
+    ? todos.filter(
+        (d) => d.nome.toLowerCase().includes(termo) || localDe(d).toLowerCase().includes(termo)
+      )
+    : todos;
+
+  const dados = selecionados.length === 0 ? opcoes : todos.filter((d) => selecionados.includes(d.id_loteamento));
 
   function toggle(id: number) {
     setSelecionados((atual) => (atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]));
@@ -75,30 +90,42 @@ export function DividaPorLoteamentoTab() {
               <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[280px] p-2" align="start">
+          <PopoverContent className="w-[300px] p-2" align="start">
+            <Input
+              placeholder="Buscar por loteamento ou cidade..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="h-8 mb-2 text-sm"
+            />
             <div className="max-h-[300px] overflow-y-auto space-y-1">
-              {todos.length === 0 && (
+              {opcoes.length === 0 && (
                 <div className="px-2 py-3 text-xs text-muted-foreground text-center">
                   {isLoading ? "Carregando…" : "Nenhum loteamento encontrado."}
                 </div>
               )}
               {/* Botão (não <label>) para o clique disparar o toggle uma única vez:
                   um <label> em volta do Checkbox faz o evento chegar duas vezes. */}
-              {todos.map((l) => (
-                <button
-                  key={l.id_loteamento}
-                  type="button"
-                  onClick={() => toggle(l.id_loteamento)}
-                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-pointer text-sm text-left"
-                >
-                  <Checkbox
-                    checked={selecionados.includes(l.id_loteamento)}
-                    className="pointer-events-none"
-                    tabIndex={-1}
-                  />
-                  <span className="truncate">{l.nome}</span>
-                </button>
-              ))}
+              {opcoes.map((l) => {
+                const local = localDe(l);
+                return (
+                  <button
+                    key={l.id_loteamento}
+                    type="button"
+                    onClick={() => toggle(l.id_loteamento)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-pointer text-sm text-left"
+                  >
+                    <Checkbox
+                      checked={selecionados.includes(l.id_loteamento)}
+                      className="pointer-events-none shrink-0"
+                      tabIndex={-1}
+                    />
+                    <span className="truncate flex-1 min-w-0">
+                      {l.nome}
+                      {local && <span className="text-xs text-muted-foreground"> — {local}</span>}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             {selecionados.length > 0 && (
               <Button
@@ -167,6 +194,7 @@ export function DividaPorLoteamentoTab() {
                     <td className="px-4 py-3">
                       <div className="font-medium">{d.nome}</div>
                       <div className="text-xs text-muted-foreground">
+                        {localDe(d) && `${localDe(d)} · `}
                         {d.qtdVendas} {d.qtdVendas === 1 ? "venda" : "vendas"}
                       </div>
                     </td>

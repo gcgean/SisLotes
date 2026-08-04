@@ -30,6 +30,7 @@ import {
 } from "recharts";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { LoadingState } from "@/components/ui/loading-state";
 
 interface DashboardKpis {
   recebidoMes: number;
@@ -148,7 +149,7 @@ export function VisaoGeralTab() {
     },
   });
 
-  const { data: resultadoLoteamento = [] } = useQuery<ResultadoLoteamento[]>({
+  const { data: resultadoLoteamento = [], isLoading: carregandoResultado } = useQuery<ResultadoLoteamento[]>({
     queryKey: ["financeiro", "resultado-por-loteamento"],
     queryFn: async () => {
       const r = await fetch("/api/relatorios/resultado-por-loteamento", { headers });
@@ -157,7 +158,7 @@ export function VisaoGeralTab() {
     },
   });
 
-  const { data: fluxoCaixa = [] } = useQuery<FluxoCaixaMes[]>({
+  const { data: fluxoCaixa = [], isLoading: carregandoFluxo } = useQuery<FluxoCaixaMes[]>({
     queryKey: ["financeiro", "fluxo-de-caixa"],
     queryFn: async () => {
       const r = await fetch("/api/relatorios/fluxo-de-caixa", { headers });
@@ -166,7 +167,7 @@ export function VisaoGeralTab() {
     },
   });
 
-  const { data: fluxoPrevisto = [] } = useQuery<FluxoCaixaMes[]>({
+  const { data: fluxoPrevisto = [], isLoading: carregandoPrevisto } = useQuery<FluxoCaixaMes[]>({
     queryKey: ["financeiro", "fluxo-de-caixa-previsto"],
     queryFn: async () => {
       const r = await fetch("/api/relatorios/fluxo-de-caixa-previsto", { headers });
@@ -175,7 +176,7 @@ export function VisaoGeralTab() {
     },
   });
 
-  const { data: contas = [] } = useQuery<Conta[]>({
+  const { data: contas = [], isLoading: carregandoContas } = useQuery<Conta[]>({
     queryKey: ["financeiro", "contas"],
     queryFn: async () => {
       const r = await fetch("/api/contas?ativo=true", { headers });
@@ -415,7 +416,7 @@ export function VisaoGeralTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {contas.length === 0 ? (
+          {carregandoContas ? (<LoadingState message="Carregando contas…" />) : contas.length === 0 ? (
             <p className="text-sm text-muted-foreground py-2">Nenhuma conta cadastrada ainda.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -441,7 +442,7 @@ export function VisaoGeralTab() {
           <CardTitle className="text-sm font-semibold">Lucratividade por loteamento</CardTitle>
         </CardHeader>
         <CardContent>
-          {resultadoLoteamento.length === 0 ? (
+          {carregandoResultado ? (<LoadingState message="Carregando lucratividade…" />) : resultadoLoteamento.length === 0 ? (
             <p className="text-sm text-muted-foreground py-2">Nenhum loteamento com dados ainda.</p>
           ) : (
             <div
@@ -476,7 +477,7 @@ export function VisaoGeralTab() {
           <CardTitle className="text-sm font-semibold">Evolução do fluxo de caixa — entradas e saídas (últimos 12 meses)</CardTitle>
         </CardHeader>
         <CardContent>
-          {fluxoCaixa.length === 0 ? (
+          {carregandoFluxo ? (<LoadingState message="Carregando fluxo de caixa…" />) : fluxoCaixa.length === 0 ? (
             <p className="text-sm text-muted-foreground py-2">Sem movimentação registrada ainda.</p>
           ) : (
             <div
@@ -515,7 +516,7 @@ export function VisaoGeralTab() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {fluxoPrevisto.length === 0 ? (
+          {carregandoPrevisto ? (<LoadingState message="Carregando previsão…" />) : fluxoPrevisto.length === 0 ? (
             <p className="text-sm text-muted-foreground py-2">Nenhuma parcela em aberto para projetar.</p>
           ) : (
             <div

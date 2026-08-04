@@ -987,6 +987,8 @@ relatoriosRouter.get(
       SELECT
         lo.id_loteamento,
         lo.nome,
+        lo.cidade,
+        lo.estado,
         COALESCE(SUM(p.valor), 0) AS total_vendido,
         COALESCE(SUM(CASE WHEN p.situacao = 'pago' THEN COALESCE(p.valor_pago, p.valor) ELSE 0 END), 0) AS total_pago,
         COALESCE(SUM(CASE WHEN p.situacao = 'aberto' AND p.vencimento < CURRENT_DATE THEN p.valor ELSE 0 END), 0) AS total_atrasado,
@@ -999,7 +1001,7 @@ relatoriosRouter.get(
       LEFT JOIN vendas v ON v.id_lote = l.id_lote AND v.status <> 'cancelada'
       LEFT JOIN pagamentos p ON p.id_venda = v.id_venda
       WHERE lo.id_empresa = $1 ${loteamentoFilter}
-      GROUP BY lo.id_loteamento, lo.nome
+      GROUP BY lo.id_loteamento, lo.nome, lo.cidade, lo.estado
       ORDER BY lo.nome ASC
       `,
       params
@@ -1008,6 +1010,8 @@ relatoriosRouter.get(
     type Row = {
       id_loteamento: number;
       nome: string;
+      cidade: string | null;
+      estado: string | null;
       total_vendido: string | number;
       total_pago: string | number;
       total_atrasado: string | number;
@@ -1023,6 +1027,8 @@ relatoriosRouter.get(
       return {
         id_loteamento: Number(r.id_loteamento),
         nome: r.nome,
+        cidade: r.cidade,
+        estado: r.estado,
         totalVendido,
         totalPago,
         totalAtrasado: Number(r.total_atrasado ?? 0),

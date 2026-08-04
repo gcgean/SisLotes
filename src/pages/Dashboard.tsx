@@ -14,6 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { formatLicenseRemainingTime } from "@/lib/license-time";
 import { formatDateBR } from "@/lib/date-br";
+import { LoadingState } from "@/components/ui/loading-state";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -136,7 +137,7 @@ const Dashboard = () => {
     return hub || raw;
   })();
 
-  const { data: atrasos = [] } = useQuery<DashboardTituloAtraso[]>({
+  const { data: atrasos = [], isLoading: carregandoAtrasos } = useQuery<DashboardTituloAtraso[]>({
     queryKey: ["dashboard", "titulos-em-atraso"],
     queryFn: async () => {
       const response = await fetch("/api/relatorios/titulos-em-atraso?limit=10", {
@@ -167,7 +168,7 @@ const Dashboard = () => {
     },
   });
 
-  const { data: vendasRecentes = [] } = useQuery<DashboardVendaRecente[]>({
+  const { data: vendasRecentes = [], isLoading: carregandoVendas } = useQuery<DashboardVendaRecente[]>({
     queryKey: ["dashboard", "vendas-recentes"],
     queryFn: async () => {
       const response = await fetch("/api/relatorios/vendas-recentes", {
@@ -333,7 +334,8 @@ const Dashboard = () => {
               <h2 className="text-sm font-semibold">Vendas Recentes</h2>
             </div>
             <div className="divide-y divide-border">
-              {vendasRecentes.map((sale) => (
+              {carregandoVendas && <LoadingState message="Carregando vendas recentes…" />}
+              {!carregandoVendas && vendasRecentes.map((sale) => (
                 <div key={sale.id_venda} className="px-5 py-3 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">{sale.cliente}</p>
@@ -347,7 +349,7 @@ const Dashboard = () => {
                   </div>
                 </div>
               ))}
-              {vendasRecentes.length === 0 && (
+              {!carregandoVendas && vendasRecentes.length === 0 && (
                 <div className="p-8 text-center text-sm text-muted-foreground">
                   Nenhuma venda recente
                 </div>
@@ -361,7 +363,8 @@ const Dashboard = () => {
               <h2 className="text-sm font-semibold">Títulos em Atraso</h2>
             </div>
             <div className="divide-y divide-border">
-              {atrasos.map((item, i) => (
+              {carregandoAtrasos && <LoadingState message="Carregando títulos em atraso…" />}
+              {!carregandoAtrasos && atrasos.map((item, i) => (
                 <div key={i} className="px-5 py-3 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium">{item.cliente}</p>
@@ -374,7 +377,7 @@ const Dashboard = () => {
                 </div>
               ))}
             </div>
-            {atrasos.length === 0 && (
+            {!carregandoAtrasos && atrasos.length === 0 && (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 Nenhum título em atraso
               </div>

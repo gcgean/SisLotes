@@ -1011,6 +1011,17 @@ const Vendas = () => {
     Array.from(new Set(vendas.map((v) => v.loteamento).filter(Boolean))).sort(),
     [vendas]
   );
+  // A venda só traz o nome do loteamento; o cadastro traz cidade/estado.
+  // Esse mapa permite buscar e rotular os filtros também pela cidade.
+  const cidadePorLoteamento = useMemo(() => {
+    const mapa = new Map<string, string>();
+    loteamentos.forEach((l) => {
+      if (!l.nome) return;
+      const local = [l.cidade, l.estado].filter(Boolean).join("/");
+      if (local) mapa.set(l.nome, local);
+    });
+    return mapa;
+  }, [loteamentos]);
   const lotesFiltro = useMemo(() => {
     const base = filterLoteamento === "all" ? vendas : vendas.filter((v) => v.loteamento === filterLoteamento);
     return Array.from(new Set(base.map((v) => v.lote).filter(Boolean))).sort();
@@ -1020,10 +1031,12 @@ const Vendas = () => {
     const termo = search.toLowerCase().replace(/^#/, "");
     const codigo = String(v.id_venda);
     const codigoPad = codigo.padStart(6, "0");
+    const cidadeLoteamento = cidadePorLoteamento.get(v.loteamento) ?? "";
     const matchSearch =
       v.cliente.toLowerCase().includes(search.toLowerCase()) ||
       v.lote.toLowerCase().includes(search.toLowerCase()) ||
       v.loteamento.toLowerCase().includes(search.toLowerCase()) ||
+      cidadeLoteamento.toLowerCase().includes(search.toLowerCase()) ||
       codigo.includes(termo) ||
       codigoPad.includes(termo);
     const matchStatus =
@@ -1065,7 +1078,7 @@ const Vendas = () => {
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Buscar por código, cliente, lote ou loteamento..."
+                placeholder="Buscar por código, cliente, lote, loteamento ou cidade..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9"
@@ -1078,9 +1091,14 @@ const Vendas = () => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos os loteamentos</SelectItem>
-                {loteamentosDisponiveis.map((l) => (
-                  <SelectItem key={l} value={l}>{l}</SelectItem>
-                ))}
+                {loteamentosDisponiveis.map((l) => {
+                  const cidade = cidadePorLoteamento.get(l);
+                  return (
+                    <SelectItem key={l} value={l}>
+                      {cidade ? `${l} — ${cidade}` : l}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
             {/* Filtro por lote */}
