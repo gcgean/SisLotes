@@ -12,14 +12,14 @@ import {
   CalendarClock,
   AlertTriangle,
   CheckCircle2,
-  ArrowDownCircle,
-  ArrowUpCircle,
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
 import {
   BarChart,
   Bar,
+  ComposedChart,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -101,6 +101,11 @@ function mesAtualIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function hojeIsoLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 function somarMeses(mesIso: string, delta: number) {
   const [ano, mes] = mesIso.split("-").map(Number);
   const d = new Date(ano, mes - 1 + delta, 1);
@@ -174,6 +179,19 @@ export function VisaoGeralTab() {
   const despesa = kpis?.despesasMes ?? 0;
   const resultado = receita - despesa;
   const margem = receita > 0 ? (resultado / receita) * 100 : 0;
+
+  // A partir de hoje até o fim do mês selecionado (se o mês já passou, mostra o mês inteiro).
+  const hojeLocal = hojeIsoLocal();
+  const diasFuturos = fluxoFuturo
+    ? fluxoFuturo.dias.filter((d) => mesSelecionado !== mesAtualIso() || d.data >= hojeLocal)
+    : [];
+  const graficoDias = diasFuturos.map((d) => ({
+    data: d.data,
+    label: diaLabel(d.data).numero,
+    aReceber: d.aReceber,
+    aPagar: -d.aPagar,
+    saldo: d.saldoDia,
+  }));
 
   const loteamentoChartHeight = Math.max(200, resultadoLoteamento.length * 32);
 
@@ -264,62 +282,67 @@ export function VisaoGeralTab() {
                 </div>
               )}
 
-              {/* Dia a dia do mês — dashboard horizontal com scroll lateral */}
+              {/* Volume de receitas/despesas e evolução do saldo, a partir de hoje até o fim do mês */}
               <div>
-                <div className="text-xs text-muted-foreground mb-2">Dia a dia do mês (arraste para o lado)</div>
-                <div className="flex gap-2 overflow-x-auto pb-2">
-                  {fluxoFuturo.dias.map((d) => {
-                    const { numero, semana } = diaLabel(d.data);
-                    const semMovimento = d.aPagar === 0 && d.aReceber === 0;
-                    return (
-                      <div
-                        key={d.data}
-                        className={`shrink-0 w-[132px] rounded-lg border p-2.5 flex flex-col gap-1.5 ${
-                          d.saldoDia < 0 ? "border-red-300 bg-red-50 dark:bg-red-950/10 dark:border-red-900" : ""
-                        }`}
-                      >
-                        <div className="flex items-baseline justify-between">
-                          <span className="text-base font-bold">{numero}</span>
-                          <span className="text-[11px] text-muted-foreground uppercase">{semana}</span>
-                        </div>
-
-                        <div className="space-y-0.5 min-h-[36px]">
-                          {d.aPagar > 0 ? (
-                            <div
-                              className="flex items-center gap-1 text-red-500 font-medium text-xs"
-                              title={d.itensPagar.map((i) => `${i.descricao} (${i.terceiro ?? "—"})`).join("; ")}
-                            >
-                              <ArrowDownCircle className="h-3 w-3 shrink-0" /> {fmt(d.aPagar)}
-                            </div>
-                          ) : (
-                            <div className="text-[11px] text-muted-foreground/60">Sem pagamentos</div>
-                          )}
-                          {d.aReceber > 0 ? (
-                            <div
-                              className="flex items-center gap-1 text-emerald-600 font-medium text-xs"
-                              title={d.itensReceber.map((i) => `${i.descricao} (${i.terceiro ?? "—"})`).join("; ")}
-                            >
-                              <ArrowUpCircle className="h-3 w-3 shrink-0" /> {fmt(d.aReceber)}
-                            </div>
-                          ) : (
-                            <div className="text-[11px] text-muted-foreground/60">Sem recebimentos</div>
-                          )}
-                        </div>
-
-                        <div className="pt-1.5 mt-auto border-t">
-                          <div className="text-[10px] text-muted-foreground">Saldo do dia</div>
-                          <div
-                            className={`text-sm font-semibold ${
-                              semMovimento ? "text-muted-foreground" : d.saldoDia >= 0 ? "" : "text-red-500"
-                            }`}
-                          >
-                            {fmt(d.saldoDia)}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="text-xs text-muted-foreground mb-2">
+                  Receitas, despesas e evolução do saldo — de hoje até o fim do mês
                 </div>
+                {graficoDias.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">
+                    Nenhum dia restante nesse período para projetar.
+                  </p>
+                ) : (
+                  <div
+                    style={{ height: 300 }}
+                    className="[&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line]:stroke-border/50"
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={graficoDias} margin={{ left: 8, right: 8 }}>
+                        <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                        <YAxis
+                          yAxisId="mov"
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(v) => fmt(Math.abs(v))}
+                          width={90}
+                        />
+                        <YAxis
+                          yAxisId="saldo"
+                          orientation="right"
+                          tick={{ fontSize: 12 }}
+                          tickFormatter={(v) => fmt(v)}
+                          width={90}
+                        />
+                        <Tooltip
+                          contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
+                          labelStyle={{ color: "hsl(var(--foreground))" }}
+                          formatter={(value: number, name: string) => {
+                            if (name === "saldo") return [fmt(value), "Saldo projetado"];
+                            if (name === "aPagar") return [fmt(Math.abs(value)), "A pagar"];
+                            return [fmt(value), "A receber"];
+                          }}
+                          labelFormatter={(label) => `Dia ${label}`}
+                        />
+                        <Legend
+                          formatter={(value) =>
+                            value === "saldo" ? "Saldo projetado" : value === "aPagar" ? "A pagar" : "A receber"
+                          }
+                          wrapperStyle={{ fontSize: 12 }}
+                        />
+                        <Bar yAxisId="mov" dataKey="aReceber" fill={COR_ENTRADA} radius={[3, 3, 0, 0]} />
+                        <Bar yAxisId="mov" dataKey="aPagar" fill={COR_SAIDA} radius={[0, 0, 3, 3]} />
+                        <Line
+                          yAxisId="saldo"
+                          type="monotone"
+                          dataKey="saldo"
+                          stroke="#2563eb"
+                          strokeWidth={2}
+                          dot={{ r: 3 }}
+                        />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
             </>
           )}
