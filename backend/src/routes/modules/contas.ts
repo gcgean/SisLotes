@@ -18,15 +18,6 @@ const contaBodySchema = z.object({
   ativo: z.boolean().optional(),
 });
 
-// Conta bancária exige agência/conta; Caixa não.
-function validarCamposBanco(tipo: string, agencia?: string | null, conta?: string | null): string | null {
-  if (tipo !== "banco") return null;
-  if (!agencia?.trim() || !conta?.trim()) {
-    return "Agência e conta são obrigatórias para contas do tipo banco";
-  }
-  return null;
-}
-
 // ─── GET / — lista contas com saldo atual; ?ativo=true|false filtra por status ─
 contasRouter.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
   const idEmpresa = req.user?.id_empresa ?? 1;
@@ -189,8 +180,6 @@ contasRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
 
   const data = parseResult.data;
   const tipo = data.tipo ?? "banco";
-  const erroTipo = validarCamposBanco(tipo, data.agencia, data.conta);
-  if (erroTipo) return res.status(400).json({ error: erroTipo });
 
   const repo = AppDataSource.getRepository(Conta);
 
@@ -233,9 +222,6 @@ contasRouter.put("/:id", requireAuth, async (req: AuthRequest, res: Response) =>
   const { saldo_inicial, ...rest } = parseResult.data;
   Object.assign(conta, rest);
   if (saldo_inicial !== undefined) conta.saldo_inicial = String(saldo_inicial);
-
-  const erroTipo = validarCamposBanco(conta.tipo, conta.agencia, conta.conta);
-  if (erroTipo) return res.status(400).json({ error: erroTipo });
 
   const saved = await repo.save(conta);
 

@@ -297,16 +297,6 @@ const Configuracoes = () => {
       convenio: z.string().optional(),
       saldo_inicial: z.string().optional(),
       data_saldo_inicial: z.string().optional(),
-    })
-    .superRefine((data, ctx) => {
-      if (data.tipo === "banco") {
-        if (!data.agencia?.trim()) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Agência é obrigatória para conta bancária", path: ["agencia"] });
-        }
-        if (!data.conta?.trim()) {
-          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Conta é obrigatória para conta bancária", path: ["conta"] });
-        }
-      }
     });
 
   type ContaFormValues = z.infer<typeof contaFormSchema>;

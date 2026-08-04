@@ -59,7 +59,7 @@ const financeiroSubItems = [
   { title: "Plano de Contas", tab: "categorias", icon: ListTree },
   { title: "Fornecedores", tab: "fornecedores", icon: Truck },
   { title: "Contas", tab: "contas", icon: Landmark },
-  { title: "Lançamentos", tab: "lancamentos", icon: ScrollText },
+  { title: "Extrato / Lançamento", tab: "lancamentos", icon: ScrollText },
 ];
 
 const secondaryItems = [

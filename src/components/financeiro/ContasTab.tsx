@@ -221,7 +221,7 @@ export function ContasTab() {
             <DialogTitle className="flex items-center gap-2">
               <Landmark className="h-4 w-4 text-emerald-600" /> Nova Conta
             </DialogTitle>
-            <DialogDescription>Contas bancárias exigem agência e número; Caixa não.</DialogDescription>
+            <DialogDescription>Apenas o apelido é obrigatório; os demais campos são opcionais.</DialogDescription>
           </DialogHeader>
           <form
             className="space-y-3"
@@ -253,12 +253,12 @@ export function ContasTab() {
             {formConta.tipo === "banco" && (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <Label>Agência *</Label>
-                  <Input value={formConta.agencia} onChange={(e) => setFormConta((f) => ({ ...f, agencia: e.target.value }))} required={formConta.tipo === "banco"} />
+                  <Label>Agência</Label>
+                  <Input value={formConta.agencia} onChange={(e) => setFormConta((f) => ({ ...f, agencia: e.target.value }))} />
                 </div>
                 <div>
-                  <Label>Conta *</Label>
-                  <Input value={formConta.conta} onChange={(e) => setFormConta((f) => ({ ...f, conta: e.target.value }))} required={formConta.tipo === "banco"} />
+                  <Label>Conta</Label>
+                  <Input value={formConta.conta} onChange={(e) => setFormConta((f) => ({ ...f, conta: e.target.value }))} />
                 </div>
               </div>
             )}
