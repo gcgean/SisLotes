@@ -1044,6 +1044,68 @@ relatoriosRouter.get(
   },
 );
 
+// ─── GET /lotes-por-loteamento — total de lotes, disponíveis e vendidos por
+// loteamento (um lote conta como vendido se tem venda não cancelada) ──────────
+relatoriosRouter.get(
+  "/lotes-por-loteamento",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const rows = await AppDataSource.query(
+      `
+      SELECT
+        lo.id_loteamento,
+        lo.nome,
+        lo.cidade,
+        lo.estado,
+        COUNT(l.id_lote) AS total_lotes,
+        COUNT(l.id_lote) FILTER (WHERE v.id_venda IS NOT NULL) AS vendidos,
+        COUNT(l.id_lote) FILTER (WHERE v.id_venda IS NULL) AS disponiveis
+      FROM loteamentos lo
+      LEFT JOIN lotes l ON l.id_loteamento = lo.id_loteamento
+      LEFT JOIN LATERAL (
+        SELECT v.id_venda FROM vendas v
+        WHERE v.id_lote = l.id_lote AND v.status <> 'cancelada'
+        LIMIT 1
+      ) v ON TRUE
+      WHERE lo.id_empresa = $1
+      GROUP BY lo.id_loteamento, lo.nome, lo.cidade, lo.estado
+      ORDER BY lo.nome ASC
+      `,
+      [idEmpresa]
+    );
+
+    type Row = {
+      id_loteamento: number;
+      nome: string;
+      cidade: string | null;
+      estado: string | null;
+      total_lotes: string | number;
+      vendidos: string | number;
+      disponiveis: string | number;
+    };
+
+    const resultado = (rows as Row[]).map((r) => {
+      const total = Number(r.total_lotes ?? 0);
+      const vendidos = Number(r.vendidos ?? 0);
+      return {
+        id_loteamento: Number(r.id_loteamento),
+        nome: r.nome,
+        cidade: r.cidade,
+        estado: r.estado,
+        totalLotes: total,
+        vendidos,
+        disponiveis: Number(r.disponiveis ?? 0),
+        percentualVendido: total > 0 ? (vendidos / total) * 100 : 0,
+      };
+    });
+
+    return res.json(resultado);
+  },
+);
+
 const despesasEmAbertoQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),

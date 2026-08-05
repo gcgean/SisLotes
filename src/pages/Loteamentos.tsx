@@ -33,6 +33,7 @@ import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DividaPorLoteamentoTab } from "@/components/loteamentos/DividaPorLoteamentoTab";
+import { MapaLotesTab } from "@/components/loteamentos/MapaLotesTab";
 
 interface Loteamento {
   id_loteamento: number;
@@ -378,9 +379,10 @@ const Loteamentos = () => {
         </div>
 
         <Tabs defaultValue="lista">
-          <TabsList className="grid grid-cols-2 w-full max-w-md">
+          <TabsList className="grid grid-cols-3 w-full max-w-2xl">
             <TabsTrigger value="lista">Loteamentos</TabsTrigger>
             <TabsTrigger value="divida">Dívida por loteamento</TabsTrigger>
+            <TabsTrigger value="mapa">Mapa de lotes</TabsTrigger>
           </TabsList>
 
           <TabsContent value="lista" className="pt-4 space-y-6">
@@ -490,6 +492,10 @@ const Loteamentos = () => {
 
           <TabsContent value="divida" className="pt-4">
             <DividaPorLoteamentoTab />
+          </TabsContent>
+
+          <TabsContent value="mapa" className="pt-4">
+            <MapaLotesTab />
           </TabsContent>
         </Tabs>
       </div>
