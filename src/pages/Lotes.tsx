@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
+import { LoteamentoMultiCombobox } from "@/components/ui/loteamento-multi-combobox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -147,7 +148,12 @@ const Lotes = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [search, setSearch] = useState("");
-  const [filterLoteamento, setFilterLoteamento] = useState(() => searchParams.get("loteamento") ?? "all");
+  // Lista vazia = todos os loteamentos. A URL pode pré-selecionar um.
+  const [filterLoteamentos, setFilterLoteamentos] = useState<number[]>(() => {
+    const param = searchParams.get("loteamento");
+    const id = param ? Number(param) : NaN;
+    return Number.isInteger(id) && id > 0 ? [id] : [];
+  });
   const [filterStatus, setFilterStatus] = useState<"all" | "disponivel" | "vendido">("all");
   const [page, setPage] = useState(1);
   const pageSize = 50;
@@ -192,6 +198,7 @@ const Lotes = () => {
     data: loteamentosData,
     isError: isErrorLoteamentos,
     error: errorLoteamentos,
+    isLoading: isLoadingLoteamentos,
   } = useQuery<Loteamento[], Error>({
     queryKey: ["loteamentos"],
     queryFn: async () => {
@@ -519,7 +526,7 @@ const Lotes = () => {
       l.lote.includes(search) ||
       l.quadra.toLowerCase().includes(search.toLowerCase()) ||
       nomeLoteamento.toLowerCase().includes(search.toLowerCase());
-    const matchLot = filterLoteamento === "all" || l.id_loteamento === Number(filterLoteamento);
+    const matchLot = filterLoteamentos.length === 0 || filterLoteamentos.includes(l.id_loteamento);
     const matchStatus = filterStatus === "all" || l.status === filterStatus;
     return matchSearch && matchLot && matchStatus;
   });
@@ -563,7 +570,8 @@ const Lotes = () => {
     }
 
     form.reset({
-      id_loteamento: filterLoteamento !== "all" ? filterLoteamento : "",
+      // Só pré-seleciona quando o filtro aponta para um único loteamento.
+      id_loteamento: filterLoteamentos.length === 1 ? String(filterLoteamentos[0]) : "",
       lote: "",
       quadra: "",
       area: "",
@@ -692,12 +700,11 @@ const Lotes = () => {
               className="pl-9"
             />
           </div>
-          <LoteamentoCombobox
+          <LoteamentoMultiCombobox
             loteamentos={loteamentos}
-            value={filterLoteamento}
-            onValueChange={(v) => { setFilterLoteamento(v); setPage(1); }}
-            allOptionLabel="Todos os loteamentos"
-            placeholder="Loteamento"
+            value={filterLoteamentos}
+            onValueChange={(ids) => { setFilterLoteamentos(ids); setPage(1); }}
+            isLoading={isLoadingLoteamentos}
             className="w-full sm:w-[220px]"
           />
           <div className="flex flex-wrap gap-2">

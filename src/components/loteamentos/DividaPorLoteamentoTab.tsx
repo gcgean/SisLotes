@@ -2,11 +2,11 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ChevronDown, AlertTriangle, CheckCircle2, Clock, Wallet } from "lucide-react";
+import {
+  LoteamentoMultiCombobox,
+  localDoLoteamento,
+} from "@/components/ui/loteamento-multi-combobox";
+import { AlertTriangle, CheckCircle2, Clock, Wallet } from "lucide-react";
 
 interface DividaLoteamento {
   id_loteamento: number;
@@ -32,7 +32,6 @@ export function DividaPorLoteamentoTab() {
   const headers = { Authorization: `Bearer ${token}` };
 
   const [selecionados, setSelecionados] = useState<number[]>([]);
-  const [busca, setBusca] = useState("");
 
   // Busca o dataset completo uma vez e filtra no cliente: a lista tem no máximo
   // uma linha por loteamento, então o filtro é instantâneo e as opções do
@@ -46,22 +45,9 @@ export function DividaPorLoteamentoTab() {
     },
   });
 
-  const localDe = (d: { cidade: string | null; estado: string | null }) =>
-    [d.cidade, d.estado].filter(Boolean).join("/");
+  const localDe = localDoLoteamento;
 
-  // Busca casa com o nome do loteamento ou com a cidade/estado vinculados a ele.
-  const termo = busca.trim().toLowerCase();
-  const opcoes = termo
-    ? todos.filter(
-        (d) => d.nome.toLowerCase().includes(termo) || localDe(d).toLowerCase().includes(termo)
-      )
-    : todos;
-
-  const dados = selecionados.length === 0 ? opcoes : todos.filter((d) => selecionados.includes(d.id_loteamento));
-
-  function toggle(id: number) {
-    setSelecionados((atual) => (atual.includes(id) ? atual.filter((x) => x !== id) : [...atual, id]));
-  }
+  const dados = selecionados.length === 0 ? todos : todos.filter((d) => selecionados.includes(d.id_loteamento));
 
   const totais = dados.reduce(
     (acc, d) => ({
@@ -73,72 +59,16 @@ export function DividaPorLoteamentoTab() {
     { vendido: 0, pago: 0, atrasado: 0, aVencer: 0 }
   );
 
-  const rotuloFiltro =
-    selecionados.length === 0
-      ? "Todos os loteamentos"
-      : selecionados.length === 1
-        ? todos.find((l) => l.id_loteamento === selecionados[0])?.nome ?? "1 loteamento"
-        : `${selecionados.length} loteamentos`;
-
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="gap-2 min-w-[220px] justify-between">
-              <span className="truncate">{rotuloFiltro}</span>
-              <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-[300px] p-2" align="start">
-            <Input
-              placeholder="Buscar por loteamento ou cidade..."
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              className="h-8 mb-2 text-sm"
-            />
-            <div className="max-h-[300px] overflow-y-auto space-y-1">
-              {opcoes.length === 0 && (
-                <div className="px-2 py-3 text-xs text-muted-foreground text-center">
-                  {isLoading ? "Carregando…" : "Nenhum loteamento encontrado."}
-                </div>
-              )}
-              {/* Botão (não <label>) para o clique disparar o toggle uma única vez:
-                  um <label> em volta do Checkbox faz o evento chegar duas vezes. */}
-              {opcoes.map((l) => {
-                const local = localDe(l);
-                return (
-                  <button
-                    key={l.id_loteamento}
-                    type="button"
-                    onClick={() => toggle(l.id_loteamento)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-muted cursor-pointer text-sm text-left"
-                  >
-                    <Checkbox
-                      checked={selecionados.includes(l.id_loteamento)}
-                      className="pointer-events-none shrink-0"
-                      tabIndex={-1}
-                    />
-                    <span className="truncate flex-1 min-w-0">
-                      {l.nome}
-                      {local && <span className="text-xs text-muted-foreground"> — {local}</span>}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            {selecionados.length > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-full mt-2 h-8 text-xs"
-                onClick={() => setSelecionados([])}
-              >
-                Limpar seleção
-              </Button>
-            )}
-          </PopoverContent>
-        </Popover>
+        <LoteamentoMultiCombobox
+          loteamentos={todos}
+          value={selecionados}
+          onValueChange={setSelecionados}
+          isLoading={isLoading}
+          className="min-w-[220px]"
+        />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
