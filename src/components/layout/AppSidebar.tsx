@@ -50,7 +50,7 @@ const mainItems = [
   { title: "Loteamentos", url: "/loteamentos", icon: MapPin },
   { title: "Lotes", url: "/lotes", icon: Grid3X3 },
   { title: "Vendas", url: "/vendas", icon: ShoppingCart },
-  { title: "Pagamentos", url: "/pagamentos", icon: CreditCard },
+  { title: "Contas a Receber", url: "/pagamentos", icon: CreditCard },
 ];
 
 const financeiroSubItems = [

@@ -55,6 +55,8 @@ import { useSearchParams } from "react-router-dom";
 import { gerarReciboParcela } from "@/utils/reciboParcela";
 import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
 import { formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { AReceberPorLoteTab } from "@/components/pagamentos/AReceberPorLoteTab";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -435,6 +437,9 @@ const Pagamentos = () => {
   });
 
   // ─── Handlers ────────────────────────────────────────────────────────────
+
+  // Aba principal da tela; não confundir com `aba` (sub-abas Abertas/Pagas).
+  const [abaPrincipal, setAbaPrincipal] = useState("cliente");
 
   function selecionarCliente(c: ClienteApi) {
     setClienteSelecionado(c);
@@ -864,11 +869,28 @@ const Pagamentos = () => {
 
         {/* Cabeçalho */}
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Pagamentos</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Contas a Receber</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Recebimento de parcelas por cliente
+            Recebimento de parcelas por cliente, loteamento ou lote
           </p>
         </div>
+
+        <Tabs value={abaPrincipal} onValueChange={setAbaPrincipal}>
+          <TabsList className="grid grid-cols-2 w-full max-w-lg">
+            <TabsTrigger value="cliente">Por cliente</TabsTrigger>
+            <TabsTrigger value="lote">Por loteamento / lote</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="lote" className="pt-4">
+            <AReceberPorLoteTab
+              onVerCliente={(id, nome) => {
+                selecionarCliente({ id_cliente: id, nome, cpf: null });
+                setAbaPrincipal("cliente");
+              }}
+            />
+          </TabsContent>
+
+          <TabsContent value="cliente" className="pt-4 space-y-6">
 
         {/* Busca de cliente */}
         <div className="glass-card rounded-lg p-4">
@@ -1393,6 +1415,8 @@ const Pagamentos = () => {
             </p>
           </div>
         )}
+          </TabsContent>
+        </Tabs>
       </div>
 
       {/* ─── AlertDialog de confirmação de exclusão em lote ─── */}

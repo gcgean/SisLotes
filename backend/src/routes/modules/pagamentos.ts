@@ -94,6 +94,111 @@ pagamentosRouter.get("/atrasados", requireAuth, async (req: AuthRequest, res) =>
   return res.json(atrasados);
 });
 
+// ─── GET /a-receber — dívida em aberto por loteamento e/ou lote ──────────────
+// Precisa vir antes de "/:id", senão a rota dinâmica captura o caminho.
+const aReceberQuerySchema = z.object({
+  id_loteamento: z.union([z.string(), z.array(z.string())]).optional(),
+  id_lote: z.string().regex(/^\d+$/).transform((v) => parseInt(v, 10)).optional(),
+  situacao: z.enum(["aberto", "atrasado", "todos"]).optional(),
+});
+
+pagamentosRouter.get("/a-receber", async (req: AuthRequest, res) => {
+  const parse = aReceberQuerySchema.safeParse(req.query);
+  if (!parse.success) {
+    return res.status(400).json({ error: "Parâmetros inválidos", issues: parse.error.issues });
+  }
+  const idEmpresa = req.user?.id_empresa;
+  if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+  const { id_lote: idLote, situacao = "aberto" } = parse.data;
+  const raw = parse.data.id_loteamento;
+  const idsLoteamento = (Array.isArray(raw) ? raw : raw ? [raw] : [])
+    .map((v) => parseInt(v, 10))
+    .filter((n) => Number.isInteger(n) && n > 0);
+
+  const params: unknown[] = [idEmpresa];
+  const conditions = [
+    "p.id_empresa = $1",
+    "v.status <> 'cancelada'",
+    "p.situacao = 'aberto'",
+  ];
+
+  if (idsLoteamento.length > 0) {
+    params.push(idsLoteamento);
+    conditions.push(`lo.id_loteamento = ANY($${params.length}::int[])`);
+  }
+  if (typeof idLote === "number") {
+    params.push(idLote);
+    conditions.push(`l.id_lote = $${params.length}`);
+  }
+  if (situacao === "atrasado") conditions.push("p.vencimento < CURRENT_DATE");
+
+  const rows = await AppDataSource.query(
+    `
+    SELECT
+      p.id_pagamento,
+      c.id_cliente,
+      c.nome AS cliente,
+      lo.id_loteamento,
+      lo.nome AS loteamento,
+      l.id_lote,
+      l.quadra,
+      l.lote,
+      v.id_venda,
+      p.numero_parcela,
+      v.parcelas AS total_parcelas,
+      TO_CHAR(p.vencimento, 'YYYY-MM-DD') AS vencimento,
+      p.valor,
+      GREATEST(0, (CURRENT_DATE - p.vencimento)) AS dias_atraso
+    FROM pagamentos p
+    JOIN vendas v ON v.id_venda = p.id_venda
+    JOIN clientes c ON c.id_cliente = v.id_cliente
+    JOIN lotes l ON l.id_lote = v.id_lote
+    JOIN loteamentos lo ON lo.id_loteamento = l.id_loteamento
+    WHERE ${conditions.join(" AND ")}
+    ORDER BY lo.nome ASC, l.quadra ASC, l.lote ASC, p.vencimento ASC
+    `,
+    params
+  );
+
+  type Row = {
+    id_pagamento: number; id_cliente: number; cliente: string;
+    id_loteamento: number; loteamento: string;
+    id_lote: number; quadra: string; lote: string;
+    id_venda: number; numero_parcela: number; total_parcelas: number;
+    vencimento: string; valor: string | number; dias_atraso: string | number;
+  };
+
+  const parcelas = (rows as Row[]).map((r) => ({
+    id_pagamento: Number(r.id_pagamento),
+    id_cliente: Number(r.id_cliente),
+    cliente: r.cliente,
+    id_loteamento: Number(r.id_loteamento),
+    loteamento: r.loteamento,
+    id_lote: Number(r.id_lote),
+    quadra: r.quadra,
+    lote: r.lote,
+    id_venda: Number(r.id_venda),
+    numeroParcela: Number(r.numero_parcela),
+    totalParcelas: Number(r.total_parcelas),
+    vencimento: r.vencimento,
+    valor: Number(r.valor),
+    diasAtraso: Number(r.dias_atraso),
+  }));
+
+  const totalAtrasado = parcelas.filter((p) => p.diasAtraso > 0).reduce((a, p) => a + p.valor, 0);
+  const totalAVencer = parcelas.filter((p) => p.diasAtraso === 0).reduce((a, p) => a + p.valor, 0);
+
+  return res.json({
+    parcelas,
+    totalEmAberto: totalAtrasado + totalAVencer,
+    totalAtrasado,
+    totalAVencer,
+    qtdAtrasadas: parcelas.filter((p) => p.diasAtraso > 0).length,
+    qtdAVencer: parcelas.filter((p) => p.diasAtraso === 0).length,
+  });
+});
+
 pagamentosRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
   const { id } = req.params;
 
