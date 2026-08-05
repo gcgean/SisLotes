@@ -7,7 +7,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { LoadingState } from "@/components/ui/loading-state";
-import { ChevronDown, Grid3X3, Map, CheckCircle2, ShoppingCart } from "lucide-react";
+// O ícone é importado com alias: "Map" sobrescreveria o construtor nativo
+// usado em `new Map()` mais abaixo e quebraria a tela em runtime.
+import { ChevronDown, Grid3X3, Map as MapIcon, CheckCircle2, ShoppingCart } from "lucide-react";
 
 interface LotesLoteamento {
   id_loteamento: number;
@@ -86,9 +88,11 @@ export function MapaLotesTab() {
   const quadras = useMemo(() => {
     const mapa = new Map<string, LoteDoLoteamento[]>();
     lotes.forEach((l) => {
-      const lista = mapa.get(l.quadra) ?? [];
+      // Base legada pode ter quadra vazia/nula — agrupa sob "—" em vez de quebrar.
+      const chave = l.quadra != null && String(l.quadra).trim() !== "" ? String(l.quadra) : "—";
+      const lista = mapa.get(chave) ?? [];
       lista.push(l);
-      mapa.set(l.quadra, lista);
+      mapa.set(chave, lista);
     });
     return Array.from(mapa.entries()).sort((a, b) =>
       a[0].localeCompare(b[0], "pt-BR", { numeric: true })
@@ -233,7 +237,7 @@ export function MapaLotesTab() {
                       disabled={d.totalLotes === 0}
                       onClick={() => setMapaDe(mapaDe?.id_loteamento === d.id_loteamento ? null : d)}
                     >
-                      <Map className="h-3.5 w-3.5" />
+                      <MapIcon className="h-3.5 w-3.5" />
                       {mapaDe?.id_loteamento === d.id_loteamento ? "Fechar" : "Ver mapa"}
                     </Button>
                   </td>
@@ -250,7 +254,7 @@ export function MapaLotesTab() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 className="font-semibold flex items-center gap-2">
-                <Map className="h-4 w-4 text-primary" />
+                <MapIcon className="h-4 w-4 text-primary" />
                 Mapa de lotes — {mapaDe.nome}
               </h3>
               {localDe(mapaDe) && <p className="text-xs text-muted-foreground mt-0.5">{localDe(mapaDe)}</p>}
