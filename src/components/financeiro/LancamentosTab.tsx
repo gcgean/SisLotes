@@ -15,9 +15,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Plus, Pencil, Trash2, Printer } from "lucide-react";
 import { formatDateBR } from "@/lib/date-br";
 import { LancamentoDialog, Lancamento } from "@/components/financeiro/LancamentoDialog";
+import { imprimirExtratoConta } from "@/utils/extratoConta";
+import type { ReciboEmpresa } from "@/utils/reciboParcela";
 
 interface Conta {
   id_conta: number;
@@ -78,6 +82,16 @@ export function LancamentosTab() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [usarTimbrado, setUsarTimbrado] = useState(true);
+
+  const { data: empresaInfo } = useQuery<ReciboEmpresa>({
+    queryKey: ["minha-empresa"],
+    queryFn: async () => {
+      const r = await fetch("/api/empresas/minha", { headers });
+      if (!r.ok) throw new Error("Erro ao carregar empresa");
+      return r.json();
+    },
+  });
 
   const { data: contas = [] } = useQuery<Conta[]>({
     queryKey: ["financeiro", "contas-ativas"],
@@ -135,6 +149,36 @@ export function LancamentosTab() {
 
   const movimentos = extrato?.movimentos ?? [];
 
+  const contaLabel =
+    contaFiltro === "todas"
+      ? "Todas as contas"
+      : contas.find((c) => String(c.id_conta) === contaFiltro)?.apelido ?? "Conta";
+
+  function imprimirExtrato() {
+    if (!extrato) return;
+    const ok = imprimirExtratoConta(
+      {
+        contaLabel,
+        periodoDe: from,
+        periodoAte: to,
+        saldoInicialPeriodo: extrato.saldoInicialPeriodo,
+        saldoFinalPeriodo: extrato.saldoFinalPeriodo,
+        totalCreditos: extrato.totalCreditos,
+        totalDebitos: extrato.totalDebitos,
+        movimentos: extrato.movimentos,
+      },
+      empresaInfo ?? null,
+      usarTimbrado,
+    );
+    if (!ok) {
+      toast({
+        title: "Não foi possível abrir a impressão",
+        description: "Verifique se o bloqueador de pop-ups está desativado.",
+        variant: "destructive",
+      });
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -156,9 +200,25 @@ export function LancamentosTab() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={openNew} className="gap-2" disabled={contas.length === 0}>
-          <Plus className="h-4 w-4" /> Novo Lançamento
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Switch id="timbrado-extrato" checked={usarTimbrado} onCheckedChange={setUsarTimbrado} />
+            <Label htmlFor="timbrado-extrato" className="text-xs text-muted-foreground cursor-pointer">
+              Com timbrado
+            </Label>
+          </div>
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={imprimirExtrato}
+            disabled={!extrato || isLoading}
+          >
+            <Printer className="h-4 w-4" /> Imprimir Extrato
+          </Button>
+          <Button onClick={openNew} className="gap-2" disabled={contas.length === 0}>
+            <Plus className="h-4 w-4" /> Novo Lançamento
+          </Button>
+        </div>
       </div>
       {contas.length === 0 && (
         <p className="text-xs text-muted-foreground">Cadastre uma conta na aba "Contas" antes de lançar.</p>
