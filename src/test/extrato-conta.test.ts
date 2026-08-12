@@ -84,6 +84,35 @@ describe("imprimirExtratoConta", () => {
     expect(imprimirExtratoConta(EXTRATO, null, false)).toBe(false);
   });
 
+  // Regressao: sem viewport/text-size-adjust o Edge aplicava "font boosting"
+  // e o documento saia com a fonte gigante e scroll horizontal.
+  it("declara viewport e desativa o ajuste automatico de fonte", () => {
+    mockJanela();
+    imprimirExtratoConta(EXTRATO, null, false);
+
+    expect(escrito).toContain('name="viewport"');
+    expect(escrito).toMatch(/text-size-adjust:\s*100%/);
+    // A folha nunca pode ultrapassar a largura da janela.
+    expect(escrito).toMatch(/max-width:\s*100%/);
+  });
+
+  it("mantem o @page apenas dentro de @media print", () => {
+    mockJanela();
+    imprimirExtratoConta(EXTRATO, null, false);
+
+    const idxMediaPrint = escrito.indexOf("@media print");
+    const idxPage = escrito.indexOf("@page");
+    expect(idxMediaPrint).toBeGreaterThan(-1);
+    expect(idxPage).toBeGreaterThan(idxMediaPrint);
+  });
+
+  it("repete o cabecalho da tabela a cada pagina impressa", () => {
+    mockJanela();
+    imprimirExtratoConta(EXTRATO, null, false);
+    expect(escrito).toContain("display: table-header-group");
+    expect(escrito).toContain("page-break-inside: avoid");
+  });
+
   it("mostra aviso quando nao ha movimentos", () => {
     mockJanela();
     imprimirExtratoConta({ ...EXTRATO, movimentos: [] }, null, false);

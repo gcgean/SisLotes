@@ -95,72 +95,118 @@ export function imprimirExtratoConta(
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8" />
-<title>Extrato — ${esc(extrato.contaLabel)}</title>
+<!-- viewport + text-size-adjust: sem isso o Chromium/Edge aplica "font boosting"
+     na janela de impressão e o documento sai com a fonte gigante. -->
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Extrato de conta — ${esc(extrato.contaLabel)}</title>
 <style>
-  @page { size: A4; margin: 12mm; }
-  * { box-sizing: border-box; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 10pt; color: #111; margin: 0; padding: 16px; }
-  h1 { font-size: 14pt; margin: 0 0 2px; }
-  .meta { font-size: 9.5pt; color: #444; margin-bottom: 14px; }
-  .resumo { display: flex; gap: 8px; margin-bottom: 14px; }
-  .card { flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 8px 10px; }
-  .card .rot { font-size: 8pt; color: #666; text-transform: uppercase; letter-spacing: .04em; }
-  .card .val { font-size: 11pt; font-weight: bold; margin-top: 2px; }
-  table { width: 100%; border-collapse: collapse; }
-  thead th { background: #f3f4f6; font-size: 8.5pt; text-transform: uppercase; letter-spacing: .04em;
-             color: #444; text-align: left; padding: 7px 8px; border-bottom: 1px solid #ddd; }
-  tbody td { padding: 7px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
-  .num { text-align: right; white-space: nowrap; }
-  .sub { font-size: 8pt; color: #666; margin-top: 1px; }
-  tfoot td, .saldo-linha td { background: #fafafa; font-weight: bold; }
-  .btn-print { position: fixed; top: 12px; right: 12px; padding: 8px 16px; background: #059669;
-               color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 10pt; }
-  @media print { .btn-print { display: none !important; } }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 10pt; line-height: 1.35; color: #111; background: #f1f5f9;
+    padding: 16px;
+  }
+  /* Folha do relatório: largura de A4 e nunca maior que a janela. */
+  .folha { width: 210mm; max-width: 100%; margin: 0 auto; background: #fff; padding: 14mm; }
+
+  .doc-titulo { font-size: 13pt; font-weight: bold; text-transform: uppercase; letter-spacing: .5px; }
+  .doc-sub { font-size: 9pt; color: #555; margin-top: 2px; }
+  .cabecalho { border-bottom: 1.5px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
+
+  .resumo { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .card { flex: 1 1 120px; min-width: 0; border: 1px solid #d4d4d8; border-radius: 4px; padding: 7px 9px; }
+  .card .rot { font-size: 7.5pt; color: #555; text-transform: uppercase; letter-spacing: .04em; }
+  .card .val { font-size: 11pt; font-weight: bold; margin-top: 2px; white-space: nowrap; }
+
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { padding: 5px 6px; text-align: left; vertical-align: top; word-wrap: break-word; }
+  thead th {
+    background: #f1f5f9; font-size: 8pt; text-transform: uppercase; letter-spacing: .04em;
+    color: #444; border-bottom: 1px solid #94a3b8;
+  }
+  tbody td { border-bottom: 1px solid #e5e7eb; font-size: 9pt; }
+  tbody tr:nth-child(even) td { background: #fafafa; }
+  .num { text-align: right; }
+  .sub { font-size: 7.5pt; color: #666; margin-top: 1px; }
+  .linha-saldo td { background: #f1f5f9 !important; font-weight: bold; font-size: 9pt; }
+  .c-data { width: 15%; } .c-desc { width: 37%; } .c-conta { width: 20%; }
+  .c-valor { width: 14%; } .c-saldo { width: 14%; }
+
+  .rodape { margin-top: 14px; padding-top: 8px; border-top: 1px solid #d4d4d8;
+            font-size: 8pt; color: #666; display: flex; justify-content: space-between; gap: 12px; }
+
+  .btn-print {
+    position: fixed; top: 10px; right: 10px; z-index: 10;
+    padding: 8px 14px; background: #059669; color: #fff;
+    border: none; border-radius: 5px; cursor: pointer;
+    font-family: Arial, Helvetica, sans-serif; font-size: 10pt;
+  }
+
+  @media print {
+    @page { size: A4; margin: 12mm; }
+    body { background: #fff; padding: 0; font-size: 9.5pt; }
+    .folha { width: auto; max-width: none; margin: 0; padding: 0; }
+    .btn-print { display: none !important; }
+    thead { display: table-header-group; }
+    tr { page-break-inside: avoid; }
+  }
 </style>
 </head>
 <body>
-  ${timbrado}
+  <button class="btn-print" onclick="window.print();">Imprimir</button>
 
-  <h1>Extrato — ${esc(extrato.contaLabel)}</h1>
-  <div class="meta">
-    Período: ${fmtData(extrato.periodoDe)} a ${fmtData(extrato.periodoAte)}
-    · Emitido em ${new Date().toLocaleString("pt-BR")}
+  <div class="folha">
+    ${timbrado}
+
+    <div class="cabecalho">
+      <div class="doc-titulo">Extrato de conta</div>
+      <div class="doc-sub">
+        <strong>${esc(extrato.contaLabel)}</strong>
+        &nbsp;·&nbsp; Período: ${fmtData(extrato.periodoDe)} a ${fmtData(extrato.periodoAte)}
+      </div>
+    </div>
+
+    <div class="resumo">
+      <div class="card"><div class="rot">Saldo inicial</div><div class="val">${fmt(extrato.saldoInicialPeriodo)}</div></div>
+      <div class="card"><div class="rot">Créditos</div><div class="val" style="color:#047857;">${fmt(extrato.totalCreditos)}</div></div>
+      <div class="card"><div class="rot">Débitos</div><div class="val" style="color:#b91c1c;">${fmt(extrato.totalDebitos)}</div></div>
+      <div class="card"><div class="rot">Saldo final</div><div class="val">${fmt(extrato.saldoFinalPeriodo)}</div></div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="c-data">Data</th>
+          <th class="c-desc">Descrição</th>
+          <th class="c-conta">Conta</th>
+          <th class="c-valor num">Valor</th>
+          <th class="c-saldo num">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="linha-saldo">
+          <td colspan="4">Saldo inicial do período</td>
+          <td class="num">${fmt(extrato.saldoInicialPeriodo)}</td>
+        </tr>
+        ${corpo}
+        <tr class="linha-saldo">
+          <td colspan="4">Saldo final do período</td>
+          <td class="num">${fmt(extrato.saldoFinalPeriodo)}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="rodape">
+      <!-- Sem timbrado o papel já é o da empresa: não repetir o nome dela aqui. -->
+      <span>${comTimbrado && empresa?.nome_fantasia ? `${esc(empresa.nome_fantasia)} — ` : ""}Extrato de conta</span>
+      <span>Emitido em ${new Date().toLocaleString("pt-BR")} · ${extrato.movimentos.length} lançamento(s)</span>
+    </div>
   </div>
-
-  <div class="resumo">
-    <div class="card"><div class="rot">Saldo inicial</div><div class="val">${fmt(extrato.saldoInicialPeriodo)}</div></div>
-    <div class="card"><div class="rot">Créditos</div><div class="val" style="color:#059669;">${fmt(extrato.totalCreditos)}</div></div>
-    <div class="card"><div class="rot">Débitos</div><div class="val" style="color:#dc2626;">${fmt(extrato.totalDebitos)}</div></div>
-    <div class="card"><div class="rot">Saldo final</div><div class="val">${fmt(extrato.saldoFinalPeriodo)}</div></div>
-  </div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Data</th><th>Descrição</th><th>Conta</th>
-        <th class="num">Valor</th><th class="num">Saldo</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr class="saldo-linha">
-        <td colspan="4"><em>Saldo inicial do período</em></td>
-        <td class="num">${fmt(extrato.saldoInicialPeriodo)}</td>
-      </tr>
-      ${corpo}
-    </tbody>
-    <tfoot>
-      <tr>
-        <td colspan="4"><em>Saldo final do período</em></td>
-        <td class="num">${fmt(extrato.saldoFinalPeriodo)}</td>
-      </tr>
-    </tfoot>
-  </table>
-
-  <button class="btn-print" onclick="this.style.display='none'; window.print();">Imprimir Extrato</button>
 </body>
 </html>`;
 
-  const printWindow = window.open("", "_blank", "width=1000,height=760");
+  const printWindow = window.open("", "_blank", "width=1024,height=800");
   if (!printWindow) return false;
   printWindow.document.write(htmlContent);
   printWindow.document.close();
