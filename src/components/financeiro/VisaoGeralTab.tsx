@@ -14,6 +14,8 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ArrowDownCircle,
+  ArrowUpCircle,
 } from "lucide-react";
 import {
   BarChart,
@@ -25,6 +27,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
   Cell,
 } from "recharts";
@@ -195,13 +198,23 @@ export function VisaoGeralTab() {
   const diasFuturos = fluxoFuturo
     ? fluxoFuturo.dias.filter((d) => mesSelecionado !== mesAtualIso() || d.data >= hojeLocal)
     : [];
+  // Ambos os valores entram positivos: barras lado a lado sobem a partir da base,
+  // que é bem mais legível do que "a pagar" negativo puxando o eixo para baixo.
   const graficoDias = diasFuturos.map((d) => ({
     data: d.data,
     label: diaLabel(d.data).numero,
     aReceber: d.aReceber,
-    aPagar: -d.aPagar,
+    aPagar: d.aPagar,
     saldo: d.saldoDia,
   }));
+
+  // Melhor dia só faz sentido entre os dias que ainda vão acontecer.
+  const melhorDiaFuturo = diasFuturos.reduce<DiaFluxo | null>(
+    (melhor, d) => (melhor === null || d.saldoDia > melhor.saldoDia ? d : melhor),
+    null,
+  );
+  const diasNegativosFuturos = diasFuturos.filter((d) => d.saldoDia < 0);
+  const totalMovimentoNoGrafico = diasFuturos.reduce((a, d) => a + d.aPagar + d.aReceber, 0);
 
   const loteamentoChartHeight = Math.max(200, resultadoLoteamento.length * 32);
 
@@ -223,7 +236,9 @@ export function VisaoGeralTab() {
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm font-medium min-w-[140px] text-center capitalize">{mesLabel(mesSelecionado)}</span>
+            {/* Sem "capitalize": mesLabel já devolve "Agosto de 2026" — a classe
+                deixaria "Agosto De 2026". */}
+            <span className="text-sm font-medium min-w-[150px] text-center">{mesLabel(mesSelecionado)}</span>
             <Button
               variant="outline"
               size="icon"
@@ -240,39 +255,67 @@ export function VisaoGeralTab() {
           ) : (
             <>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div className="rounded-lg border p-3 text-center">
-                  <div className="text-xs text-muted-foreground">Saldo inicial do período</div>
-                  <div className={`text-base font-bold ${fluxoFuturo.saldoInicialPeriodo >= 0 ? "" : "text-red-500"}`}>
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Wallet className="h-3.5 w-3.5 shrink-0" /> Saldo inicial
+                  </div>
+                  <div className={`text-xl font-bold mt-1 ${fluxoFuturo.saldoInicialPeriodo >= 0 ? "" : "text-red-500"}`}>
                     {fmt(fluxoFuturo.saldoInicialPeriodo)}
                   </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">no início do período</div>
                 </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <div className="text-xs text-muted-foreground">A pagar no mês</div>
-                  <div className="text-base font-bold text-red-500">{fmt(fluxoFuturo.totalAPagar)}</div>
+
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <ArrowDownCircle className="h-3.5 w-3.5 text-red-500 shrink-0" /> A pagar
+                  </div>
+                  <div className="text-xl font-bold mt-1 text-red-500">{fmt(fluxoFuturo.totalAPagar)}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">sai do caixa no mês</div>
                 </div>
-                <div className="rounded-lg border p-3 text-center">
-                  <div className="text-xs text-muted-foreground">A receber no mês</div>
-                  <div className="text-base font-bold text-emerald-600">{fmt(fluxoFuturo.totalAReceber)}</div>
+
+                <div className="rounded-lg border p-3">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <ArrowUpCircle className="h-3.5 w-3.5 text-emerald-600 shrink-0" /> A receber
+                  </div>
+                  <div className="text-xl font-bold mt-1 text-emerald-600">{fmt(fluxoFuturo.totalAReceber)}</div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">entra no caixa no mês</div>
                 </div>
-                <div className="rounded-lg border p-3 text-center bg-muted/30">
-                  <div className="text-xs text-muted-foreground">Saldo final projetado</div>
-                  <div className={`text-base font-bold ${fluxoFuturo.saldoFinalProjetado >= 0 ? "" : "text-red-500"}`}>
+
+                {/* Destaque: é a resposta da pergunta "vai sobrar ou faltar dinheiro?" */}
+                <div
+                  className={`rounded-lg border-2 p-3 ${
+                    fluxoFuturo.saldoFinalProjetado >= 0
+                      ? "border-emerald-500/40 bg-emerald-50/60 dark:bg-emerald-950/20"
+                      : "border-red-500/50 bg-red-50/60 dark:bg-red-950/20"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <TrendingUp className="h-3.5 w-3.5 shrink-0" /> Saldo final projetado
+                  </div>
+                  <div className={`text-xl font-bold mt-1 ${fluxoFuturo.saldoFinalProjetado >= 0 ? "text-emerald-600" : "text-red-500"}`}>
                     {fmt(fluxoFuturo.saldoFinalProjetado)}
+                  </div>
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    {(() => {
+                      const variacao = fluxoFuturo.saldoFinalProjetado - fluxoFuturo.saldoInicialPeriodo;
+                      if (variacao === 0) return "sem variação no período";
+                      return `${variacao > 0 ? "+" : "−"}${fmt(Math.abs(variacao))} no período`;
+                    })()}
                   </div>
                 </div>
               </div>
 
-              {/* Alerta / recomendação */}
-              {fluxoFuturo.diasNegativos.length > 0 ? (
+              {/* Alerta / recomendação — considera apenas os dias que ainda vão acontecer */}
+              {diasNegativosFuturos.length > 0 ? (
                 <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 p-3 flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
                   <div className="text-sm">
                     <span className="font-semibold text-red-600">Risco de falta de caixa: </span>
-                    previsão de saldo negativo em {fluxoFuturo.diasNegativos.length}{" "}
-                    {fluxoFuturo.diasNegativos.length === 1 ? "dia" : "dias"} do mês (
-                    {fluxoFuturo.diasNegativos.map((d) => diaLabel(d).numero).join(", ")}). Considere antecipar
-                    recebíveis, negociar prazos com fornecedores ou adiar pagamentos não essenciais para depois de{" "}
-                    {fluxoFuturo.melhorDiaPagamento ? diaLabel(fluxoFuturo.melhorDiaPagamento).numero : "—"}.
+                    previsão de saldo negativo em {diasNegativosFuturos.length}{" "}
+                    {diasNegativosFuturos.length === 1 ? "dia" : "dias"} (
+                    {diasNegativosFuturos.map((d) => diaLabel(d.data).numero).join(", ")}). Considere antecipar
+                    recebíveis, negociar prazos com fornecedores ou adiar pagamentos não essenciais para depois do dia{" "}
+                    {melhorDiaFuturo ? diaLabel(melhorDiaFuturo.data).numero : "—"}.
                   </div>
                 </div>
               ) : (
@@ -280,12 +323,12 @@ export function VisaoGeralTab() {
                   <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
                   <div className="text-sm">
                     <span className="font-semibold text-emerald-700 dark:text-emerald-400">Fluxo de caixa positivo </span>
-                    em todo o mês.
-                    {fluxoFuturo.melhorDiaPagamento && (
+                    em todos os dias restantes do mês.
+                    {melhorDiaFuturo && (
                       <>
                         {" "}Melhor dia para concentrar pagamentos extras ou compras:{" "}
-                        <span className="font-semibold">dia {diaLabel(fluxoFuturo.melhorDiaPagamento).numero}</span>{" "}
-                        (saldo projetado de {fmt(fluxoFuturo.melhorDiaSaldo ?? 0)}).
+                        <span className="font-semibold">dia {diaLabel(melhorDiaFuturo.data).numero}</span>{" "}
+                        (saldo projetado de {fmt(melhorDiaFuturo.saldoDia)}).
                       </>
                     )}
                   </div>
@@ -303,32 +346,39 @@ export function VisaoGeralTab() {
                   </p>
                 ) : (
                   <div
-                    style={{ height: 300 }}
+                    style={{ height: 320 }}
                     className="[&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line]:stroke-border/50"
                   >
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={graficoDias} margin={{ left: 8, right: 8 }}>
+                      <ComposedChart data={graficoDias} margin={{ left: 8, right: 8, top: 8 }}>
                         <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                        <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                        <XAxis dataKey="label" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
+                        {/* Movimentos do dia (barras) à esquerda; saldo acumulado (linha) à direita.
+                            Escalas separadas porque o saldo costuma ser ordens de grandeza maior. */}
                         <YAxis
                           yAxisId="mov"
-                          tick={{ fontSize: 12 }}
-                          tickFormatter={(v) => fmt(Math.abs(v))}
-                          width={90}
+                          tick={{ fontSize: 11 }}
+                          tickFormatter={(v) => fmt(v)}
+                          width={88}
+                          tickLine={false}
+                          axisLine={false}
                         />
                         <YAxis
                           yAxisId="saldo"
                           orientation="right"
-                          tick={{ fontSize: 12 }}
+                          tick={{ fontSize: 11 }}
                           tickFormatter={(v) => fmt(v)}
-                          width={90}
+                          width={88}
+                          tickLine={false}
+                          axisLine={false}
                         />
                         <Tooltip
+                          cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
                           contentStyle={{ background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))", borderRadius: 8, fontSize: 12 }}
-                          labelStyle={{ color: "hsl(var(--foreground))" }}
+                          labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
                           formatter={(value: number, name: string) => {
                             if (name === "saldo") return [fmt(value), "Saldo projetado"];
-                            if (name === "aPagar") return [fmt(Math.abs(value)), "A pagar"];
+                            if (name === "aPagar") return [fmt(value), "A pagar"];
                             return [fmt(value), "A receber"];
                           }}
                           labelFormatter={(label) => `Dia ${label}`}
@@ -339,19 +389,28 @@ export function VisaoGeralTab() {
                           }
                           wrapperStyle={{ fontSize: 12 }}
                         />
-                        <Bar yAxisId="mov" dataKey="aReceber" fill={COR_ENTRADA} radius={[3, 3, 0, 0]} />
-                        <Bar yAxisId="mov" dataKey="aPagar" fill={COR_SAIDA} radius={[0, 0, 3, 3]} />
+                        {/* Linha do zero: deixa explícito quando o saldo entra no negativo. */}
+                        <ReferenceLine yAxisId="saldo" y={0} stroke={COR_NEGATIVO} strokeDasharray="4 4" />
+                        <Bar yAxisId="mov" dataKey="aReceber" fill={COR_ENTRADA} radius={[3, 3, 0, 0]} maxBarSize={22} />
+                        <Bar yAxisId="mov" dataKey="aPagar" fill={COR_SAIDA} radius={[3, 3, 0, 0]} maxBarSize={22} />
                         <Line
                           yAxisId="saldo"
                           type="monotone"
                           dataKey="saldo"
                           stroke="#2563eb"
-                          strokeWidth={2}
-                          dot={{ r: 3 }}
+                          strokeWidth={2.5}
+                          dot={{ r: 2.5 }}
+                          activeDot={{ r: 5 }}
                         />
                       </ComposedChart>
                     </ResponsiveContainer>
                   </div>
+                )}
+                {totalMovimentoNoGrafico === 0 && (
+                  <p className="text-xs text-muted-foreground mt-2 text-center">
+                    Nenhuma conta a pagar ou receber lançada para os dias restantes — a linha mostra o saldo
+                    atual se mantendo.
+                  </p>
                 )}
               </div>
             </>
