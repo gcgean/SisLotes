@@ -43,8 +43,11 @@ import { VisaoGeralTab } from "@/components/financeiro/VisaoGeralTab";
 import { ContasTab } from "@/components/financeiro/ContasTab";
 import { LancamentosTab } from "@/components/financeiro/LancamentosTab";
 import { RateioLoteamentoEditor, RateioLinha } from "@/components/financeiro/RateioLoteamentoEditor";
+import { imprimirContasPagar } from "@/utils/contasPagar";
+import type { ReciboEmpresa } from "@/utils/reciboParcela";
 import {
   Plus,
+  Printer,
   Receipt,
   Pencil,
   Trash2,
@@ -402,6 +405,66 @@ export default function Despesas() {
   });
 
   const hojeIsoDespesas = new Date().toISOString().slice(0, 10);
+
+  // ─── Impressão do relatório de contas a pagar ────────────────────────────
+  const [usarTimbradoRelatorio, setUsarTimbradoRelatorio] = useState(true);
+
+  const { data: empresaRelatorio } = useQuery<ReciboEmpresa>({
+    queryKey: ["minha-empresa"],
+    queryFn: async () => {
+      const r = await fetch("/api/empresas/minha", { headers: getAuthHeaders() });
+      if (!r.ok) throw new Error("Erro ao carregar empresa");
+      return r.json();
+    },
+  });
+
+  function imprimirRelatorioContasPagar() {
+    // O relatório sai exatamente com o que está filtrado na tela.
+    const partes: string[] = [];
+    if (filtroLoteamento === "administrativa") partes.push("Administrativas");
+    else if (filtroLoteamento !== "todos") {
+      partes.push(loteamentos.find((l) => String(l.id_loteamento) === filtroLoteamento)?.nome ?? "Loteamento");
+    }
+    if (filtroCategoria !== "todas") {
+      partes.push(categorias.find((c) => String(c.id_conta_contabil) === filtroCategoria)?.nome ?? "Categoria");
+    }
+    if (filtroSituacao !== "todas") {
+      partes.push({ aberto: "Em aberto", parcial: "Parcial", pago: "Pagas" }[filtroSituacao] ?? filtroSituacao);
+    }
+    if (search.trim()) partes.push(`Busca: "${search.trim()}"`);
+
+    const ok = imprimirContasPagar(
+      {
+        filtrosLabel: partes.length > 0 ? partes.join(" · ") : "Todas as contas a pagar",
+        contas: despesasFiltradas.map((d) => ({
+          descricao: d.descricao,
+          loteamento: d.loteamento_nome ?? (d.id_loteamento == null ? "Administrativa" : null),
+          categoria: d.categoria_nome,
+          fornecedor: d.fornecedor_nome,
+          valorTotal: Number(d.valor_total),
+          valorPago: Number(d.valor_pago),
+          parcelasPagas: d.parcelas_pagas,
+          parcelasTotal: d.parcelas_total,
+          vencimento: d.vencimento,
+          atrasada: Boolean(
+            d.vencimento && d.vencimento < hojeIsoDespesas && d.parcelas_pagas < d.parcelas_total,
+          ),
+          recorrente: d.recorrente,
+        })),
+      },
+      empresaRelatorio ?? null,
+      usarTimbradoRelatorio,
+    );
+
+    if (!ok) {
+      toast({
+        title: "Não foi possível abrir a impressão",
+        description: "Verifique se o bloqueador de pop-ups está desativado.",
+        variant: "destructive",
+      });
+    }
+  }
+
   const despesasSelecionadasParaPagar = despesas.filter((d) => selecionadas.has(d.id_despesa) && d.proxima_parcela_id);
   const totalSelecionadoLote = despesasSelecionadasParaPagar.reduce(
     (s, d) => s + Number((valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total).toString().replace(",", ".") || 0),
@@ -925,6 +988,15 @@ export default function Despesas() {
                     <CheckCircle2 className="h-4 w-4" /> Pagar selecionadas ({selecionadas.size})
                   </Button>
                 )}
+                <div className="flex items-center gap-1.5">
+                  <Switch id="timbrado-contas-pagar" checked={usarTimbradoRelatorio} onCheckedChange={setUsarTimbradoRelatorio} />
+                  <Label htmlFor="timbrado-contas-pagar" className="text-xs text-muted-foreground cursor-pointer">
+                    Com timbrado
+                  </Label>
+                </div>
+                <Button size="sm" variant="outline" className="gap-2" onClick={imprimirRelatorioContasPagar}>
+                  <Printer className="h-4 w-4" /> Imprimir
+                </Button>
                 <Button size="sm" className="gap-2" onClick={abrirNovaDespesa}>
                   <Plus className="h-4 w-4" /> Nova Conta a Pagar
                 </Button>
