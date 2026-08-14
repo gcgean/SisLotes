@@ -53,13 +53,27 @@ const mainItems = [
   { title: "Contas a Receber", url: "/pagamentos", icon: CreditCard },
 ];
 
-const financeiroSubItems = [
-  { title: "Dashboard de Fluxo de Caixa", tab: "visao-geral", icon: LayoutDashboard },
-  { title: "Contas a Pagar", tab: "despesas", icon: ReceiptText },
-  { title: "Plano de Contas", tab: "categorias", icon: ListTree },
-  { title: "Fornecedores", tab: "fornecedores", icon: Truck },
-  { title: "Contas", tab: "contas", icon: Landmark },
-  { title: "Extrato / Lançamento", tab: "lancamentos", icon: ScrollText },
+// Submenu do Financeiro em dois blocos: o que se usa no dia a dia primeiro,
+// depois os cadastros de apoio (que quase não mudam depois de configurados).
+// "Fluxo de Caixa" no lugar de "Dashboard de Fluxo de Caixa" porque o rótulo
+// longo era truncado ("Dashboard de Fluxo...") na largura da barra lateral.
+const financeiroGrupos = [
+  {
+    label: "Movimentação",
+    itens: [
+      { title: "Fluxo de Caixa", tab: "visao-geral", icon: LayoutDashboard },
+      { title: "Contas a Pagar", tab: "despesas", icon: ReceiptText },
+      { title: "Extrato / Lançamento", tab: "lancamentos", icon: ScrollText },
+    ],
+  },
+  {
+    label: "Cadastros",
+    itens: [
+      { title: "Contas", tab: "contas", icon: Landmark },
+      { title: "Plano de Contas", tab: "categorias", icon: ListTree },
+      { title: "Fornecedores", tab: "fornecedores", icon: Truck },
+    ],
+  },
 ];
 
 const secondaryItems = [
@@ -153,22 +167,29 @@ export function AppSidebar() {
                     </CollapsibleTrigger>
                     <CollapsibleContent>
                       <SidebarMenuSub>
-                        {financeiroSubItems.map((sub) => {
-                          const ativo = isFinanceiroAtivo && abaFinanceiroAtiva === sub.tab;
-                          return (
-                            <SidebarMenuSubItem key={sub.tab}>
-                              <SidebarMenuSubButton asChild isActive={ativo}>
-                                <NavLink
-                                  to={`/despesas${sub.tab === "visao-geral" ? "" : `?tab=${sub.tab}`}`}
-                                  onClick={() => setOpenMobile(false)}
-                                >
-                                  <sub.icon className="h-4 w-4 shrink-0" />
-                                  <span>{sub.title}</span>
-                                </NavLink>
-                              </SidebarMenuSubButton>
-                            </SidebarMenuSubItem>
-                          );
-                        })}
+                        {financeiroGrupos.map((grupo, i) => (
+                          <div key={grupo.label} className={i > 0 ? "mt-2 pt-2 border-t border-sidebar-border/60" : ""}>
+                            <div className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
+                              {grupo.label}
+                            </div>
+                            {grupo.itens.map((sub) => {
+                              const ativo = isFinanceiroAtivo && abaFinanceiroAtiva === sub.tab;
+                              return (
+                                <SidebarMenuSubItem key={sub.tab}>
+                                  <SidebarMenuSubButton asChild isActive={ativo}>
+                                    <NavLink
+                                      to={`/despesas${sub.tab === "visao-geral" ? "" : `?tab=${sub.tab}`}`}
+                                      onClick={() => setOpenMobile(false)}
+                                    >
+                                      <sub.icon className="h-4 w-4 shrink-0" />
+                                      <span className="truncate">{sub.title}</span>
+                                    </NavLink>
+                                  </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                              );
+                            })}
+                          </div>
+                        ))}
                       </SidebarMenuSub>
                     </CollapsibleContent>
                   </Collapsible>
