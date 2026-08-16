@@ -35,25 +35,10 @@ contasRouter.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
       c.*,
       c.saldo_inicial
         + COALESCE((
-            SELECT SUM(COALESCE(p.valor_pago, p.valor)) FROM pagamentos p
-            JOIN vendas v ON v.id_venda = p.id_venda
-            WHERE p.id_conta = c.id_conta AND p.situacao = 'pago' AND v.status <> 'cancelada'
-              AND (c.data_saldo_inicial IS NULL OR p.pago_data >= c.data_saldo_inicial)
-          ), 0)
-        + COALESCE((
-            SELECT SUM(l.valor) FROM lancamentos_manuais l
-            WHERE l.id_conta = c.id_conta AND l.tipo = 'receita'
-              AND (c.data_saldo_inicial IS NULL OR l.data >= c.data_saldo_inicial)
-          ), 0)
-        - COALESCE((
-            SELECT SUM(dp.valor_pago) FROM despesa_parcelas dp
-            WHERE dp.id_conta = c.id_conta AND dp.situacao = 'pago'
-              AND (c.data_saldo_inicial IS NULL OR dp.pago_data >= c.data_saldo_inicial)
-          ), 0)
-        - COALESCE((
-            SELECT SUM(l2.valor) FROM lancamentos_manuais l2
-            WHERE l2.id_conta = c.id_conta AND l2.tipo = 'despesa'
-              AND (c.data_saldo_inicial IS NULL OR l2.data >= c.data_saldo_inicial)
+            SELECT SUM(CASE WHEN mf.tipo = 'receita' THEN mf.valor ELSE -mf.valor END)
+            FROM movimentos_financeiros mf
+            WHERE mf.id_conta = c.id_conta
+              AND (c.data_saldo_inicial IS NULL OR mf.data >= c.data_saldo_inicial)
           ), 0) AS saldo_atual
     FROM contas c
     WHERE ${conditions.join(" AND ")}
@@ -74,17 +59,11 @@ contasRouter.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 // inteiro (usado para o saldo atual "de hoje").
 export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: string, idConta?: number): Promise<number> {
   const params: unknown[] = [idEmpresa];
-  let cutoffP = "";
-  let cutoffL = "";
-  let cutoffDp = "";
-  let cutoffL2 = "";
+  let cutoff = "";
   if (ateExclusive) {
     params.push(ateExclusive);
     const idx = params.length;
-    cutoffP = `AND p.pago_data < $${idx}`;
-    cutoffL = `AND l.data < $${idx}`;
-    cutoffDp = `AND dp.pago_data < $${idx}`;
-    cutoffL2 = `AND l2.data < $${idx}`;
+    cutoff = `AND mf.data < $${idx}`;
   }
   let contaClause = "";
   if (idConta) {
@@ -96,29 +75,11 @@ export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: s
     `
     SELECT
       COALESCE((
-        SELECT SUM(COALESCE(p.valor_pago, p.valor)) FROM pagamentos p
-        JOIN vendas v ON v.id_venda = p.id_venda
-        JOIN contas c ON c.id_conta = p.id_conta
-        WHERE c.id_empresa = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-          AND p.pago_data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffP} ${contaClause}
-      ), 0)
-      + COALESCE((
-        SELECT SUM(l.valor) FROM lancamentos_manuais l
-        JOIN contas c ON c.id_conta = l.id_conta
-        WHERE c.id_empresa = $1 AND l.tipo = 'receita'
-          AND l.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffL} ${contaClause}
-      ), 0)
-      - COALESCE((
-        SELECT SUM(dp.valor_pago) FROM despesa_parcelas dp
-        JOIN contas c ON c.id_conta = dp.id_conta
-        WHERE c.id_empresa = $1 AND dp.situacao = 'pago'
-          AND dp.pago_data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffDp} ${contaClause}
-      ), 0)
-      - COALESCE((
-        SELECT SUM(l2.valor) FROM lancamentos_manuais l2
-        JOIN contas c ON c.id_conta = l2.id_conta
-        WHERE c.id_empresa = $1 AND l2.tipo = 'despesa'
-          AND l2.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffL2} ${contaClause}
+        SELECT SUM(CASE WHEN mf.tipo = 'receita' THEN mf.valor ELSE -mf.valor END)
+        FROM movimentos_financeiros mf
+        JOIN contas c ON c.id_conta = mf.id_conta
+        WHERE c.id_empresa = $1
+          AND mf.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoff} ${contaClause}
       ), 0) AS delta
     `,
     params
@@ -174,42 +135,15 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
     deltaMovimentosEmpresa(idEmpresa, from, idConta),
     AppDataSource.query(
       `
-      SELECT * FROM (
-        SELECT TO_CHAR(p.pago_data, 'YYYY-MM-DD') AS data, 'entrada' AS movimento, 'venda' AS origem,
-               CONCAT('Recebimento venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
-               COALESCE(p.valor_pago, p.valor) AS valor,
-               NULL::text AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
-               NULL::int AS id_lancamento
-        FROM pagamentos p
-        JOIN vendas v ON v.id_venda = p.id_venda
-        JOIN contas c ON c.id_conta = p.id_conta
-        WHERE c.id_empresa = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-          AND p.pago_data >= $2 AND p.pago_data <= $3 ${movContaClause}
-
-        UNION ALL
-
-        SELECT TO_CHAR(dp.pago_data, 'YYYY-MM-DD') AS data, 'saida' AS movimento, 'despesa' AS origem,
-               d.descricao AS descricao, dp.valor_pago AS valor,
-               cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
-               NULL::int AS id_lancamento
-        FROM despesa_parcelas dp
-        JOIN despesas d ON d.id_despesa = dp.id_despesa
-        JOIN contas c ON c.id_conta = dp.id_conta
-        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = d.id_categoria
-        WHERE c.id_empresa = $1 AND dp.situacao = 'pago'
-          AND dp.pago_data >= $2 AND dp.pago_data <= $3 ${movContaClause}
-
-        UNION ALL
-
-        SELECT TO_CHAR(l.data, 'YYYY-MM-DD') AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
-               'lancamento' AS origem, l.descricao AS descricao, l.valor AS valor,
-               cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
-               l.id_lancamento AS id_lancamento
-        FROM lancamentos_manuais l
-        JOIN contas c ON c.id_conta = l.id_conta
-        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = l.id_conta_contabil
-        WHERE c.id_empresa = $1 AND l.data >= $2 AND l.data <= $3 ${movContaClause}
-      ) mov
+      SELECT TO_CHAR(mf.data, 'YYYY-MM-DD') AS data,
+             CASE WHEN mf.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
+             mf.origem, mf.descricao, mf.valor,
+             cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta,
+             CASE WHEN mf.origem = 'manual' THEN mf.id_origem ELSE NULL END AS id_lancamento
+      FROM movimentos_financeiros mf
+      JOIN contas c ON c.id_conta = mf.id_conta
+      LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = mf.id_conta_contabil
+      WHERE c.id_empresa = $1 AND mf.data >= $2 AND mf.data <= $3 ${movContaClause}
       ORDER BY data ASC, movimento ASC
       `,
       movParams
@@ -295,59 +229,21 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
       `
       SELECT
         COALESCE((
-          SELECT SUM(COALESCE(p.valor_pago, p.valor)) FROM pagamentos p
-          JOIN vendas v ON v.id_venda = p.id_venda
-          WHERE p.id_conta = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-            AND p.pago_data >= $2 AND p.pago_data < $3
-        ), 0)
-        + COALESCE((
-          SELECT SUM(l.valor) FROM lancamentos_manuais l
-          WHERE l.id_conta = $1 AND l.tipo = 'receita' AND l.data >= $2 AND l.data < $3
-        ), 0)
-        - COALESCE((
-          SELECT SUM(dp.valor_pago) FROM despesa_parcelas dp
-          WHERE dp.id_conta = $1 AND dp.situacao = 'pago' AND dp.pago_data >= $2 AND dp.pago_data < $3
-        ), 0)
-        - COALESCE((
-          SELECT SUM(l2.valor) FROM lancamentos_manuais l2
-          WHERE l2.id_conta = $1 AND l2.tipo = 'despesa' AND l2.data >= $2 AND l2.data < $3
+          SELECT SUM(CASE WHEN mf.tipo = 'receita' THEN mf.valor ELSE -mf.valor END)
+          FROM movimentos_financeiros mf
+          WHERE mf.id_conta = $1 AND mf.data >= $2 AND mf.data < $3
         ), 0) AS delta
       `,
       [idConta, dataSaldoInicial, from]
     ),
     AppDataSource.query(
       `
-      SELECT * FROM (
-        SELECT TO_CHAR(p.pago_data, 'YYYY-MM-DD') AS data, 'entrada' AS movimento, 'venda' AS origem,
-               CONCAT('Recebimento venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
-               COALESCE(p.valor_pago, p.valor) AS valor,
-               NULL::text AS conta_contabil
-        FROM pagamentos p
-        JOIN vendas v ON v.id_venda = p.id_venda
-        WHERE p.id_conta = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-          AND p.pago_data >= $2 AND p.pago_data <= $3
-
-        UNION ALL
-
-        SELECT TO_CHAR(dp.pago_data, 'YYYY-MM-DD') AS data, 'saida' AS movimento, 'despesa' AS origem,
-               d.descricao AS descricao,
-               dp.valor_pago AS valor,
-               cat.nome AS conta_contabil
-        FROM despesa_parcelas dp
-        JOIN despesas d ON d.id_despesa = dp.id_despesa
-        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = d.id_categoria
-        WHERE dp.id_conta = $1 AND dp.situacao = 'pago'
-          AND dp.pago_data >= $2 AND dp.pago_data <= $3
-
-        UNION ALL
-
-        SELECT TO_CHAR(l.data, 'YYYY-MM-DD') AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
-               'lancamento' AS origem, l.descricao AS descricao, l.valor AS valor,
-               cat.nome AS conta_contabil
-        FROM lancamentos_manuais l
-        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = l.id_conta_contabil
-        WHERE l.id_conta = $1 AND l.data >= $2 AND l.data <= $3
-      ) mov
+      SELECT TO_CHAR(mf.data, 'YYYY-MM-DD') AS data,
+             CASE WHEN mf.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
+             mf.origem, mf.descricao, mf.valor, cat.nome AS conta_contabil
+      FROM movimentos_financeiros mf
+      LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = mf.id_conta_contabil
+      WHERE mf.id_conta = $1 AND mf.data >= $2 AND mf.data <= $3
       ORDER BY data ASC
       `,
       [idConta, from, to]

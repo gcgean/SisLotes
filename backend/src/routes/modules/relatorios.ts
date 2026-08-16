@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 import { saldoAtualGeralEmpresa } from "./contas";
+import { fluxoFinanceiroMensal, resumoFinanceiroMesAtual } from "../../services/FinanceiroService";
 
 export const relatoriosRouter = Router();
 relatoriosRouter.use(requireAuth, requireFeature("module_relatorios"));
@@ -720,7 +721,10 @@ relatoriosRouter.get(
         ) AS despesas_mes
     `;
 
-    const rows = await AppDataSource.query(query, [idEmpresa]);
+    const [rows, resumoMes] = await Promise.all([
+      AppDataSource.query(query, [idEmpresa]),
+      resumoFinanceiroMesAtual(idEmpresa),
+    ]);
 
     if (!rows || rows.length === 0) {
       return res.json({
@@ -747,10 +751,10 @@ relatoriosRouter.get(
     return res.json({
       totalClientes: Number(row.total_clientes ?? 0),
       vendasAtivas: Number(row.vendas_ativas ?? 0),
-      recebidoMes: Number(row.recebido_mes ?? 0),
+      recebidoMes: resumoMes.receita,
       titulosAtrasoQtd: Number(row.titulos_atraso_qtd ?? 0),
       titulosAtrasoValor: Number(row.titulos_atraso_valor ?? 0),
-      despesasMes: Number(row.despesas_mes ?? 0),
+      despesasMes: resumoMes.despesa,
     });
   },
 );
@@ -828,112 +832,43 @@ relatoriosRouter.get(
     const idEmpresa = req.user?.id_empresa;
     if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
 
-    // Um único array de parâmetros compartilhado pelas 3 cláusulas WHERE da query (evita
-    // colisão de índices $N entre as subqueries e o WHERE externo).
-    const params: unknown[] = [idEmpresa];
-    const idEmpresaParam = 1;
-
-    let fromReceita = "";
-    let toReceita = "";
-    if (from) { params.push(from); fromReceita = `AND p.pago_data >= $${params.length}`; }
-    if (to) { params.push(to); toReceita = `AND p.pago_data <= $${params.length}`; }
-
-    let fromDespesa = "";
-    let toDespesa = "";
-    if (from) { params.push(from); fromDespesa = `AND dp.pago_data >= $${params.length}`; }
-    if (to) { params.push(to); toDespesa = `AND dp.pago_data <= $${params.length}`; }
-
-    let fromLanc = "";
-    let toLanc = "";
-    if (from) { params.push(from); fromLanc = `AND l2.data >= $${params.length}`; }
-    if (to) { params.push(to); toLanc = `AND l2.data <= $${params.length}`; }
-
-    let loteamentoFilter = "";
-    if (typeof id_loteamento === "number") {
-      params.push(id_loteamento);
-      loteamentoFilter = ` AND lot.id_loteamento = $${params.length}`;
-    }
-
     const query = `
-      SELECT
-        lot.id_loteamento,
-        lot.nome AS loteamento,
-        COALESCE(receita.total, 0) + COALESCE(lanc_receita.total, 0) AS receita,
-        COALESCE(despesa.total, 0) + COALESCE(lanc_despesa.total, 0) AS despesas
+      WITH alocados AS (
+        SELECT mf.id_loteamento, mf.tipo, mf.valor, mf.data
+        FROM movimentos_financeiros mf
+        WHERE mf.id_empresa = $1 AND mf.id_loteamento IS NOT NULL
+          AND (mf.origem = 'recebimento'
+            OR (mf.origem = 'manual' AND NOT EXISTS (SELECT 1 FROM lancamento_rateio lr WHERE lr.id_lancamento = mf.id_origem))
+            OR (mf.origem = 'pagamento' AND NOT EXISTS (
+              SELECT 1 FROM despesa_parcelas dp JOIN despesa_rateio dr ON dr.id_despesa = dp.id_despesa
+              WHERE dp.id_despesa_parcela = mf.id_origem)))
+        UNION ALL
+        SELECT lr.id_loteamento, mf.tipo, mf.valor * (lr.percentual / 100.0), mf.data
+        FROM movimentos_financeiros mf
+        JOIN lancamento_rateio lr ON mf.origem = 'manual' AND lr.id_lancamento = mf.id_origem
+        WHERE mf.id_empresa = $1
+        UNION ALL
+        SELECT dr.id_loteamento, mf.tipo, mf.valor * (dr.percentual / 100.0), mf.data
+        FROM movimentos_financeiros mf
+        JOIN despesa_parcelas dp ON mf.origem = 'pagamento' AND dp.id_despesa_parcela = mf.id_origem
+        JOIN despesa_rateio dr ON dr.id_despesa = dp.id_despesa
+        WHERE mf.id_empresa = $1
+      ), totais AS (
+        SELECT id_loteamento,
+          COALESCE(SUM(valor) FILTER (WHERE tipo = 'receita'), 0) AS receita,
+          COALESCE(SUM(valor) FILTER (WHERE tipo = 'despesa'), 0) AS despesas
+        FROM alocados
+        WHERE ($2::date IS NULL OR data >= $2::date) AND ($3::date IS NULL OR data <= $3::date)
+        GROUP BY id_loteamento
+      )
+      SELECT lot.id_loteamento, lot.nome AS loteamento,
+             COALESCE(t.receita, 0) AS receita, COALESCE(t.despesas, 0) AS despesas
       FROM loteamentos lot
-      LEFT JOIN (
-        SELECT lo.id_loteamento, SUM(COALESCE(p.valor_pago, p.valor)) AS total
-        FROM pagamentos p
-        JOIN vendas v ON v.id_venda = p.id_venda
-        JOIN lotes l ON l.id_lote = v.id_lote
-        JOIN loteamentos lo ON lo.id_loteamento = l.id_loteamento
-        WHERE p.situacao = 'pago' AND p.id_empresa = $${idEmpresaParam} AND v.status <> 'cancelada' ${fromReceita} ${toReceita}
-        GROUP BY lo.id_loteamento
-      ) receita ON receita.id_loteamento = lot.id_loteamento
-      LEFT JOIN (
-        SELECT alloc.id_loteamento, SUM(alloc.valor) AS total
-        FROM (
-          SELECT d.id_loteamento AS id_loteamento, dp.valor_pago AS valor, dp.pago_data AS pago_data
-          FROM despesa_parcelas dp
-          JOIN despesas d ON d.id_despesa = dp.id_despesa
-          WHERE dp.situacao = 'pago' AND dp.id_empresa = $${idEmpresaParam}
-            AND d.id_loteamento IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM despesa_rateio r0 WHERE r0.id_despesa = d.id_despesa)
+      LEFT JOIN totais t ON t.id_loteamento = lot.id_loteamento
+      WHERE lot.id_empresa = $1 AND ($4::int IS NULL OR lot.id_loteamento = $4::int)
+      ORDER BY lot.nome ASC`;
 
-          UNION ALL
-
-          SELECT r.id_loteamento AS id_loteamento, dp.valor_pago * (r.percentual / 100.0) AS valor, dp.pago_data AS pago_data
-          FROM despesa_parcelas dp
-          JOIN despesas d ON d.id_despesa = dp.id_despesa
-          JOIN despesa_rateio r ON r.id_despesa = d.id_despesa
-          WHERE dp.situacao = 'pago' AND dp.id_empresa = $${idEmpresaParam}
-        ) alloc
-        WHERE 1=1 ${fromDespesa.replace(/dp\.pago_data/g, "alloc.pago_data")} ${toDespesa.replace(/dp\.pago_data/g, "alloc.pago_data")}
-        GROUP BY alloc.id_loteamento
-      ) despesa ON despesa.id_loteamento = lot.id_loteamento
-      LEFT JOIN (
-        SELECT alloc.id_loteamento, SUM(alloc.valor) AS total
-        FROM (
-          SELECT l2.id_loteamento AS id_loteamento, l2.valor AS valor, l2.data AS data
-          FROM lancamentos_manuais l2
-          WHERE l2.tipo = 'receita' AND l2.id_empresa = $${idEmpresaParam}
-            AND l2.id_loteamento IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM lancamento_rateio lr0 WHERE lr0.id_lancamento = l2.id_lancamento)
-
-          UNION ALL
-
-          SELECT lr.id_loteamento AS id_loteamento, l2.valor * (lr.percentual / 100.0) AS valor, l2.data AS data
-          FROM lancamentos_manuais l2
-          JOIN lancamento_rateio lr ON lr.id_lancamento = l2.id_lancamento
-          WHERE l2.tipo = 'receita' AND l2.id_empresa = $${idEmpresaParam}
-        ) alloc
-        WHERE 1=1 ${fromLanc.replace(/l2\.data/g, "alloc.data")} ${toLanc.replace(/l2\.data/g, "alloc.data")}
-        GROUP BY alloc.id_loteamento
-      ) lanc_receita ON lanc_receita.id_loteamento = lot.id_loteamento
-      LEFT JOIN (
-        SELECT alloc.id_loteamento, SUM(alloc.valor) AS total
-        FROM (
-          SELECT l3.id_loteamento AS id_loteamento, l3.valor AS valor, l3.data AS data
-          FROM lancamentos_manuais l3
-          WHERE l3.tipo = 'despesa' AND l3.id_empresa = $${idEmpresaParam}
-            AND l3.id_loteamento IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM lancamento_rateio lr1 WHERE lr1.id_lancamento = l3.id_lancamento)
-
-          UNION ALL
-
-          SELECT lr.id_loteamento AS id_loteamento, l3.valor * (lr.percentual / 100.0) AS valor, l3.data AS data
-          FROM lancamentos_manuais l3
-          JOIN lancamento_rateio lr ON lr.id_lancamento = l3.id_lancamento
-          WHERE l3.tipo = 'despesa' AND l3.id_empresa = $${idEmpresaParam}
-        ) alloc
-        WHERE 1=1 ${fromLanc.replace(/l2\.data/g, "alloc.data")} ${toLanc.replace(/l2\.data/g, "alloc.data")}
-        GROUP BY alloc.id_loteamento
-      ) lanc_despesa ON lanc_despesa.id_loteamento = lot.id_loteamento
-      WHERE lot.id_empresa = $${idEmpresaParam}${loteamentoFilter}
-      ORDER BY lot.nome ASC
-    `;
-
-    const rows = await AppDataSource.query(query, params);
+    const rows = await AppDataSource.query(query, [idEmpresa, from ?? null, to ?? null, id_loteamento ?? null]);
 
     type ResultadoRow = { id_loteamento: number | string; loteamento: string; receita: string | number; despesas: string | number };
     const resultado = (rows as ResultadoRow[]).map((row) => {
@@ -1203,58 +1138,12 @@ relatoriosRouter.get(
     const from = parseResult.data.from ?? new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1).toISOString().slice(0, 10);
     const to = parseResult.data.to ?? hoje.toISOString().slice(0, 10);
 
-    const [entradasRows, saidasRows, lancReceitaRows, lancDespesaRows] = await Promise.all([
-      AppDataSource.query(
-        `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, SUM(COALESCE(p.valor_pago, p.valor)) AS total
-         FROM pagamentos p
-         JOIN vendas v ON v.id_venda = p.id_venda
-         WHERE p.situacao = 'pago' AND p.id_empresa = $1 AND v.status <> 'cancelada'
-           AND p.pago_data >= $2 AND p.pago_data <= $3
-         GROUP BY mes ORDER BY mes`,
-        [idEmpresa, from, to]
-      ),
-      AppDataSource.query(
-        `SELECT TO_CHAR(dp.pago_data, 'YYYY-MM') AS mes, SUM(dp.valor_pago) AS total
-         FROM despesa_parcelas dp
-         WHERE dp.situacao = 'pago' AND dp.id_empresa = $1
-           AND dp.pago_data >= $2 AND dp.pago_data <= $3
-         GROUP BY mes ORDER BY mes`,
-        [idEmpresa, from, to]
-      ),
-      AppDataSource.query(
-        `SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, SUM(l.valor) AS total
-         FROM lancamentos_manuais l
-         WHERE l.tipo = 'receita' AND l.id_empresa = $1 AND l.data >= $2 AND l.data <= $3
-         GROUP BY mes ORDER BY mes`,
-        [idEmpresa, from, to]
-      ),
-      AppDataSource.query(
-        `SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, SUM(l.valor) AS total
-         FROM lancamentos_manuais l
-         WHERE l.tipo = 'despesa' AND l.id_empresa = $1 AND l.data >= $2 AND l.data <= $3
-         GROUP BY mes ORDER BY mes`,
-        [idEmpresa, from, to]
-      ),
-    ]);
-
-    type MesRow = { mes: string; total: string | number | null };
-    const entradasMap = new Map((entradasRows as MesRow[]).map((r) => [r.mes, Number(r.total ?? 0)]));
-    for (const r of lancReceitaRows as MesRow[]) {
-      entradasMap.set(r.mes, (entradasMap.get(r.mes) ?? 0) + Number(r.total ?? 0));
-    }
-    const saidasMap = new Map((saidasRows as MesRow[]).map((r) => [r.mes, Number(r.total ?? 0)]));
-    for (const r of lancDespesaRows as MesRow[]) {
-      saidasMap.set(r.mes, (saidasMap.get(r.mes) ?? 0) + Number(r.total ?? 0));
-    }
-
-    const meses = new Set([...entradasMap.keys(), ...saidasMap.keys()]);
-    const resultado = Array.from(meses)
-      .sort()
-      .map((mes) => {
-        const entradas = entradasMap.get(mes) ?? 0;
-        const saidas = saidasMap.get(mes) ?? 0;
-        return { mes, entradas, saidas, saldo: entradas - saidas };
-      });
+    const resultado = (await fluxoFinanceiroMensal(idEmpresa, from, to)).map((item) => ({
+      mes: item.mes,
+      entradas: item.receita,
+      saidas: item.despesa,
+      saldo: item.resultado,
+    }));
 
     return res.json(resultado);
   },
@@ -1569,18 +1458,15 @@ relatoriosRouter.get(
     const raizSubquery = `(SELECT origem AS id_conta_contabil, nome AS raiz_nome FROM ancestro WHERE id_pai IS NULL)`;
 
     const receitaVendasQuery = typeof id_loteamento === "number"
-      ? `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, 'Vendas de Lotes' AS grupo, SUM(COALESCE(p.valor_pago, p.valor)) AS total
-         FROM pagamentos p
-         JOIN vendas v ON v.id_venda = p.id_venda
-         JOIN lotes l ON l.id_lote = v.id_lote
-         WHERE p.situacao = 'pago' AND p.id_empresa = $1 AND v.status <> 'cancelada' AND l.id_loteamento = $2
-           AND p.pago_data >= $3 AND p.pago_data <= $4
+      ? `SELECT TO_CHAR(m.data, 'YYYY-MM') AS mes, 'Vendas de Lotes' AS grupo, SUM(m.valor) AS total
+         FROM movimentos_financeiros m
+         WHERE m.tipo = 'receita' AND m.origem = 'recebimento' AND m.id_empresa = $1 AND m.id_loteamento = $2
+           AND m.data >= $3 AND m.data <= $4
          GROUP BY mes`
-      : `SELECT TO_CHAR(p.pago_data, 'YYYY-MM') AS mes, 'Vendas de Lotes' AS grupo, SUM(COALESCE(p.valor_pago, p.valor)) AS total
-         FROM pagamentos p
-         JOIN vendas v ON v.id_venda = p.id_venda
-         WHERE p.situacao = 'pago' AND p.id_empresa = $1 AND v.status <> 'cancelada'
-           AND p.pago_data >= $2 AND p.pago_data <= $3
+      : `SELECT TO_CHAR(m.data, 'YYYY-MM') AS mes, 'Vendas de Lotes' AS grupo, SUM(m.valor) AS total
+         FROM movimentos_financeiros m
+         WHERE m.tipo = 'receita' AND m.origem = 'recebimento' AND m.id_empresa = $1
+           AND m.data >= $2 AND m.data <= $3
          GROUP BY mes`;
     const semLoteamentoParams = [idEmpresa, from, to];
     const comLoteamentoParams = [idEmpresa, id_loteamento, from, to];
@@ -1591,20 +1477,19 @@ relatoriosRouter.get(
       const dataParams = typeof id_loteamento === "number" ? "$3 AND l.data <= $4" : "$2 AND l.data <= $3";
       return `${raizCte}
         SELECT TO_CHAR(l.data, 'YYYY-MM') AS mes, COALESCE(rz.raiz_nome, '${fallback}') AS grupo, SUM(l.valor) AS total
-        FROM lancamentos_manuais l
+        FROM movimentos_financeiros l
         LEFT JOIN ${raizSubquery} rz ON rz.id_conta_contabil = l.id_conta_contabil
-        WHERE l.tipo = '${tipo}' AND l.id_empresa = $1 ${filtroLoteamento} AND l.data >= ${dataParams}
+        WHERE l.tipo = '${tipo}' AND l.origem = 'manual' AND l.id_empresa = $1 ${filtroLoteamento} AND l.data >= ${dataParams}
         GROUP BY mes, grupo`;
     };
     const lancParams = typeof id_loteamento === "number" ? comLoteamentoParams : semLoteamentoParams;
 
     const despesasPorGrupoQuery = `${raizCte}
-      SELECT TO_CHAR(dp.pago_data, 'YYYY-MM') AS mes, COALESCE(rz.raiz_nome, 'Outras') AS grupo, SUM(dp.valor_pago) AS total
-      FROM despesa_parcelas dp
-      JOIN despesas d ON d.id_despesa = dp.id_despesa
-      LEFT JOIN ${raizSubquery} rz ON rz.id_conta_contabil = d.id_categoria
-      WHERE dp.situacao = 'pago' AND dp.id_empresa = $1 ${typeof id_loteamento === "number" ? "AND d.id_loteamento = $2" : ""}
-        AND dp.pago_data >= ${typeof id_loteamento === "number" ? "$3 AND dp.pago_data <= $4" : "$2 AND dp.pago_data <= $3"}
+      SELECT TO_CHAR(dp.data, 'YYYY-MM') AS mes, COALESCE(rz.raiz_nome, 'Outras') AS grupo, SUM(dp.valor) AS total
+      FROM movimentos_financeiros dp
+      LEFT JOIN ${raizSubquery} rz ON rz.id_conta_contabil = dp.id_conta_contabil
+      WHERE dp.tipo = 'despesa' AND dp.origem = 'pagamento' AND dp.id_empresa = $1 ${typeof id_loteamento === "number" ? "AND dp.id_loteamento = $2" : ""}
+        AND dp.data >= ${typeof id_loteamento === "number" ? "$3 AND dp.data <= $4" : "$2 AND dp.data <= $3"}
       GROUP BY mes, grupo`;
 
     const [receitaVendasRows, lancReceitaRows, lancDespesaRows, despesasGrupoRows] = await Promise.all([
