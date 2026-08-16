@@ -11,6 +11,7 @@ import { Despesa } from "../../entities/Despesa";
 import { DespesaParcela } from "../../entities/DespesaParcela";
 import { Fornecedor } from "../../entities/Fornecedor";
 import { PlanoDeContas } from "../../entities/PlanoDeContas";
+import { VendaAcordo } from "../../entities/VendaAcordo";
 import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
 import { AuditoriaService } from "../../services/AuditoriaService";
 
@@ -169,7 +170,8 @@ vendasRouter.get("/:id", requireAuth, async (req: AuthRequest, res) => {
     return res.status(404).json({ error: "Venda não encontrada" });
   }
 
-  return res.json(venda);
+  const acordos = await AppDataSource.getRepository(VendaAcordo).find({ where: { id_venda: venda.id_venda, id_empresa: venda.id_empresa }, order: { created_at: "DESC" } });
+  return res.json({ ...venda, acordos });
 });
 
 vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async (req: AuthRequest, res) => {
@@ -639,6 +641,65 @@ vendasRouter.patch("/:id/editar", requireAuth, requirePermission("vendas_alterar
   } finally {
     await queryRunner.release();
   }
+});
+
+const renegociacaoSchema = z.object({
+  motivo: z.string().trim().min(3).max(1000),
+  parcelas: z.array(z.object({ vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), valor: z.number().positive() })).min(1).max(120),
+});
+
+vendasRouter.post("/:id/renegociar", requirePermission("vendas_alterar"), async (req: AuthRequest, res) => {
+  const parse = renegociacaoSchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+  const idVenda = Number(req.params.id), idEmpresa = req.user!.id_empresa;
+  const vendaRepo = AppDataSource.getRepository(Venda);
+  const venda = await vendaRepo.findOne({ where: { id_venda: idVenda, id_empresa: idEmpresa } });
+  if (!venda || venda.status !== "aberta") return res.status(409).json({ error: "Apenas vendas abertas podem ser renegociadas." });
+  const pagamentos = await AppDataSource.getRepository(Pagamento).find({ where: { id_venda: idVenda, id_empresa: idEmpresa }, order: { numero_parcela: "ASC" } });
+  const abertas = pagamentos.filter((p) => p.numero_parcela > 0 && p.situacao === "aberto");
+  if (!abertas.length) return res.status(409).json({ error: "A venda não possui parcelas em aberto para renegociar." });
+  const pagas = pagamentos.filter((p) => p.numero_parcela > 0 && p.situacao === "pago");
+  const snapshotAntes = { parcelas_abertas: abertas.map((p) => ({ numero: p.numero_parcela, vencimento: p.vencimento, valor: p.valor })), total_aberto: abertas.reduce((s, p) => s + Number(p.valor), 0) };
+  const inicio = Math.max(0, ...pagas.map((p) => p.numero_parcela)) + 1;
+  const novas = parse.data.parcelas.map((p, indice) => ({ numero: inicio + indice, vencimento: p.vencimento, valor: p.valor.toFixed(2) }));
+  await AppDataSource.transaction(async (manager) => {
+    await manager.remove(abertas);
+    await manager.save(novas.map((p) => manager.create(Pagamento, { id_empresa: idEmpresa, id_venda: idVenda, numero_parcela: p.numero, tipo: "boleto", situacao: "aberto", vencimento: p.vencimento, valor: p.valor, multa: "0.00", juros: "0.00" })));
+    venda.parcelas = Math.max(0, ...pagas.map((p) => p.numero_parcela)) + novas.length;
+    venda.valor_parcela = novas.every((p) => p.valor === novas[0].valor) ? novas[0].valor : null;
+    await manager.save(venda);
+    await manager.save(manager.create(VendaAcordo, { id_empresa: idEmpresa, id_venda: idVenda, tipo: "renegociacao", motivo: parse.data.motivo, snapshot_antes: snapshotAntes, snapshot_depois: { parcelas: novas, total: novas.reduce((s, p) => s + Number(p.valor), 0) }, id_usuario: req.user!.id_usuario }));
+  });
+  await AuditoriaService.registrarVenda(req, "UPDATE", idVenda, `Renegociação aplicada — ${abertas.length} parcela(s) substituída(s) por ${novas.length}`, { motivo: parse.data.motivo, antes: snapshotAntes, depois: novas });
+  return res.json({ success: true, parcelas: novas.length });
+});
+
+const distratoSchema = z.object({ motivo: z.string().trim().min(3).max(1000) });
+vendasRouter.post("/:id/distratar", requirePermission("vendas_alterar"), async (req: AuthRequest, res) => {
+  const parse = distratoSchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Informe o motivo do distrato.", issues: parse.error.issues });
+  const idVenda = Number(req.params.id), idEmpresa = req.user!.id_empresa;
+  const venda = await AppDataSource.getRepository(Venda).findOne({ where: { id_venda: idVenda, id_empresa: idEmpresa } });
+  if (!venda || venda.status !== "aberta") return res.status(409).json({ error: "Apenas vendas abertas podem ser distratadas." });
+  const pagamentos = await AppDataSource.getRepository(Pagamento).find({ where: { id_venda: idVenda, id_empresa: idEmpresa } });
+  const pagos = pagamentos.filter((p) => p.situacao === "pago");
+  const abertos = pagamentos.filter((p) => p.situacao === "aberto");
+  const totalPago = pagos.reduce((s, p) => s + Number(p.valor_pago ?? p.valor), 0);
+  const despesaComissao = await AppDataSource.getRepository(Despesa).findOne({ where: { id_venda_origem: idVenda, id_empresa: idEmpresa } });
+  let removerComissao = false;
+  if (despesaComissao) {
+    const parcelasComissao = await AppDataSource.getRepository(DespesaParcela).find({ where: { id_despesa: despesaComissao.id_despesa } });
+    removerComissao = parcelasComissao.every((p) => p.situacao === "aberto");
+  }
+  await AppDataSource.transaction(async (manager) => {
+    if (abertos.length) await manager.remove(abertos);
+    if (despesaComissao && removerComissao) await manager.remove(despesaComissao);
+    venda.status = "cancelada";
+    await manager.save(venda);
+    await manager.save(manager.create(VendaAcordo, { id_empresa: idEmpresa, id_venda: idVenda, tipo: "distrato", motivo: parse.data.motivo, snapshot_antes: { parcelas_pagas: pagos.length, parcelas_abertas: abertos.length, total_pago: totalPago }, snapshot_depois: { status: "cancelada", lote_liberado: true, devolucao_automatica: false, comissao_aberta_cancelada: removerComissao }, id_usuario: req.user!.id_usuario }));
+  });
+  await AuditoriaService.registrarVenda(req, "UPDATE", idVenda, `Distrato registrado — ${abertos.length} parcela(s) futura(s) cancelada(s), total histórico pago ${totalPago.toFixed(2)}`, { motivo: parse.data.motivo, total_pago: totalPago, devolucao_automatica: false });
+  return res.json({ success: true, total_pago_preservado: totalPago });
 });
 
 vendasRouter.patch("/:id/cancelar", requireAuth, requirePermission("vendas_alterar"), async (req: AuthRequest, res) => {

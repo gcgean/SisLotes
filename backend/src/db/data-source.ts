@@ -30,6 +30,7 @@ import { CobrancaRegra } from "../entities/CobrancaRegra";
 import { CobrancaComunicacao } from "../entities/CobrancaComunicacao";
 import { OrcamentoLoteamento } from "../entities/OrcamentoLoteamento";
 import { FechamentoFinanceiro } from "../entities/FechamentoFinanceiro";
+import { VendaAcordo } from "../entities/VendaAcordo";
 import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateClientes";
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
@@ -79,6 +80,7 @@ import { AddPermissoesFinanceiras1700000000044 } from "../migrations/17000000000
 import { AddComprovantesFinanceiros1700000000045 } from "../migrations/1700000000045-AddComprovantesFinanceiros";
 import { AddRetencoesServicos1700000000046 } from "../migrations/1700000000046-AddRetencoesServicos";
 import { AddComissaoVenda1700000000047 } from "../migrations/1700000000047-AddComissaoVenda";
+import { CreateVendaAcordos1700000000048 } from "../migrations/1700000000048-CreateVendaAcordos";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -87,7 +89,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, TransferenciaConta, CobrancaBancaria, CobrancaRegra, CobrancaComunicacao, OrcamentoLoteamento, FechamentoFinanceiro, SugestaoMensagem],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, TransferenciaConta, CobrancaBancaria, CobrancaRegra, CobrancaComunicacao, OrcamentoLoteamento, FechamentoFinanceiro, VendaAcordo, SugestaoMensagem],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -138,6 +140,7 @@ export const AppDataSource = new DataSource({
     AddComprovantesFinanceiros1700000000045,
     AddRetencoesServicos1700000000046,
     AddComissaoVenda1700000000047,
+    CreateVendaAcordos1700000000048,
   ],
   synchronize: false,
   logging: false,

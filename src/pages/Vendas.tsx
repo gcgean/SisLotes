@@ -245,6 +245,11 @@ const Vendas = () => {
   const [baixaData, setBaixaData] = useState(new Date().toISOString().split("T")[0]);
   const [baixaValor, setBaixaValor] = useState("");
   const [baixaConta, setBaixaConta] = useState("");
+  const [acordoTipo, setAcordoTipo] = useState<"distrato" | "renegociacao" | null>(null);
+  const [acordoMotivo, setAcordoMotivo] = useState("");
+  const [renegociacaoParcelas, setRenegociacaoParcelas] = useState("1");
+  const [renegociacaoValor, setRenegociacaoValor] = useState("");
+  const [renegociacaoPrimeiroVencimento, setRenegociacaoPrimeiroVencimento] = useState(new Date().toISOString().split("T")[0]);
 
   // ── seleção de intervalo de parcelas para impressão do carnê
   const [carneRangeAberto, setCarneRangeAberto] = useState(false);
@@ -688,6 +693,33 @@ const Vendas = () => {
         variant: "destructive",
       });
     },
+  });
+
+  const acordoMutation = useMutation({
+    mutationFn: async () => {
+      if (!vendaDetalhe || !acordoTipo) throw new Error("Venda não selecionada");
+      const body: Record<string, unknown> = { motivo: acordoMotivo.trim() };
+      if (acordoTipo === "renegociacao") {
+        const quantidade = Number(renegociacaoParcelas), valor = Number(renegociacaoValor);
+        const base = new Date(`${renegociacaoPrimeiroVencimento}T12:00:00`);
+        body.parcelas = Array.from({ length: quantidade }, (_, indice) => {
+          const data = new Date(base); data.setMonth(data.getMonth() + indice);
+          return { vencimento: data.toISOString().slice(0, 10), valor };
+        });
+      }
+      const r = await fetch(`/api/vendas/${vendaDetalhe.id_venda}/${acordoTipo === "distrato" ? "distratar" : "renegociar"}`, { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, body: JSON.stringify(body) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || data.message || "Não foi possível concluir a operação");
+      return data;
+    },
+    onSuccess: async () => {
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["vendas"] }), queryClient.invalidateQueries({ queryKey: ["lotes"] }), queryClient.invalidateQueries({ queryKey: ["financeiro"] })]);
+      if (acordoTipo === "renegociacao" && vendaDetalhe) await fetchDetalhe(vendaDetalhe.id_venda);
+      else setDialogDetalheAberto(false);
+      toast({ title: acordoTipo === "distrato" ? "Distrato registrado" : "Renegociação aplicada" });
+      setAcordoTipo(null); setAcordoMotivo("");
+    },
+    onError: (error: Error) => toast({ title: error.message, variant: "destructive" }),
   });
 
   const darBaixaMutation = useMutation({
@@ -2006,6 +2038,10 @@ const Vendas = () => {
             </div>
             {/* Ações */}
             <div className="flex w-full gap-2 justify-end">
+              {vendaDetalheInfo?.status === "aberta" ? <>
+                <Button variant="outline" onClick={() => { setAcordoTipo("renegociacao"); setAcordoMotivo(""); }}>Renegociar</Button>
+                <Button variant="destructive" onClick={() => { setAcordoTipo("distrato"); setAcordoMotivo(""); }}>Distratar</Button>
+              </> : null}
               <Button
                 variant="outline"
                 className="gap-2"
@@ -2018,6 +2054,25 @@ const Vendas = () => {
               <Button variant="outline" onClick={() => setDialogDetalheAberto(false)}>Fechar</Button>
             </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={acordoTipo !== null} onOpenChange={(open) => { if (!open && !acordoMutation.isPending) setAcordoTipo(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{acordoTipo === "distrato" ? "Distratar venda" : "Renegociar parcelas"}</DialogTitle>
+            <DialogDescription>{acordoTipo === "distrato" ? "Parcelas pagas serão preservadas; somente parcelas futuras serão canceladas. Nenhuma devolução será gerada automaticamente." : "Somente as parcelas em aberto serão substituídas. Recebimentos anteriores não serão alterados."}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Motivo *</Label><Input value={acordoMotivo} onChange={(e) => setAcordoMotivo(e.target.value)} placeholder="Descreva o acordo realizado" /></div>
+            {acordoTipo === "renegociacao" ? <div className="grid grid-cols-2 gap-3">
+              <div><Label>Novas parcelas</Label><Input type="number" min="1" max="120" value={renegociacaoParcelas} onChange={(e) => setRenegociacaoParcelas(e.target.value)} /></div>
+              <div><Label>Valor por parcela</Label><MoneyInput value={renegociacaoValor} onValueChange={setRenegociacaoValor} /></div>
+              <div className="col-span-2"><Label>Primeiro vencimento</Label><Input type="date" value={renegociacaoPrimeiroVencimento} onChange={(e) => setRenegociacaoPrimeiroVencimento(e.target.value)} /></div>
+              <div className="col-span-2 rounded-md bg-muted p-2 text-sm">Novo total: <strong>{fmtCurrency(Number(renegociacaoParcelas || 0) * Number(renegociacaoValor || 0))}</strong></div>
+            </div> : null}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setAcordoTipo(null)}>Cancelar</Button><Button variant={acordoTipo === "distrato" ? "destructive" : "default"} disabled={acordoMutation.isPending || acordoMotivo.trim().length < 3 || (acordoTipo === "renegociacao" && (!renegociacaoPrimeiroVencimento || Number(renegociacaoParcelas) < 1 || Number(renegociacaoValor) <= 0))} onClick={() => acordoMutation.mutate()}>{acordoMutation.isPending ? "Processando..." : acordoTipo === "distrato" ? "Confirmar distrato" : "Aplicar renegociação"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
