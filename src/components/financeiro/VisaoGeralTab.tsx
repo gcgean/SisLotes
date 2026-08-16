@@ -459,8 +459,8 @@ export function VisaoGeralTab() {
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="flex items-center gap-2">
-              <Percent className={`h-4 w-4 ${margem >= 0 ? "text-emerald-600" : "text-red-500"}`} />
-              <span className="text-lg font-bold">{margem.toFixed(1)}%</span>
+              <Percent className={`h-4 w-4 ${receita === 0 ? "text-muted-foreground" : margem >= 0 ? "text-emerald-600" : "text-red-500"}`} />
+              <span className="text-lg font-bold">{receita === 0 ? "—" : `${margem.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`}</span>
             </div>
           </CardContent>
         </Card>
@@ -501,7 +501,7 @@ export function VisaoGeralTab() {
           <CardTitle className="text-sm font-semibold">Lucratividade por loteamento</CardTitle>
         </CardHeader>
         <CardContent>
-          {carregandoResultado ? (<LoadingState message="Carregando lucratividade…" />) : resultadoLoteamento.length === 0 ? (
+          {carregandoResultado ? (<LoadingState message="Carregando lucratividade…" />) : resultadoLoteamento.length === 0 || resultadoLoteamento.every((item) => item.resultado === 0) ? (
             <p className="text-sm text-muted-foreground py-2">Nenhum loteamento com dados ainda.</p>
           ) : (
             <div
