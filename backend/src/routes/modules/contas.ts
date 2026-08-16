@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Conta } from "../../entities/Conta";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { AuditoriaService } from "../../services/AuditoriaService";
 
 export const contasRouter = Router();
 
@@ -290,6 +291,9 @@ contasRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
   });
 
   const saved = await repo.save(conta);
+  await AuditoriaService.registrar(req, "contas", "CREATE", saved.id_conta, undefined, {
+    apelido: saved.apelido, tipo: saved.tipo, saldo_inicial: saved.saldo_inicial, data_saldo_inicial: saved.data_saldo_inicial, ativo: saved.ativo,
+  }, `Conta financeira criada — ${saved.apelido}`);
 
   return res.status(201).json(saved);
 });
@@ -316,12 +320,16 @@ contasRouter.put("/:id", requireAuth, async (req: AuthRequest, res: Response) =>
   if (!conta) {
     return res.status(404).json({ error: "Conta não encontrada" });
   }
+  const valoresAntigos = { apelido: conta.apelido, tipo: conta.tipo, saldo_inicial: conta.saldo_inicial, data_saldo_inicial: conta.data_saldo_inicial, ativo: conta.ativo };
 
   const { saldo_inicial, ...rest } = parseResult.data;
   Object.assign(conta, rest);
   if (saldo_inicial !== undefined) conta.saldo_inicial = String(saldo_inicial);
 
   const saved = await repo.save(conta);
+  await AuditoriaService.registrar(req, "contas", "UPDATE", saved.id_conta, valoresAntigos, {
+    apelido: saved.apelido, tipo: saved.tipo, saldo_inicial: saved.saldo_inicial, data_saldo_inicial: saved.data_saldo_inicial, ativo: saved.ativo,
+  }, `Conta financeira editada — ${saved.apelido}`);
 
   return res.json(saved);
 });
@@ -347,9 +355,11 @@ contasRouter.patch("/:id/ativo", requireAuth, async (req: AuthRequest, res: Resp
   if (!conta) {
     return res.status(404).json({ error: "Conta não encontrada" });
   }
+  const ativoAnterior = conta.ativo;
 
   conta.ativo = ativo;
   const saved = await repo.save(conta);
+  await AuditoriaService.registrar(req, "contas", "UPDATE", saved.id_conta, { ativo: ativoAnterior }, { ativo: saved.ativo }, `${saved.ativo ? "Conta ativada" : "Conta desativada"} — ${saved.apelido}`);
 
   return res.json(saved);
 });
@@ -372,6 +382,9 @@ contasRouter.delete("/:id", requireAuth, async (req: AuthRequest, res: Response)
   }
 
   await repo.remove(conta);
+  await AuditoriaService.registrar(req, "contas", "DELETE", Number(id), {
+    apelido: conta.apelido, tipo: conta.tipo, saldo_inicial: conta.saldo_inicial, data_saldo_inicial: conta.data_saldo_inicial, ativo: conta.ativo,
+  }, undefined, `Conta financeira excluída — ${conta.apelido}`);
 
   return res.status(204).send();
 });

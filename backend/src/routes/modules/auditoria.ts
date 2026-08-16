@@ -7,7 +7,7 @@ export const auditoriaRouter = Router();
 auditoriaRouter.use(requireAuth, requireFeature("module_auditoria"));
 
 auditoriaRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
-  const { tabela, acao, id_usuario, data_inicio, data_fim, limit = 100, offset = 0 } = req.query;
+  const { tabela, acao, busca, id_usuario, data_inicio, data_fim, limit = 100, offset = 0 } = req.query;
   const idEmpresa = req.user?.id_empresa;
 
   if (!idEmpresa) {
@@ -26,6 +26,10 @@ auditoriaRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
 
   if (acao) {
     queryBuilder.andWhere("a.acao = :acao", { acao });
+  }
+
+  if (typeof busca === "string" && busca.trim()) {
+    queryBuilder.andWhere("a.descricao ILIKE :busca", { busca: `%${busca.trim()}%` });
   }
 
   if (id_usuario) {
@@ -56,6 +60,7 @@ auditoriaRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
       descricao: a.descricao,
       ip_address: a.ip_address,
       data_hora: a.data_hora,
+      valores_antigos: a.valores_antigos,
       valores_novos: a.valores_novos,
     })),
     total,

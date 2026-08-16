@@ -8,6 +8,7 @@ import { Empresa } from "../../entities/Empresa";
 import { Conta } from "../../entities/Conta";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 import { diferencaDiasCivis } from "../../utils/date-only";
+import { AuditoriaService } from "../../services/AuditoriaService";
 
 export const pagamentosRouter = Router();
 pagamentosRouter.use(requireAuth, requireFeature("module_pagamentos"));
@@ -264,6 +265,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   if (pagamento.situacao === "pago") {
     return res.status(409).json({ error: "Este pagamento já foi baixado.", situacao: "pago", pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago });
   }
+  const valoresAntigos = { situacao: pagamento.situacao, pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago, id_conta: pagamento.id_conta };
 
   const conta = await contaRepo.findOne({
     where: { id_conta, id_empresa: pagamento.id_empresa, ativo: true },
@@ -313,6 +315,9 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   });
 
   await logRepo.save(log);
+  await AuditoriaService.registrar(req, "pagamentos", "UPDATE", saved.id_pagamento, valoresAntigos, {
+    situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, id_conta: saved.id_conta,
+  }, `Recebimento confirmado — parcela ${saved.numero_parcela}, valor ${saved.valor_pago}`);
 
   return res.json(saved);
 });
@@ -333,6 +338,10 @@ pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res)
   const idEmpresa = Number(req.user?.id_empresa ?? 0);
 
   try {
+    const registros = await AppDataSource.getRepository(Pagamento).find({ where: { id_empresa: idEmpresa } });
+    const excluidos = registros.filter((p) => ids.includes(p.id_pagamento)).map((p) => ({
+      id_pagamento: p.id_pagamento, id_venda: p.id_venda, numero_parcela: p.numero_parcela, situacao: p.situacao, valor: p.valor,
+    }));
     const result = await AppDataSource.query(
       `DELETE FROM pagamentos WHERE id_pagamento = ANY($1::int[]) AND id_empresa = $2`,
       [ids, idEmpresa]
@@ -346,6 +355,9 @@ pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res)
       url: "/api/pagamentos/bulk-delete",
       log: `${deletados} pagamento(s) excluído(s): [${ids.join(",")}]`,
     }));
+    for (const registro of excluidos) {
+      await AuditoriaService.registrar(req, "pagamentos", "DELETE", registro.id_pagamento, registro, undefined, `Parcela excluída em lote — venda ${registro.id_venda}, parcela ${registro.numero_parcela}`);
+    }
 
     return res.json({ deletados });
   } catch (err) {
@@ -367,6 +379,7 @@ pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res
 
   if (!pagamento) return res.status(404).json({ error: "Pagamento não encontrado" });
   if (pagamento.situacao !== "pago") return res.status(400).json({ error: "Este pagamento não está pago e não pode ser estornado." });
+  const valoresAntigos = { situacao: pagamento.situacao, pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago, id_conta: pagamento.id_conta };
 
   pagamento.situacao = "aberto";
   pagamento.pago_data = null as unknown as string;
@@ -382,6 +395,9 @@ pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res
     log: `Pagamento ${saved.id_pagamento} estornado — voltou para aberto`,
   });
   await logRepo.save(log);
+  await AuditoriaService.registrar(req, "pagamentos", "UPDATE", saved.id_pagamento, valoresAntigos, {
+    situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, id_conta: saved.id_conta,
+  }, `Recebimento cancelado — parcela ${saved.numero_parcela}`);
 
   return res.json(saved);
 });

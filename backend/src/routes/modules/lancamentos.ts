@@ -5,6 +5,7 @@ import { LancamentoManual } from "../../entities/LancamentoManual";
 import { LancamentoRateio } from "../../entities/LancamentoRateio";
 import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { AuditoriaService } from "../../services/AuditoriaService";
 
 export const lancamentosRouter = Router();
 lancamentosRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -128,6 +129,9 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
     log: `Lançamento manual ${saved.id_lancamento} (${saved.tipo}) criado — ${saved.descricao} — valor=${saved.valor}`,
     query: JSON.stringify(parse.data),
   }));
+  await AuditoriaService.registrar(req, "lancamentos_manuais", "CREATE", saved.id_lancamento, undefined, {
+    tipo: saved.tipo, id_conta: saved.id_conta, id_loteamento: saved.id_loteamento, descricao: saved.descricao, valor: saved.valor, data: saved.data,
+  }, `Lançamento manual criado — ${saved.descricao}, valor ${saved.valor}`);
 
   return res.status(201).json(saved);
 });
@@ -142,6 +146,7 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
     where: { id_lancamento: Number(req.params.id), id_empresa: req.user!.id_empresa },
   });
   if (!lancamento) return res.status(404).json({ error: "Lançamento não encontrado" });
+  const valoresAntigos = { tipo: lancamento.tipo, id_conta: lancamento.id_conta, id_loteamento: lancamento.id_loteamento, descricao: lancamento.descricao, valor: lancamento.valor, data: lancamento.data };
 
   const { valor, rateio, ...rest } = parse.data;
 
@@ -177,6 +182,9 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
       );
     }
   }
+  await AuditoriaService.registrar(req, "lancamentos_manuais", "UPDATE", saved.id_lancamento, valoresAntigos, {
+    tipo: saved.tipo, id_conta: saved.id_conta, id_loteamento: saved.id_loteamento, descricao: saved.descricao, valor: saved.valor, data: saved.data,
+  }, `Lançamento manual editado — ${saved.descricao}`);
 
   return res.json(saved);
 });
@@ -198,6 +206,9 @@ lancamentosRouter.delete("/:id", async (req: AuthRequest, res: Response) => {
     url: `/api/lancamentos/${req.params.id}`,
     log: `Lançamento manual ${req.params.id} (${lancamento.tipo}) excluído — ${lancamento.descricao} — valor=${lancamento.valor}`,
   }));
+  await AuditoriaService.registrar(req, "lancamentos_manuais", "DELETE", Number(req.params.id), {
+    tipo: lancamento.tipo, id_conta: lancamento.id_conta, id_loteamento: lancamento.id_loteamento, descricao: lancamento.descricao, valor: lancamento.valor, data: lancamento.data,
+  }, undefined, `Lançamento manual excluído — ${lancamento.descricao}, valor ${lancamento.valor}`);
 
   return res.status(204).send();
 });

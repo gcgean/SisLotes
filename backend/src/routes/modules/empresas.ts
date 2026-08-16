@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Empresa } from "../../entities/Empresa";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { AuditoriaService } from "../../services/AuditoriaService";
 
 export const empresasRouter = Router();
 
@@ -89,6 +90,12 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
     return res.status(404).json({ error: "Empresa não encontrada" });
   }
 
+  const encargosAntigos = {
+    multa_percentual: empresa.multa_percentual,
+    juros_percentual_dia: empresa.juros_percentual_dia,
+    carencia_dias: empresa.carencia_dias,
+  };
+
   const {
     logo,
     modelo_contrato,
@@ -128,6 +135,21 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
   if (carencia_dias !== undefined) empresa.carencia_dias = carencia_dias;
 
   const saved = await repo.save(empresa);
+  if (multa_percentual !== undefined || juros_percentual_dia !== undefined || carencia_dias !== undefined) {
+    await AuditoriaService.registrar(
+      req,
+      "configuracoes_financeiras",
+      "UPDATE",
+      saved.id_empresa,
+      encargosAntigos,
+      {
+        multa_percentual: saved.multa_percentual,
+        juros_percentual_dia: saved.juros_percentual_dia,
+        carencia_dias: saved.carencia_dias,
+      },
+      "Configuração de multa, juros e carência alterada"
+    );
+  }
   return res.json(saved);
 });
 
