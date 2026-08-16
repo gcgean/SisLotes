@@ -643,7 +643,11 @@ despesasRouter.patch("/:id/recorrencia", async (req: AuthRequest, res: Response)
 
 const pagarSchema = z.object({
   pago_data: z.string(),
-  valor_pago: z.number().positive(),
+  valor_pago: z.number().positive().optional(),
+  valor_base: z.number().positive().optional(),
+  multa: z.number().min(0).default(0),
+  juros: z.number().min(0).default(0),
+  desconto: z.number().min(0).default(0),
   // Obrigatório: precisa informar de qual conta saiu o pagamento para que o
   // extrato da conta reflita as contas a pagar quitadas.
   id_conta: z.number().int().positive({ message: "Informe a conta de onde saiu o pagamento." }),
@@ -663,10 +667,16 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
   }
   const valoresAntigos = { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, id_conta: parcela.id_conta };
 
-  const { pago_data, valor_pago, id_conta } = parse.data;
+  const { pago_data, id_conta, multa, juros, desconto } = parse.data;
+  const valorBase = parse.data.valor_base ?? parse.data.valor_pago ?? Number(parcela.valor);
+  const valorPago = valorBase + multa + juros - desconto;
+  if (valorPago <= 0 || desconto > valorBase + multa + juros) return res.status(400).json({ error: "O total efetivamente pago deve ser maior que zero." });
   parcela.situacao = "pago";
   parcela.pago_data = pago_data;
-  parcela.valor_pago = valor_pago.toFixed(2);
+  parcela.valor_pago = valorPago.toFixed(2);
+  parcela.multa_paga = multa.toFixed(2);
+  parcela.juros_pagos = juros.toFixed(2);
+  parcela.desconto_obtido = desconto.toFixed(2);
   parcela.id_conta = id_conta ?? null;
   parcela.id_usuario = req.user!.id_usuario;
 
@@ -680,7 +690,7 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
     log: `Parcela de despesa ${saved.id_despesa_parcela} (despesa ${saved.id_despesa}) paga — valor_pago=${saved.valor_pago}`,
     query: JSON.stringify(parse.data),
   }));
-  await AuditoriaService.registrar(req, "despesa_parcelas", "UPDATE", saved.id_despesa_parcela, valoresAntigos, { situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, id_conta: saved.id_conta }, `Pagamento confirmado — despesa ${saved.id_despesa}, parcela ${saved.numero_parcela}, valor ${saved.valor_pago}`);
+  await AuditoriaService.registrar(req, "despesa_parcelas", "UPDATE", saved.id_despesa_parcela, valoresAntigos, { situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, multa_paga: saved.multa_paga, juros_pagos: saved.juros_pagos, desconto_obtido: saved.desconto_obtido, id_conta: saved.id_conta }, `Pagamento confirmado — despesa ${saved.id_despesa}, parcela ${saved.numero_parcela}, valor ${saved.valor_pago}`);
 
   return res.json(saved);
 });
@@ -694,6 +704,7 @@ const pagarLoteSchema = z.object({
       z.object({
         id_despesa_parcela: z.number().int().positive(),
         valor_pago: z.number().positive(),
+        multa: z.number().min(0).default(0), juros: z.number().min(0).default(0), desconto: z.number().min(0).default(0),
       })
     )
     .min(1)
@@ -727,7 +738,10 @@ despesasRouter.post("/parcelas/pagar-lote", async (req: AuthRequest, res: Respon
 
     parcela.situacao = "pago";
     parcela.pago_data = pago_data;
-    parcela.valor_pago = item.valor_pago.toFixed(2);
+    const totalPago = item.valor_pago + item.multa + item.juros - item.desconto;
+    if (totalPago <= 0) { ignoradas.push({ id_despesa_parcela: item.id_despesa_parcela, motivo: "Total inválido" }); continue; }
+    parcela.valor_pago = totalPago.toFixed(2);
+    parcela.multa_paga = item.multa.toFixed(2); parcela.juros_pagos = item.juros.toFixed(2); parcela.desconto_obtido = item.desconto.toFixed(2);
     parcela.id_conta = id_conta;
     parcela.id_usuario = req.user!.id_usuario;
     await repo.save(parcela);
@@ -739,7 +753,7 @@ despesasRouter.post("/parcelas/pagar-lote", async (req: AuthRequest, res: Respon
       url: "/api/despesas/parcelas/pagar-lote",
       log: `Parcela de despesa ${parcela.id_despesa_parcela} (despesa ${parcela.id_despesa}) paga em lote — valor_pago=${parcela.valor_pago}`,
     }));
-    await AuditoriaService.registrar(req, "despesa_parcelas", "UPDATE", parcela.id_despesa_parcela, { situacao: "aberto", pago_data: null, valor_pago: null, id_conta: null }, { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, id_conta: parcela.id_conta }, `Pagamento em lote confirmado — despesa ${parcela.id_despesa}, parcela ${parcela.numero_parcela}, valor ${parcela.valor_pago}`);
+    await AuditoriaService.registrar(req, "despesa_parcelas", "UPDATE", parcela.id_despesa_parcela, { situacao: "aberto", pago_data: null, valor_pago: null, multa_paga: "0.00", juros_pagos: "0.00", desconto_obtido: "0.00", id_conta: null }, { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, multa_paga: parcela.multa_paga, juros_pagos: parcela.juros_pagos, desconto_obtido: parcela.desconto_obtido, id_conta: parcela.id_conta }, `Pagamento em lote confirmado — despesa ${parcela.id_despesa}, parcela ${parcela.numero_parcela}, valor ${parcela.valor_pago}`);
   }
 
   return res.json({ pagas, ignoradas });
@@ -754,11 +768,14 @@ despesasRouter.post("/parcelas/:id/estornar", async (req: AuthRequest, res: Resp
   if (parcela.situacao !== "pago") {
     return res.status(400).json({ error: "Esta parcela não está paga e não pode ser estornada." });
   }
-  const valoresAntigos = { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, id_conta: parcela.id_conta };
+  const valoresAntigos = { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, multa_paga: parcela.multa_paga, juros_pagos: parcela.juros_pagos, desconto_obtido: parcela.desconto_obtido, id_conta: parcela.id_conta };
 
   parcela.situacao = "aberto";
   parcela.pago_data = null;
   parcela.valor_pago = null;
+  parcela.multa_paga = "0.00";
+  parcela.juros_pagos = "0.00";
+  parcela.desconto_obtido = "0.00";
   parcela.id_conta = null;
 
   const saved = await repo.save(parcela);

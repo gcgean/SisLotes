@@ -149,6 +149,7 @@ interface DespesaParcela {
   valor_pago: string | null;
   id_conta: number | null;
 }
+interface EmpresaFinanceira extends ReciboEmpresa { multa_percentual?: string; juros_percentual_dia?: string; carencia_dias?: number }
 
 interface DespesaDetalhe extends DespesaResumo {
   parcelas: DespesaParcela[];
@@ -188,6 +189,7 @@ function fmtMoeda(value: string | number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 }
+export function encargosSugeridos(valor:number,vencimento:string|null,dataPagamento:string,empresa?:EmpresaFinanceira){if(!vencimento||dataPagamento<=vencimento)return{multa:0,juros:0,desconto:0};const dias=Math.floor((Date.UTC(...dataPagamento.split("-").map(Number).map((n,i)=>i===1?n-1:n) as [number,number,number])-Date.UTC(...vencimento.split("-").map(Number).map((n,i)=>i===1?n-1:n) as [number,number,number]))/86400000);const cobraveis=Math.max(0,dias-(empresa?.carencia_dias??0));if(!cobraveis)return{multa:0,juros:0,desconto:0};return{multa:Number((valor*Number(empresa?.multa_percentual??0)/100).toFixed(2)),juros:Number((valor*Number(empresa?.juros_percentual_dia??0)/100*cobraveis).toFixed(2)),desconto:0};}
 
 async function parseJson(response: Response) {
   try {
@@ -266,7 +268,7 @@ export default function Despesas() {
   // ─── Dialog: pagar parcela ────────────────────────────────────────────────
   const [dialogPagarAberto, setDialogPagarAberto] = useState(false);
   const [parcelaSelecionada, setParcelaSelecionada] = useState<DespesaParcela | null>(null);
-  const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_pago: "", id_conta: "" });
+  const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_base: "", multa: "0", juros: "0", desconto: "0", id_conta: "" });
 
   // ─── Pagamento em lote ─────────────────────────────────────────────────────
   const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set());
@@ -431,7 +433,7 @@ export default function Despesas() {
   // ─── Impressão do relatório de contas a pagar ────────────────────────────
   const [usarTimbradoRelatorio, setUsarTimbradoRelatorio] = useState(true);
 
-  const { data: empresaRelatorio } = useQuery<ReciboEmpresa>({
+  const { data: empresaRelatorio } = useQuery<EmpresaFinanceira>({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
       const r = await fetch("/api/empresas/minha", { headers: getAuthHeaders() });
@@ -602,7 +604,7 @@ export default function Despesas() {
       if (!parcelaSelecionada) throw new Error("Parcela não selecionada");
       const body = {
         pago_data: formPagar.pago_data,
-        valor_pago: Number(formPagar.valor_pago),
+        valor_base: Number(formPagar.valor_base), multa: Number(formPagar.multa), juros: Number(formPagar.juros), desconto: Number(formPagar.desconto),
         id_conta: formPagar.id_conta ? Number(formPagar.id_conta) : null,
       };
       const r = await fetch(`/api/despesas/parcelas/${parcelaSelecionada.id_despesa_parcela}/pagar`, {
@@ -630,6 +632,7 @@ export default function Despesas() {
       const itens = despesasSelecionadasParaPagar.map((d) => ({
         id_despesa_parcela: d.proxima_parcela_id!,
         valor_pago: Number((valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total).toString().replace(",", ".")),
+        ...encargosSugeridos(Number(valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total),d.vencimento,formPagarLote.pago_data,empresaRelatorio),
       }));
       const body = {
         pago_data: formPagarLote.pago_data,
@@ -812,7 +815,8 @@ export default function Despesas() {
 
   function abrirPagarParcela(parcela: DespesaParcela) {
     setParcelaSelecionada(parcela);
-    setFormPagar({ pago_data: new Date().toISOString().slice(0, 10), valor_pago: parcela.valor, id_conta: "" });
+    const data=new Date().toISOString().slice(0,10), e=encargosSugeridos(Number(parcela.valor),parcela.vencimento,data,empresaRelatorio);
+    setFormPagar({ pago_data:data,valor_base:parcela.valor,multa:String(e.multa),juros:String(e.juros),desconto:"0",id_conta:"" });
     setDialogPagarAberto(true);
   }
 
@@ -1578,12 +1582,13 @@ export default function Despesas() {
           <div className="space-y-3">
             <div>
               <Label>Data do pagamento</Label>
-              <Input type="date" value={formPagar.pago_data} onChange={(e) => setFormPagar((f) => ({ ...f, pago_data: e.target.value }))} />
+              <Input type="date" value={formPagar.pago_data} onChange={(event) => { const data=event.target.value,e=encargosSugeridos(Number(formPagar.valor_base),parcelaSelecionada?.vencimento??null,data,empresaRelatorio);setFormPagar(f=>({...f,pago_data:data,multa:String(e.multa),juros:String(e.juros)})); }} />
             </div>
             <div>
-              <Label>Valor pago</Label>
-              <MoneyInput value={formPagar.valor_pago} onValueChange={(valor_pago) => setFormPagar((f) => ({ ...f, valor_pago }))} />
+              <Label>Valor original</Label><MoneyInput value={formPagar.valor_base} onValueChange={(valor_base) => setFormPagar((f) => ({ ...f, valor_base }))} />
             </div>
+            <div className="grid grid-cols-3 gap-2"><div><Label>Multa</Label><MoneyInput value={formPagar.multa} onValueChange={(multa)=>setFormPagar(f=>({...f,multa}))}/></div><div><Label>Juros</Label><MoneyInput value={formPagar.juros} onValueChange={(juros)=>setFormPagar(f=>({...f,juros}))}/></div><div><Label>Desconto</Label><MoneyInput value={formPagar.desconto} onValueChange={(desconto)=>setFormPagar(f=>({...f,desconto}))}/></div></div>
+            <div className="rounded-md bg-muted p-3 flex justify-between"><span className="text-sm text-muted-foreground">Total efetivo</span><strong>{fmtMoeda(Number(formPagar.valor_base||0)+Number(formPagar.multa||0)+Number(formPagar.juros||0)-Number(formPagar.desconto||0))}</strong></div>
             <div>
               <Label>Conta / local do pagamento *</Label>
               <Combobox
@@ -1601,7 +1606,7 @@ export default function Despesas() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogPagarAberto(false)}>Cancelar</Button>
-            <Button disabled={pagarParcelaMutation.isPending || !formPagar.valor_pago || !formPagar.id_conta} onClick={() => pagarParcelaMutation.mutate()}>
+            <Button disabled={pagarParcelaMutation.isPending || !formPagar.valor_base || !formPagar.id_conta} onClick={() => pagarParcelaMutation.mutate()}>
               {pagarParcelaMutation.isPending ? "Salvando…" : "Confirmar pagamento"}
             </Button>
           </DialogFooter>
