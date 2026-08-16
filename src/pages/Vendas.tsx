@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatDateBR } from "@/lib/date-br";
+import { compareDateOnly, formatDateBR } from "@/lib/date-br";
 import {
   Dialog,
   DialogContent,
@@ -1835,7 +1835,9 @@ const Vendas = () => {
                   {[...vendaDetalhe.pagamentos]
                     .sort((a, b) => a.numero_parcela - b.numero_parcela)
                     .map((p) => {
-                      const atrasado = p.situacao === "aberto" && new Date(p.vencimento) < new Date(new Date().toDateString());
+                      const agora = new Date();
+                      const hojeIso = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+                      const atrasado = p.situacao === "aberto" && compareDateOnly(p.vencimento, hojeIso) < 0;
                       return (
                         <tr key={p.id_pagamento} className={`hover:bg-muted/30 transition-colors ${atrasado ? "bg-destructive/5" : ""}`}>
                           <td className="px-4 py-2.5 font-medium">{String(p.numero_parcela).padStart(2, "0")}</td>

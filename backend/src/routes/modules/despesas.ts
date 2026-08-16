@@ -351,7 +351,8 @@ despesasRouter.get("/alertas", async (req: AuthRequest, res: Response) => {
   try {
     const rows = await AppDataSource.query(
       `SELECT
-         p.id_despesa_parcela, p.id_despesa, p.numero_parcela, p.vencimento, p.valor,
+         p.id_despesa_parcela, p.id_despesa, p.numero_parcela,
+         TO_CHAR(p.vencimento, 'YYYY-MM-DD') AS vencimento, p.valor,
          d.descricao,
          lo.nome AS loteamento_nome
        FROM despesa_parcelas p
@@ -374,7 +375,9 @@ despesasRouter.get("/alertas", async (req: AuthRequest, res: Response) => {
       loteamento_nome: string | null;
     };
 
-    const hojeStr = new Date().toISOString().slice(0, 10);
+    const hojeRows = await AppDataSource.query(`SELECT TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS hoje`);
+    const hojeStr = String(hojeRows[0]?.hoje);
+    const mesAtual = hojeStr.slice(0, 7);
     const atrasadas: Row[] = [];
     const hoje: Row[] = [];
     const mes: Row[] = [];
@@ -382,7 +385,7 @@ despesasRouter.get("/alertas", async (req: AuthRequest, res: Response) => {
     for (const r of rows as Row[]) {
       if (r.vencimento < hojeStr) atrasadas.push(r);
       else if (r.vencimento === hojeStr) hoje.push(r);
-      else mes.push(r);
+      else if (r.vencimento.startsWith(mesAtual)) mes.push(r);
     }
 
     const somaValor = (arr: Row[]) => arr.reduce((s, r) => s + Number(r.valor), 0);
