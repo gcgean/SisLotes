@@ -1082,7 +1082,7 @@ relatoriosRouter.get(
       FROM despesa_parcelas dp
       JOIN despesas d ON d.id_despesa = dp.id_despesa
       LEFT JOIN loteamentos lo ON lo.id_loteamento = d.id_loteamento
-      LEFT JOIN categorias_despesa cat ON cat.id_categoria = d.id_categoria
+      LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = d.id_categoria
       LEFT JOIN fornecedores forn ON forn.id_fornecedor = d.id_fornecedor
       WHERE ${conditions.join(" AND ")}
       ORDER BY dp.vencimento ASC
