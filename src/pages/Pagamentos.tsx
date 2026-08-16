@@ -54,9 +54,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { gerarReciboParcela } from "@/utils/reciboParcela";
 import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
-import { formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
+import { compareDateOnly, formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AReceberPorLoteTab } from "@/components/pagamentos/AReceberPorLoteTab";
+import { contaRecebimentoValida } from "@/lib/financeiro";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -335,11 +336,8 @@ const Pagamentos = () => {
       return json
         .filter((p) => p.situacao !== "pago")
         .map<Pagamento>((p) => {
-          const venc = new Date(p.vencimento);
-          venc.setHours(0, 0, 0, 0);
-          const hojeCopy = new Date(hoje);
-          hojeCopy.setHours(0, 0, 0, 0);
-          const situacao: PagamentoSituacao = venc < hojeCopy ? "atrasado" : "aberto";
+          const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+          const situacao: PagamentoSituacao = compareDateOnly(p.vencimento, hojeIso) < 0 ? "atrasado" : "aberto";
 
           return {
             id: p.id_pagamento,
@@ -410,7 +408,7 @@ const Pagamentos = () => {
   // ─── Mutação de baixa ────────────────────────────────────────────────────
 
   const baixaMutation = useMutation({
-    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number | null; multa_override?: number; juros_override?: number; desconto?: number }) => {
+    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number; multa_override?: number; juros_override?: number; desconto?: number }) => {
       const res = await fetch(`/api/pagamentos/${payload.id_pagamento}/baixa`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -521,6 +519,10 @@ const Pagamentos = () => {
     }
 
     const contaSelecionada = contasBancarias.find((c) => String(c.id_conta) === baixaContaId) ?? null;
+    if (!contaRecebimentoValida(baixaContaId) || !contaSelecionada) {
+      toast({ title: "Selecione a conta bancária", description: "A conta é obrigatória para registrar o recebimento no extrato.", variant: "destructive" });
+      return;
+    }
     const parcSelecionadas = pagamentosAbertosFiltered.filter((p) => selecionados.has(p.id));
     const descontoRaw = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
     const totalBaixaConf = parcSelecionadas.reduce((acc, p) => {
@@ -543,7 +545,7 @@ const Pagamentos = () => {
           id_pagamento: parc.id,
           pago_data: pagoIso,
           valor_pago: totalFinal,
-          id_conta: contaSelecionada ? contaSelecionada.id_conta : null,
+          id_conta: contaSelecionada.id_conta,
           multa_override: multaFinal,
           juros_override: jurosFinal,
           desconto: descontoVal,
@@ -2062,10 +2064,10 @@ const Pagamentos = () => {
                     <Input value={baixaData} onChange={(e) => setBaixaData(e.target.value)} placeholder="dd/mm/aaaa" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Conta Bancária</Label>
+                    <Label className="text-xs">Conta Bancária *</Label>
                     <Select value={baixaContaId} onValueChange={setBaixaContaId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Conta (opcional)" />
+                        <SelectValue placeholder="Selecione a conta" />
                       </SelectTrigger>
                       <SelectContent>
                         {contasBancarias.length === 0 ? (
@@ -2079,6 +2081,7 @@ const Pagamentos = () => {
                         )}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">Obrigatório — é o que faz esse recebimento aparecer no extrato da conta.</p>
                   </div>
                 </div>
               </div>

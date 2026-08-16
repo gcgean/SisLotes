@@ -5,6 +5,7 @@ import { AppDataSource } from "../../db/data-source";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
 import { Empresa } from "../../entities/Empresa";
+import { Conta } from "../../entities/Conta";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 
 export const pagamentosRouter = Router();
@@ -13,7 +14,7 @@ pagamentosRouter.use(requireAuth, requireFeature("module_pagamentos"));
 const baixaSchema = z.object({
   pago_data: z.string(),
   valor_pago: z.number().positive(),
-  id_conta: z.number().int().positive().optional().nullable(),
+  id_conta: z.number().int().positive({ message: "Informe a conta que receberá o pagamento." }),
   // Encargos calculados/ajustados pelo frontend (dispensar = 0)
   multa_override: z.number().min(0).optional().nullable(),
   juros_override: z.number().min(0).optional().nullable(),
@@ -247,6 +248,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   const pagamentoRepo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);
   const empresaRepo = AppDataSource.getRepository(Empresa);
+  const contaRepo = AppDataSource.getRepository(Conta);
 
   const where: Record<string, unknown> = { id_pagamento: Number(id) };
 
@@ -262,6 +264,13 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
 
   if (pagamento.situacao === "pago") {
     return res.status(409).json({ error: "Este pagamento já foi baixado.", situacao: "pago", pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago });
+  }
+
+  const conta = await contaRepo.findOne({
+    where: { id_conta, id_empresa: pagamento.id_empresa, ativo: true },
+  });
+  if (!conta) {
+    return res.status(400).json({ error: "Conta bancária inválida ou inativa." });
   }
 
   // Busca configurações de encargos da empresa
@@ -292,7 +301,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   pagamento.valor_pago = valor_pago.toFixed(2);
   pagamento.multa = multa.toFixed(2);
   pagamento.juros = juros.toFixed(2);
-  pagamento.id_conta = id_conta ?? null;
+  pagamento.id_conta = id_conta;
   pagamento.id_usuario = req.user?.id_usuario ?? 1;
 
   const saved = await pagamentoRepo.save(pagamento);
