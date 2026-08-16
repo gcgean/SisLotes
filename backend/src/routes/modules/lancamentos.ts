@@ -6,6 +6,7 @@ import { LancamentoRateio } from "../../entities/LancamentoRateio";
 import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 import { AuditoriaService } from "../../services/AuditoriaService";
+import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
 
 export const lancamentosRouter = Router();
 lancamentosRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -97,6 +98,9 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
 
   const { rateio, ...data } = parse.data;
   const idEmpresa = req.user!.id_empresa;
+  if (data.id_conta_contabil && !(await contaContabilAceitaLancamento(data.id_conta_contabil, idEmpresa, data.tipo))) {
+    return res.status(400).json({ error: "Selecione uma conta contábil analítica e compatível com o tipo do lançamento." });
+  }
 
   const repo = AppDataSource.getRepository(LancamentoManual);
   const lancamento = repo.create({
@@ -149,6 +153,12 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
   const valoresAntigos = { tipo: lancamento.tipo, id_conta: lancamento.id_conta, id_loteamento: lancamento.id_loteamento, descricao: lancamento.descricao, valor: lancamento.valor, data: lancamento.data };
 
   const { valor, rateio, ...rest } = parse.data;
+
+  const contaContabil = rest.id_conta_contabil ?? lancamento.id_conta_contabil;
+  const tipoLancamento = rest.tipo ?? lancamento.tipo;
+  if (contaContabil && !(await contaContabilAceitaLancamento(contaContabil, req.user!.id_empresa, tipoLancamento))) {
+    return res.status(400).json({ error: "Selecione uma conta contábil analítica e compatível com o tipo do lançamento." });
+  }
 
   if (rateio && rateio.length > 0) {
     const soma = rateio.reduce((s, r) => s + r.percentual, 0);

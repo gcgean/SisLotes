@@ -11,6 +11,7 @@ import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 import { diferencaDiasCivis } from "../../utils/date-only";
 import { AuditoriaService } from "../../services/AuditoriaService";
+import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
 
 export const despesasRouter = Router();
 despesasRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -466,6 +467,9 @@ despesasRouter.post("/", async (req: AuthRequest, res: Response) => {
 
   const data = parse.data;
   const idEmpresa = req.user!.id_empresa;
+  if (!(await contaContabilAceitaLancamento(data.id_categoria, idEmpresa, "despesa"))) {
+    return res.status(400).json({ error: "Selecione uma conta contábil analítica de despesa. Contas com subcontas não aceitam lançamentos." });
+  }
   const despesaRepo = AppDataSource.getRepository(Despesa);
   const parcelaRepo = AppDataSource.getRepository(DespesaParcela);
 
@@ -544,6 +548,10 @@ despesasRouter.put("/:id", async (req: AuthRequest, res: Response) => {
   }
 
   const { valor_total, rateio, ...rest } = parse.data;
+
+  if (rest.id_categoria !== undefined && !(await contaContabilAceitaLancamento(rest.id_categoria, req.user!.id_empresa, "despesa"))) {
+    return res.status(400).json({ error: "Selecione uma conta contábil analítica de despesa. Contas com subcontas não aceitam lançamentos." });
+  }
 
   if (rateio && rateio.length > 0) {
     const soma = rateio.reduce((s, r) => s + r.percentual, 0);
