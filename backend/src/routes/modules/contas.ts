@@ -140,7 +140,8 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
              CASE WHEN mf.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
              mf.origem, mf.descricao, mf.valor,
              cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta,
-             CASE WHEN mf.origem = 'manual' THEN mf.id_origem ELSE NULL END AS id_lancamento
+             CASE WHEN mf.origem = 'manual' THEN mf.id_origem ELSE NULL END AS id_lancamento,
+             mf.id_transferencia
       FROM movimentos_financeiros mf
       JOIN contas c ON c.id_conta = mf.id_conta
       LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = mf.id_conta_contabil
@@ -164,6 +165,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
     conta_apelido: string;
     id_conta: number;
     id_lancamento: number | null;
+    id_transferencia: number | null;
   };
 
   let saldoCorrente = saldoInicialPeriodo;
@@ -188,6 +190,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
       contaApelido: m.conta_apelido,
       idConta: m.id_conta,
       idLancamento: m.id_lancamento,
+      idTransferencia: m.id_transferencia,
       saldo: saldoCorrente,
     };
   });

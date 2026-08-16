@@ -34,7 +34,7 @@ describe("integridade e segurança do financeiro — fase 3", () => {
     const despesas = readFileSync(resolve(raiz, "backend/src/routes/modules/despesas.ts"), "utf8");
     const lancamentos = readFileSync(resolve(raiz, "src/components/financeiro/LancamentosTab.tsx"), "utf8");
     expect(despesas).toContain("contaContabilAceitaLancamento");
-    expect(lancamentos).toContain('m.origem === "lancamento"');
+    expect(lancamentos).toContain('m.origem === "manual"');
     expect(lancamentos).toContain('const exibirSaldoCorrente = contaFiltro !== "todas"');
   });
 });

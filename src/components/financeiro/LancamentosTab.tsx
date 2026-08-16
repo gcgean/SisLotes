@@ -8,9 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DestructiveConfirmationDialog } from "@/components/ui/destructive-confirmation-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, Printer, Download, Search } from "lucide-react";
+import { Plus, Pencil, Trash2, Printer, Download, Search, ArrowRightLeft } from "lucide-react";
 import { formatDateBR } from "@/lib/date-br";
 import { LancamentoDialog, Lancamento } from "@/components/financeiro/LancamentoDialog";
+import { TransferenciaDialog, TransferenciaConta } from "@/components/financeiro/TransferenciaDialog";
 import { imprimirExtratoConta } from "@/utils/extratoConta";
 import type { ReciboEmpresa } from "@/utils/reciboParcela";
 
@@ -23,13 +24,14 @@ interface Conta {
 interface MovimentoGeral {
   data: string;
   movimento: "entrada" | "saida";
-  origem: "venda" | "despesa" | "lancamento";
+  origem: "recebimento" | "pagamento" | "manual" | "transferencia";
   descricao: string;
   valor: number;
   contaContabil: string | null;
   contaApelido: string;
   idConta: number;
   idLancamento: number | null;
+  idTransferencia: number | null;
   saldo: number;
 }
 
@@ -43,9 +45,10 @@ interface ExtratoGeral {
 }
 
 const ORIGEM_LABEL: Record<string, string> = {
-  venda: "Recebimento de venda",
-  despesa: "Pagamento de despesa",
-  lancamento: "Lançamento manual",
+  recebimento: "Recebimento de venda",
+  pagamento: "Pagamento de despesa",
+  manual: "Lançamento manual",
+  transferencia: "Transferência entre contas",
 };
 
 function fmt(v: number) {
@@ -74,7 +77,10 @@ export function LancamentosTab() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
+  const [transferenciaOpen, setTransferenciaOpen] = useState(false);
+  const [editingTransferencia, setEditingTransferencia] = useState<TransferenciaConta | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deletingTransferenciaId, setDeletingTransferenciaId] = useState<number | null>(null);
   const [usarTimbrado, setUsarTimbrado] = useState(true);
 
   const { data: empresaInfo } = useQuery<ReciboEmpresa>({
@@ -105,6 +111,15 @@ export function LancamentosTab() {
     },
   });
 
+  const { data: transferencias = [] } = useQuery<TransferenciaConta[]>({
+    queryKey: ["financeiro", "transferencias"],
+    queryFn: async () => {
+      const r = await fetch("/api/lancamentos/transferencias", { headers });
+      if (!r.ok) throw new Error("Erro ao carregar transferências");
+      return r.json();
+    },
+  });
+
   const { data: extrato, isLoading } = useQuery<ExtratoGeral>({
     queryKey: ["financeiro", "extrato-geral", from, to, contaFiltro],
     queryFn: async () => {
@@ -129,6 +144,19 @@ export function LancamentosTab() {
     onError: () => toast({ title: "Erro ao excluir lançamento", variant: "destructive" }),
   });
 
+  const deleteTransferenciaMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/lancamentos/transferencias/${id}`, { method: "DELETE", headers });
+      if (!r.ok) throw new Error("Erro ao excluir transferência");
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["financeiro"] });
+      setDeletingTransferenciaId(null);
+      toast({ title: "Transferência excluída" });
+    },
+    onError: () => toast({ title: "Erro ao excluir transferência", variant: "destructive" }),
+  });
+
   function openNew() {
     setEditing(null);
     setDialogOpen(true);
@@ -139,6 +167,12 @@ export function LancamentosTab() {
     setEditing(l);
     setDialogOpen(true);
   }
+  function openEditTransferencia(idTransferencia: number) {
+    const transferencia = transferencias.find((item) => item.id_transferencia === idTransferencia);
+    if (!transferencia) return;
+    setEditingTransferencia(transferencia);
+    setTransferenciaOpen(true);
+  }
 
   const movimentos = useMemo(() => {
     const termo = busca.trim().toLocaleLowerCase("pt-BR");
@@ -148,6 +182,7 @@ export function LancamentosTab() {
     );
   }, [extrato, busca, tipoFiltro]);
   const lancamentoExcluido = deletingId ? lancamentos.find((item) => item.id_lancamento === deletingId) : null;
+  const transferenciaExcluida = deletingTransferenciaId ? transferencias.find((item) => item.id_transferencia === deletingTransferenciaId) : null;
   const exibirSaldoCorrente = contaFiltro !== "todas";
 
   const contaLabel =
@@ -245,6 +280,9 @@ export function LancamentosTab() {
           <Button onClick={openNew} className="gap-2" disabled={contas.length === 0}>
             <Plus className="h-4 w-4" /> Novo Lançamento
           </Button>
+          <Button variant="outline" onClick={() => { setEditingTransferencia(null); setTransferenciaOpen(true); }} className="gap-2" disabled={contas.length < 2}>
+            <ArrowRightLeft className="h-4 w-4" /> Transferir
+          </Button>
         </div>
       </div>
       {contas.length === 0 && (
@@ -321,7 +359,7 @@ export function LancamentosTab() {
                   </td>
                   {exibirSaldoCorrente ? <td className="px-4 py-3 text-right font-medium">{fmt(m.saldo)}</td> : null}
                   <td className="px-4 py-3">
-                    {m.origem === "lancamento" && m.idLancamento !== null && (
+                    {m.origem === "manual" && m.idLancamento !== null && (
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(m.idLancamento!)}>
                           <Pencil className="h-4 w-4" />
@@ -334,6 +372,12 @@ export function LancamentosTab() {
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
+                      </div>
+                    )}
+                    {m.origem === "transferencia" && m.idTransferencia !== null && (
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEditTransferencia(m.idTransferencia!)}><Pencil className="h-4 w-4" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeletingTransferenciaId(m.idTransferencia!)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     )}
                   </td>
@@ -353,6 +397,7 @@ export function LancamentosTab() {
       </div>
 
       <LancamentoDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} />
+      <TransferenciaDialog open={transferenciaOpen} onOpenChange={setTransferenciaOpen} editing={editingTransferencia} />
 
       <DestructiveConfirmationDialog
         open={Boolean(deletingId)}
@@ -363,6 +408,16 @@ export function LancamentosTab() {
         confirmLabel="Excluir lançamento"
         pending={deleteMutation.isPending}
         onConfirm={() => deletingId && deleteMutation.mutate(deletingId)}
+      />
+      <DestructiveConfirmationDialog
+        open={Boolean(deletingTransferenciaId)}
+        onOpenChange={(open) => !open && setDeletingTransferenciaId(null)}
+        title="Excluir transferência?"
+        description={transferenciaExcluida ? `${transferenciaExcluida.conta_origem_apelido} → ${transferenciaExcluida.conta_destino_apelido} · ${fmt(Number(transferenciaExcluida.valor))} · ${formatDateBR(transferenciaExcluida.data)}` : "Transferência selecionada"}
+        consequence="A saída e a entrada serão removidas juntas, recalculando o saldo das duas contas."
+        confirmLabel="Excluir transferência"
+        pending={deleteTransferenciaMutation.isPending}
+        onConfirm={() => deletingTransferenciaId && deleteTransferenciaMutation.mutate(deletingTransferenciaId)}
       />
     </div>
   );

@@ -24,6 +24,7 @@ import { DespesaParcela } from "../entities/DespesaParcela";
 import { LancamentoManual } from "../entities/LancamentoManual";
 import { DespesaRateio } from "../entities/DespesaRateio";
 import { LancamentoRateio } from "../entities/LancamentoRateio";
+import { TransferenciaConta } from "../entities/TransferenciaConta";
 import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateClientes";
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
@@ -61,6 +62,7 @@ import { AddRateioAndFornecedorLancamento1700000000032 } from "../migrations/170
 import { AddChatAndAnexoToSugestoes1700000000033 } from "../migrations/1700000000033-AddChatAndAnexoToSugestoes";
 import { CreateMovimentosFinanceirosView1700000000034 } from "../migrations/1700000000034-CreateMovimentosFinanceirosView";
 import { SeedPlanoContasReceitas1700000000035 } from "../migrations/1700000000035-SeedPlanoContasReceitas";
+import { CreateTransferenciasContas1700000000036 } from "../migrations/1700000000036-CreateTransferenciasContas";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -69,7 +71,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, SugestaoMensagem],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, TransferenciaConta, SugestaoMensagem],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -108,6 +110,7 @@ export const AppDataSource = new DataSource({
     AddChatAndAnexoToSugestoes1700000000033,
     CreateMovimentosFinanceirosView1700000000034,
     SeedPlanoContasReceitas1700000000035,
+    CreateTransferenciasContas1700000000036,
   ],
   synchronize: false,
   logging: false,

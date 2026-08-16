@@ -94,6 +94,7 @@ const Auditoria = () => {
             <option value="despesas">Despesas</option>
             <option value="despesa_parcelas">Parcelas de despesas</option>
             <option value="lancamentos_manuais">Lançamentos manuais</option>
+            <option value="transferencias_contas">Transferências entre contas</option>
             <option value="contas">Contas financeiras</option>
             <option value="plano_de_contas">Plano de contas</option>
             <option value="fornecedores">Fornecedores</option>

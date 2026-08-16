@@ -21,6 +21,7 @@ export async function resumoFinanceiroPeriodo(
        COALESCE(SUM(valor) FILTER (WHERE tipo = 'despesa'), 0) AS despesa
      FROM movimentos_financeiros
      WHERE id_empresa = $1
+       AND origem <> 'transferencia'
        AND ($2::date IS NULL OR data >= $2::date)
        AND ($3::date IS NULL OR data <= $3::date)`,
     [idEmpresa, from ?? null, to ?? null],
@@ -37,6 +38,7 @@ export async function resumoFinanceiroMesAtual(idEmpresa: number): Promise<Resum
        COALESCE(SUM(valor) FILTER (WHERE tipo = 'despesa'), 0) AS despesa
      FROM movimentos_financeiros
      WHERE id_empresa = $1
+       AND origem <> 'transferencia'
        AND data >= date_trunc('month', CURRENT_DATE)::date
        AND data < (date_trunc('month', CURRENT_DATE) + INTERVAL '1 month')::date`,
     [idEmpresa],
@@ -56,7 +58,7 @@ export async function fluxoFinanceiroMensal(
        COALESCE(SUM(valor) FILTER (WHERE tipo = 'receita'), 0) AS receita,
        COALESCE(SUM(valor) FILTER (WHERE tipo = 'despesa'), 0) AS despesa
      FROM movimentos_financeiros
-     WHERE id_empresa = $1 AND data >= $2 AND data <= $3
+     WHERE id_empresa = $1 AND origem <> 'transferencia' AND data >= $2 AND data <= $3
      GROUP BY TO_CHAR(data, 'YYYY-MM')
      ORDER BY mes`,
     [idEmpresa, from, to],

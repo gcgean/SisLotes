@@ -3,6 +3,8 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { LancamentoManual } from "../../entities/LancamentoManual";
 import { LancamentoRateio } from "../../entities/LancamentoRateio";
+import { Conta } from "../../entities/Conta";
+import { TransferenciaConta } from "../../entities/TransferenciaConta";
 import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 import { AuditoriaService } from "../../services/AuditoriaService";
@@ -50,6 +52,97 @@ const listQuerySchema = z.object({
   id_loteamento: z.string().regex(/^\d+$/).transform((v) => parseInt(v, 10)).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+const transferenciaBodySchema = z.object({
+  id_conta_origem: z.number().int().positive(),
+  id_conta_destino: z.number().int().positive(),
+  descricao: z.string().trim().min(1).max(300),
+  valor: z.number().positive(),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+}).refine((data) => data.id_conta_origem !== data.id_conta_destino, {
+  message: "As contas de origem e destino devem ser diferentes.",
+  path: ["id_conta_destino"],
+});
+
+async function validarContasTransferencia(idEmpresa: number, ids: number[]): Promise<boolean> {
+  const contas = await AppDataSource.getRepository(Conta)
+    .createQueryBuilder("conta")
+    .where("conta.id_empresa = :idEmpresa", { idEmpresa })
+    .andWhere("conta.id_conta IN (:...ids)", { ids })
+    .andWhere("conta.ativo = true")
+    .getMany();
+  return contas.length === new Set(ids).size;
+}
+
+// ─── GET /transferencias ─────────────────────────────────────────────────────
+lancamentosRouter.get("/transferencias", async (req: AuthRequest, res: Response) => {
+  const rows = await AppDataSource.query(
+    `SELECT t.*, origem.apelido AS conta_origem_apelido, destino.apelido AS conta_destino_apelido
+     FROM transferencias_contas t
+     JOIN contas origem ON origem.id_conta = t.id_conta_origem
+     JOIN contas destino ON destino.id_conta = t.id_conta_destino
+     WHERE t.id_empresa = $1
+     ORDER BY t.data DESC, t.id_transferencia DESC`,
+    [req.user!.id_empresa]
+  );
+  return res.json(rows);
+});
+
+// ─── POST /transferencias ────────────────────────────────────────────────────
+lancamentosRouter.post("/transferencias", async (req: AuthRequest, res: Response) => {
+  const parse = transferenciaBodySchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+  const idEmpresa = req.user!.id_empresa;
+  if (!(await validarContasTransferencia(idEmpresa, [parse.data.id_conta_origem, parse.data.id_conta_destino]))) {
+    return res.status(400).json({ error: "As contas de origem e destino devem pertencer à empresa." });
+  }
+
+  const repo = AppDataSource.getRepository(TransferenciaConta);
+  const saved = await repo.save(repo.create({
+    ...parse.data,
+    valor: parse.data.valor.toFixed(2),
+    id_empresa: idEmpresa,
+    id_usuario: req.user!.id_usuario,
+  }));
+  await AuditoriaService.registrar(req, "transferencias_contas", "CREATE", saved.id_transferencia, undefined, {
+    id_conta_origem: saved.id_conta_origem, id_conta_destino: saved.id_conta_destino,
+    descricao: saved.descricao, valor: saved.valor, data: saved.data,
+  }, `Transferência criada — ${saved.descricao}, valor ${saved.valor}`);
+  return res.status(201).json(saved);
+});
+
+// ─── PUT /transferencias/:id ─────────────────────────────────────────────────
+lancamentosRouter.put("/transferencias/:id", async (req: AuthRequest, res: Response) => {
+  const parse = transferenciaBodySchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+  const idEmpresa = req.user!.id_empresa;
+  if (!(await validarContasTransferencia(idEmpresa, [parse.data.id_conta_origem, parse.data.id_conta_destino]))) {
+    return res.status(400).json({ error: "As contas de origem e destino devem pertencer à empresa." });
+  }
+
+  const repo = AppDataSource.getRepository(TransferenciaConta);
+  const transferencia = await repo.findOne({ where: { id_transferencia: Number(req.params.id), id_empresa: idEmpresa } });
+  if (!transferencia) return res.status(404).json({ error: "Transferência não encontrada" });
+  const valoresAntigos = { id_conta_origem: transferencia.id_conta_origem, id_conta_destino: transferencia.id_conta_destino, descricao: transferencia.descricao, valor: transferencia.valor, data: transferencia.data };
+  Object.assign(transferencia, parse.data, { valor: parse.data.valor.toFixed(2) });
+  const saved = await repo.save(transferencia);
+  await AuditoriaService.registrar(req, "transferencias_contas", "UPDATE", saved.id_transferencia, valoresAntigos, {
+    id_conta_origem: saved.id_conta_origem, id_conta_destino: saved.id_conta_destino,
+    descricao: saved.descricao, valor: saved.valor, data: saved.data,
+  }, `Transferência editada — ${saved.descricao}`);
+  return res.json(saved);
+});
+
+// ─── DELETE /transferencias/:id ──────────────────────────────────────────────
+lancamentosRouter.delete("/transferencias/:id", async (req: AuthRequest, res: Response) => {
+  const repo = AppDataSource.getRepository(TransferenciaConta);
+  const transferencia = await repo.findOne({ where: { id_transferencia: Number(req.params.id), id_empresa: req.user!.id_empresa } });
+  if (!transferencia) return res.status(404).json({ error: "Transferência não encontrada" });
+  const valoresAntigos = { id_conta_origem: transferencia.id_conta_origem, id_conta_destino: transferencia.id_conta_destino, descricao: transferencia.descricao, valor: transferencia.valor, data: transferencia.data };
+  await repo.remove(transferencia);
+  await AuditoriaService.registrar(req, "transferencias_contas", "DELETE", Number(req.params.id), valoresAntigos, undefined, `Transferência excluída — ${transferencia.descricao}, valor ${transferencia.valor}`);
+  return res.status(204).send();
 });
 
 // ─── GET / ────────────────────────────────────────────────────────────────────
