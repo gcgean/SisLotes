@@ -530,10 +530,16 @@ export function VisaoGeralTab() {
         </CardContent>
       </Card>
 
-      {/* Fluxo de caixa */}
+      {/* Comparativo lado a lado: mesma leitura visual, fontes separadas e explícitas. */}
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-base font-semibold">Fluxo de caixa: realizado × projetado</h2>
+          <p className="text-sm text-muted-foreground">Compare o histórico confirmado com os compromissos e recebíveis futuros já cadastrados.</p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm font-semibold">Evolução do fluxo de caixa — entradas e saídas (últimos 12 meses)</CardTitle>
+          <CardTitle className="text-sm font-semibold">Realizado — últimos 12 meses</CardTitle>
         </CardHeader>
         <CardContent>
           {carregandoFluxo ? (<LoadingState message="Carregando fluxo de caixa…" />) : fluxoCaixa.length === 0 ? (
@@ -566,12 +572,11 @@ export function VisaoGeralTab() {
         </CardContent>
       </Card>
 
-      {/* Previsão do fluxo de caixa — próximos 12 meses */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-semibold flex items-center gap-2">
             <CalendarClock className="h-4 w-4 text-emerald-600" />
-            Previsão do fluxo de caixa — próximos 12 meses
+            Projetado — próximos 12 meses
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -615,6 +620,8 @@ export function VisaoGeralTab() {
           </p>
         </CardContent>
       </Card>
+        </div>
+      </div>
     </div>
   );
 }
