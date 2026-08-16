@@ -5,6 +5,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { compareDateOnly, formatDateBR } from "@/lib/date-br";
 import {
@@ -1490,11 +1491,11 @@ const Vendas = () => {
                   </div>
                   <div>
                     <Label htmlFor="valor_entrada">Entrada (R$)</Label>
-                    <Input
+                    <MoneyInput
                       id="valor_entrada"
-                      type="number" min="0" step="0.01" placeholder="0,00"
+                      placeholder="R$ 0,00"
                       value={valorEntrada}
-                      onChange={(e) => setValorEntrada(e.target.value)}
+                      onValueChange={setValorEntrada}
                       className="mt-1.5"
                     />
                   </div>
@@ -1510,11 +1511,11 @@ const Vendas = () => {
                   </div>
                   <div>
                     <Label htmlFor="valor_parcela">Valor de Cada Parcela (R$)</Label>
-                    <Input
+                    <MoneyInput
                       id="valor_parcela"
-                      type="number" min="0" step="0.01" placeholder="0,00"
+                      placeholder="R$ 0,00"
                       value={valorParcelaVenda}
-                      onChange={(e) => setValorParcelaVenda(e.target.value)}
+                      onValueChange={setValorParcelaVenda}
                       className="mt-1.5"
                     />
                   </div>
@@ -1960,11 +1961,10 @@ const Vendas = () => {
             </div>
             <div>
               <Label htmlFor="baixa_valor">Valor Recebido (R$)</Label>
-              <Input
+              <MoneyInput
                 id="baixa_valor"
-                type="number" min="0.01" step="0.01"
                 value={baixaValor}
-                onChange={(e) => setBaixaValor(e.target.value)}
+                onValueChange={setBaixaValor}
                 className="mt-1.5"
               />
             </div>
@@ -2343,7 +2343,7 @@ const Vendas = () => {
                   </div>
                   <div>
                     <Label>Entrada Paga (R$)</Label>
-                    <Input type="number" min="0" step="0.01" placeholder="0,00" value={histEntrada} onChange={(e) => setHistEntrada(e.target.value)} className="mt-1.5" />
+                    <MoneyInput value={histEntrada} onValueChange={setHistEntrada} placeholder="R$ 0,00" className="mt-1.5" />
                   </div>
                   <div>
                     <Label>Número de Parcelas</Label>
@@ -2351,7 +2351,7 @@ const Vendas = () => {
                   </div>
                   <div>
                     <Label>Valor de Cada Parcela (R$)</Label>
-                    <Input type="number" min="0" step="0.01" placeholder="0,00" value={histValorParcela} onChange={(e) => setHistValorParcela(e.target.value)} className="mt-1.5" />
+                    <MoneyInput value={histValorParcela} onValueChange={setHistValorParcela} placeholder="R$ 0,00" className="mt-1.5" />
                   </div>
                 </div>
                 {histValorParcela && Number(histValorParcela) > 0 && (
@@ -2418,10 +2418,9 @@ const Vendas = () => {
                               />
                             </td>
                             <td className="px-2 py-1">
-                              <Input
-                                type="number" min="0" step="0.01"
+                              <MoneyInput
                                 value={row.valor}
-                                onChange={(e) => updateHistRow(idx, "valor", e.target.value)}
+                                onValueChange={(value) => updateHistRow(idx, "valor", value)}
                                 className="h-7 text-xs px-2 w-24"
                               />
                             </td>
@@ -2451,10 +2450,9 @@ const Vendas = () => {
                             </td>
                             <td className="px-2 py-1">
                               {row.situacao === "pago" ? (
-                                <Input
-                                  type="number" min="0" step="0.01"
+                                <MoneyInput
                                   value={row.valor_pago}
-                                  onChange={(e) => updateHistRow(idx, "valor_pago", e.target.value)}
+                                  onValueChange={(value) => updateHistRow(idx, "valor_pago", value)}
                                   className="h-7 text-xs px-2 w-24"
                                 />
                               ) : <span className="text-muted-foreground px-2">—</span>}
@@ -2601,7 +2599,7 @@ const Vendas = () => {
             </div>
             <div className="space-y-1.5">
               <Label>Entrada (R$)</Label>
-              <Input type="number" min="0" step="0.01" value={editEntrada} onChange={(e) => setEditEntrada(e.target.value)} />
+              <MoneyInput value={editEntrada} onValueChange={setEditEntrada} />
             </div>
             <div className="space-y-1.5">
               <Label>Nº de Parcelas</Label>
@@ -2609,7 +2607,7 @@ const Vendas = () => {
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label>Valor da Parcela (R$)</Label>
-              <Input type="number" min="0.01" step="0.01" value={editValorParcela} onChange={(e) => setEditValorParcela(e.target.value)} />
+              <MoneyInput value={editValorParcela} onValueChange={setEditValorParcela} />
             </div>
           </div>
           <DialogFooter className="gap-2">

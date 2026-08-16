@@ -5,16 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { DestructiveConfirmationDialog } from "@/components/ui/destructive-confirmation-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Plus, Pencil, Trash2, Printer } from "lucide-react";
@@ -148,6 +139,8 @@ export function LancamentosTab() {
   }
 
   const movimentos = extrato?.movimentos ?? [];
+  const lancamentoExcluido = deletingId ? lancamentos.find((item) => item.id_lancamento === deletingId) : null;
+  const exibirSaldoCorrente = contaFiltro !== "todas";
 
   const contaLabel =
     contaFiltro === "todas"
@@ -263,18 +256,16 @@ export function LancamentosTab() {
               <th className="px-4 py-3 text-left font-semibold">Descrição</th>
               <th className="px-4 py-3 text-left font-semibold">Conta</th>
               <th className="px-4 py-3 text-right font-semibold">Valor</th>
-              <th className="px-4 py-3 text-right font-semibold">Saldo</th>
+              {exibirSaldoCorrente ? <th className="px-4 py-3 text-right font-semibold">Saldo</th> : null}
               <th className="px-4 py-3 text-right font-semibold">Ações</th>
             </tr>
           </thead>
           <tbody>
             <tr className="border-b bg-muted/20">
-              <td colSpan={4} className="px-4 py-2 text-xs text-muted-foreground italic">
+              <td colSpan={exibirSaldoCorrente ? 4 : 5} className="px-4 py-2 text-xs text-muted-foreground italic">
                 Saldo inicial do período
               </td>
-              <td className="px-4 py-2 text-right text-xs font-semibold" colSpan={2}>
-                {extrato ? fmt(extrato.saldoInicialPeriodo) : "—"}
-              </td>
+              {exibirSaldoCorrente ? <td className="px-4 py-2 text-right text-xs font-semibold" colSpan={2}>{extrato ? fmt(extrato.saldoInicialPeriodo) : "—"}</td> : null}
             </tr>
             {isLoading ? (
               <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td></tr>
@@ -294,7 +285,7 @@ export function LancamentosTab() {
                   <td className={`px-4 py-3 text-right font-medium ${m.movimento === "entrada" ? "text-emerald-600" : "text-red-500"}`}>
                     {m.movimento === "entrada" ? "+" : "−"}{fmt(m.valor)}
                   </td>
-                  <td className="px-4 py-3 text-right font-medium">{fmt(m.saldo)}</td>
+                  {exibirSaldoCorrente ? <td className="px-4 py-3 text-right font-medium">{fmt(m.saldo)}</td> : null}
                   <td className="px-4 py-3">
                     {m.origem === "lancamento" && m.idLancamento !== null && (
                       <div className="flex justify-end gap-1">
@@ -317,12 +308,10 @@ export function LancamentosTab() {
             )}
             {extrato && movimentos.length > 0 && (
               <tr className="bg-muted/20 font-semibold">
-                <td colSpan={4} className="px-4 py-2 text-xs text-muted-foreground italic">
+                <td colSpan={exibirSaldoCorrente ? 4 : 5} className="px-4 py-2 text-xs text-muted-foreground italic">
                   Saldo final do período
                 </td>
-                <td className="px-4 py-2 text-right text-xs" colSpan={2}>
-                  {fmt(extrato.saldoFinalPeriodo)}
-                </td>
+                {exibirSaldoCorrente ? <td className="px-4 py-2 text-right text-xs" colSpan={2}>{fmt(extrato.saldoFinalPeriodo)}</td> : null}
               </tr>
             )}
           </tbody>
@@ -331,23 +320,16 @@ export function LancamentosTab() {
 
       <LancamentoDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} />
 
-      <AlertDialog open={Boolean(deletingId)} onOpenChange={(o) => !o && setDeletingId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir lançamento?</AlertDialogTitle>
-            <AlertDialogDescription>Esta ação não pode ser desfeita e vai afetar o saldo da conta.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deletingId && deleteMutation.mutate(deletingId)}
-            >
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DestructiveConfirmationDialog
+        open={Boolean(deletingId)}
+        onOpenChange={(open) => !open && setDeletingId(null)}
+        title="Excluir lançamento manual?"
+        description={lancamentoExcluido ? `${lancamentoExcluido.descricao} · ${fmt(Number(lancamentoExcluido.valor))} · ${formatDateBR(lancamentoExcluido.data)}` : "Lançamento selecionado"}
+        consequence="O lançamento será removido permanentemente e o saldo da conta será recalculado."
+        confirmLabel="Excluir lançamento"
+        pending={deleteMutation.isPending}
+        onConfirm={() => deletingId && deleteMutation.mutate(deletingId)}
+      />
     </div>
   );
 }

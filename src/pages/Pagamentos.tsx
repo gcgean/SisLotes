@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -2038,16 +2039,20 @@ const Pagamentos = () => {
                       className="h-8 px-2 text-xs"
                       onClick={() => { setBaixaDescontoTipo("percentual"); setBaixaDesconto(""); }}
                     >%</Button>
-                    <Input
-                      type="number"
-                      min="0"
-                      step={baixaDescontoTipo === "percentual" ? "0.1" : "0.01"}
-                      max={baixaDescontoTipo === "percentual" ? "100" : undefined}
-                      value={baixaDesconto}
-                      onChange={(e) => setBaixaDesconto(e.target.value)}
-                      placeholder={baixaDescontoTipo === "percentual" ? "0%" : "0,00"}
-                      className="h-8"
-                    />
+                    {baixaDescontoTipo === "valor" ? (
+                      <MoneyInput value={baixaDesconto} onValueChange={setBaixaDesconto} placeholder="R$ 0,00" className="h-8" />
+                    ) : (
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        max="100"
+                        value={baixaDesconto}
+                        onChange={(e) => setBaixaDesconto(e.target.value)}
+                        placeholder="0%"
+                        className="h-8"
+                      />
+                    )}
                   </div>
                 </div>
 

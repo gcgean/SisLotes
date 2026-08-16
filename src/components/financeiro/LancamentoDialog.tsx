@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
@@ -53,6 +54,7 @@ interface Loteamento {
 }
 interface PlanoConta {
   id_conta_contabil: number;
+  id_pai: number | null;
   codigo: string;
   nome: string;
   tipo: "receita" | "despesa";
@@ -160,8 +162,9 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing, contaPadraoId, contas.length]);
 
+  const contasSinteticas = new Set(planoContas.map((p) => p.id_pai).filter((id): id is number => id !== null));
   const contaContabilOptions: ComboboxOption[] = planoContas
-    .filter((p) => p.ativo && p.tipo === form.tipo)
+    .filter((p) => p.ativo && p.tipo === form.tipo && !contasSinteticas.has(p.id_conta_contabil))
     .slice()
     .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
     .map((p) => ({ value: String(p.id_conta_contabil), label: `${p.codigo} — ${p.nome}` }));
@@ -268,11 +271,10 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
             </div>
             <div>
               <Label>Valor</Label>
-              <Input
-                inputMode="decimal"
+              <MoneyInput
                 value={form.valor}
-                onChange={(e) => setForm((f) => ({ ...f, valor: e.target.value }))}
-                placeholder="0,00"
+                onValueChange={(valor) => setForm((f) => ({ ...f, valor }))}
+                placeholder="R$ 0,00"
                 required
               />
             </div>
