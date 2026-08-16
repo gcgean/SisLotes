@@ -1,0 +1,2 @@
+import{AppDataSource}from"../db/data-source";
+export async function verificarPeriodoFinanceiro(idEmpresa:number,data:string|null|undefined){if(!data)return null;const[r]=await AppDataSource.query(`SELECT TO_CHAR(fechado_ate,'YYYY-MM-DD') fechado_ate FROM fechamentos_financeiros WHERE id_empresa=$1`,[idEmpresa]);if(r?.fechado_ate&&data<=r.fechado_ate)return`Período financeiro fechado até ${r.fechado_ate}. Não é permitido alterar movimentos nesta data.`;return null;}

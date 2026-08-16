@@ -1,0 +1,2 @@
+import{Column,CreateDateColumn,Entity,PrimaryColumn,UpdateDateColumn}from"typeorm";
+@Entity({name:"fechamentos_financeiros"})export class FechamentoFinanceiro{@PrimaryColumn({type:"integer"})id_empresa!:number;@Column({type:"date",nullable:true})fechado_ate!:string|null;@Column({type:"integer"})id_usuario!:number;@CreateDateColumn({type:"timestamp"})created_at!:Date;@UpdateDateColumn({type:"timestamp"})updated_at!:Date;}

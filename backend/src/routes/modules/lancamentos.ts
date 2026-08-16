@@ -9,6 +9,7 @@ import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 import { AuditoriaService } from "../../services/AuditoriaService";
 import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
+import { verificarPeriodoFinanceiro } from "../../services/PeriodoFinanceiroService";
 
 export const lancamentosRouter = Router();
 lancamentosRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -94,6 +95,7 @@ lancamentosRouter.post("/transferencias", async (req: AuthRequest, res: Response
   const parse = transferenciaBodySchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
   const idEmpresa = req.user!.id_empresa;
+  const bloqueioNovo=await verificarPeriodoFinanceiro(idEmpresa,parse.data.data);if(bloqueioNovo)return res.status(409).json({error:bloqueioNovo});
   if (!(await validarContasTransferencia(idEmpresa, [parse.data.id_conta_origem, parse.data.id_conta_destino]))) {
     return res.status(400).json({ error: "As contas de origem e destino devem pertencer à empresa." });
   }
@@ -117,6 +119,7 @@ lancamentosRouter.put("/transferencias/:id", async (req: AuthRequest, res: Respo
   const parse = transferenciaBodySchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
   const idEmpresa = req.user!.id_empresa;
+  const bloqueio=await verificarPeriodoFinanceiro(idEmpresa,parse.data.data);if(bloqueio)return res.status(409).json({error:bloqueio});
   if (!(await validarContasTransferencia(idEmpresa, [parse.data.id_conta_origem, parse.data.id_conta_destino]))) {
     return res.status(400).json({ error: "As contas de origem e destino devem pertencer à empresa." });
   }
@@ -124,6 +127,7 @@ lancamentosRouter.put("/transferencias/:id", async (req: AuthRequest, res: Respo
   const repo = AppDataSource.getRepository(TransferenciaConta);
   const transferencia = await repo.findOne({ where: { id_transferencia: Number(req.params.id), id_empresa: idEmpresa } });
   if (!transferencia) return res.status(404).json({ error: "Transferência não encontrada" });
+  const bloqueioAntigo=await verificarPeriodoFinanceiro(req.user!.id_empresa,transferencia.data);if(bloqueioAntigo)return res.status(409).json({error:bloqueioAntigo});
   const valoresAntigos = { id_conta_origem: transferencia.id_conta_origem, id_conta_destino: transferencia.id_conta_destino, descricao: transferencia.descricao, valor: transferencia.valor, data: transferencia.data };
   Object.assign(transferencia, parse.data, { valor: parse.data.valor.toFixed(2) });
   const saved = await repo.save(transferencia);
@@ -139,6 +143,7 @@ lancamentosRouter.delete("/transferencias/:id", async (req: AuthRequest, res: Re
   const repo = AppDataSource.getRepository(TransferenciaConta);
   const transferencia = await repo.findOne({ where: { id_transferencia: Number(req.params.id), id_empresa: req.user!.id_empresa } });
   if (!transferencia) return res.status(404).json({ error: "Transferência não encontrada" });
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,transferencia.data);if(bloqueio)return res.status(409).json({error:bloqueio});
   const valoresAntigos = { id_conta_origem: transferencia.id_conta_origem, id_conta_destino: transferencia.id_conta_destino, descricao: transferencia.descricao, valor: transferencia.valor, data: transferencia.data };
   await repo.remove(transferencia);
   await AuditoriaService.registrar(req, "transferencias_contas", "DELETE", Number(req.params.id), valoresAntigos, undefined, `Transferência excluída — ${transferencia.descricao}, valor ${transferencia.valor}`);
@@ -191,6 +196,7 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
 
   const { rateio, ...data } = parse.data;
   const idEmpresa = req.user!.id_empresa;
+  const bloqueio=await verificarPeriodoFinanceiro(idEmpresa,data.data);if(bloqueio)return res.status(409).json({error:bloqueio});
   if (data.id_conta_contabil && !(await contaContabilAceitaLancamento(data.id_conta_contabil, idEmpresa, data.tipo))) {
     return res.status(400).json({ error: "Selecione uma conta contábil analítica e compatível com o tipo do lançamento." });
   }
@@ -243,6 +249,7 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
     where: { id_lancamento: Number(req.params.id), id_empresa: req.user!.id_empresa },
   });
   if (!lancamento) return res.status(404).json({ error: "Lançamento não encontrado" });
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,parse.data.data??lancamento.data);if(bloqueio)return res.status(409).json({error:bloqueio});
   const valoresAntigos = { tipo: lancamento.tipo, id_conta: lancamento.id_conta, id_loteamento: lancamento.id_loteamento, descricao: lancamento.descricao, valor: lancamento.valor, data: lancamento.data };
 
   const { valor, rateio, ...rest } = parse.data;
@@ -299,6 +306,7 @@ lancamentosRouter.delete("/:id", async (req: AuthRequest, res: Response) => {
     where: { id_lancamento: Number(req.params.id), id_empresa: req.user!.id_empresa },
   });
   if (!lancamento) return res.status(404).json({ error: "Lançamento não encontrado" });
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,lancamento.data);if(bloqueio)return res.status(409).json({error:bloqueio});
 
   await repo.remove(lancamento);
 

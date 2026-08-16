@@ -9,6 +9,7 @@ import { Conta } from "../../entities/Conta";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
 import { diferencaDiasCivis } from "../../utils/date-only";
 import { AuditoriaService } from "../../services/AuditoriaService";
+import { verificarPeriodoFinanceiro } from "../../services/PeriodoFinanceiroService";
 
 export const pagamentosRouter = Router();
 pagamentosRouter.use(requireAuth, requireFeature("module_pagamentos"));
@@ -244,6 +245,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   }
 
   const { pago_data, valor_pago, id_conta, multa_override, juros_override, desconto } = parseResult.data;
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
 
   const pagamentoRepo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);
@@ -378,6 +380,7 @@ pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res
   const pagamento = await repo.findOne({ where });
 
   if (!pagamento) return res.status(404).json({ error: "Pagamento não encontrado" });
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pagamento.pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
   if (pagamento.situacao !== "pago") return res.status(400).json({ error: "Este pagamento não está pago e não pode ser estornado." });
   const valoresAntigos = { situacao: pagamento.situacao, pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago, id_conta: pagamento.id_conta };
 

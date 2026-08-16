@@ -100,6 +100,7 @@ const Auditoria = () => {
             <option value="cobrancas_bancarias">Cobranças bancárias</option>
             <option value="cobranca_regras">Régua de cobrança</option>
             <option value="orcamentos_loteamento">Orçamentos por loteamento</option>
+            <option value="fechamentos_financeiros">Fechamento financeiro</option>
             <option value="contas">Contas financeiras</option>
             <option value="plano_de_contas">Plano de contas</option>
             <option value="fornecedores">Fornecedores</option>
