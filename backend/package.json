@@ -10,7 +10,8 @@
     "typeorm:migrate": "node dist/run-migrations.js",
     "hub:diag": "tsx src/scripts/hub-billing-diagnostic.ts",
     "financeiro:reconciliar": "tsx src/scripts/reconciliar-financeiro.ts",
-    "financeiro:validar-fase1": "tsx src/scripts/validar-financeiro-fase1.ts"
+    "financeiro:validar-fase1": "tsx src/scripts/validar-financeiro-fase1.ts",
+    "financeiro:cenario-fase1": "tsx src/scripts/cenario-financeiro-fase1.ts"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",
