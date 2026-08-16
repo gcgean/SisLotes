@@ -144,9 +144,11 @@ interface DespesaParcela {
   numero_parcela: number;
   vencimento: string;
   valor: string;
-  situacao: "aberto" | "pago";
+  situacao: "aberto" | "parcial" | "pago";
   pago_data: string | null;
   valor_pago: string | null;
+  multa_paga?: string; juros_pagos?: string; desconto_obtido?: string;
+  pagamentos?: Array<{id_parcela_pagamento:number;pago_data:string;valor_pago:string;conta_apelido:string}>;
   id_conta: number | null;
 }
 interface EmpresaFinanceira extends ReciboEmpresa { multa_percentual?: string; juros_percentual_dia?: string; carencia_dias?: number }
@@ -815,8 +817,9 @@ export default function Despesas() {
 
   function abrirPagarParcela(parcela: DespesaParcela) {
     setParcelaSelecionada(parcela);
-    const data=new Date().toISOString().slice(0,10), e=encargosSugeridos(Number(parcela.valor),parcela.vencimento,data,empresaRelatorio);
-    setFormPagar({ pago_data:data,valor_base:parcela.valor,multa:String(e.multa),juros:String(e.juros),desconto:"0",id_conta:"" });
+    const liquidado=Math.max(0,Number(parcela.valor_pago??0)-Number(parcela.multa_paga??0)-Number(parcela.juros_pagos??0)+Number(parcela.desconto_obtido??0));
+    const restante=Math.max(0,Number(parcela.valor)-liquidado);const data=new Date().toISOString().slice(0,10),e=encargosSugeridos(restante,parcela.vencimento,data,empresaRelatorio);
+    setFormPagar({pago_data:data,valor_base:restante.toFixed(2),multa:String(e.multa),juros:String(e.juros),desconto:"0",id_conta:""});
     setDialogPagarAberto(true);
   }
 
@@ -1545,6 +1548,8 @@ export default function Despesas() {
                       <td className="px-3 py-2">
                         {p.situacao === "pago" ? (
                           <Badge className="bg-green-100 text-green-700 border-green-200">Paga em {formatDateBR(p.pago_data)}</Badge>
+                        ) : p.situacao === "parcial" ? (
+                          <div><Badge variant="secondary">Parcial · {fmtMoeda(p.valor_pago)}</Badge><div className="text-xs text-muted-foreground mt-1">Saldo: {fmtMoeda(Math.max(0,Number(p.valor)-Number(p.valor_pago??0)+Number(p.multa_paga??0)+Number(p.juros_pagos??0)-Number(p.desconto_obtido??0)))}</div></div>
                         ) : (
                           <Badge variant="outline">Em aberto</Badge>
                         )}
@@ -1555,9 +1560,9 @@ export default function Despesas() {
                             <RotateCcw className="h-3.5 w-3.5" /> Estornar
                           </Button>
                         ) : (
-                          <Button size="sm" className="gap-1.5" onClick={() => abrirPagarParcela(p)}>
+                          <div className="flex gap-1"><Button size="sm" className="gap-1.5" onClick={() => abrirPagarParcela(p)}>
                             <CheckCircle2 className="h-3.5 w-3.5" /> Pagar
-                          </Button>
+                          </Button>{p.situacao==="parcial"?<Button size="sm" variant="outline" onClick={()=>setParcelaParaEstorno(p)}><RotateCcw className="h-3.5 w-3.5"/> Estornar baixas</Button>:null}</div>
                         )}
                       </td>
                     </tr>

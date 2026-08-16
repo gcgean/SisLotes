@@ -840,8 +840,8 @@ relatoriosRouter.get(
           AND (mf.origem = 'recebimento'
             OR (mf.origem = 'manual' AND NOT EXISTS (SELECT 1 FROM lancamento_rateio lr WHERE lr.id_lancamento = mf.id_origem))
             OR (mf.origem = 'pagamento' AND NOT EXISTS (
-              SELECT 1 FROM despesa_parcelas dp JOIN despesa_rateio dr ON dr.id_despesa = dp.id_despesa
-              WHERE dp.id_despesa_parcela = mf.id_origem)))
+              SELECT 1 FROM despesa_parcela_pagamentos pp JOIN despesa_parcelas dp ON dp.id_despesa_parcela=pp.id_despesa_parcela JOIN despesa_rateio dr ON dr.id_despesa = dp.id_despesa
+              WHERE pp.id_parcela_pagamento = mf.id_origem)))
         UNION ALL
         SELECT lr.id_loteamento, mf.tipo, mf.valor * (lr.percentual / 100.0), mf.data
         FROM movimentos_financeiros mf
@@ -850,7 +850,8 @@ relatoriosRouter.get(
         UNION ALL
         SELECT dr.id_loteamento, mf.tipo, mf.valor * (dr.percentual / 100.0), mf.data
         FROM movimentos_financeiros mf
-        JOIN despesa_parcelas dp ON mf.origem = 'pagamento' AND dp.id_despesa_parcela = mf.id_origem
+        JOIN despesa_parcela_pagamentos pp ON mf.origem = 'pagamento' AND pp.id_parcela_pagamento = mf.id_origem
+        JOIN despesa_parcelas dp ON dp.id_despesa_parcela = pp.id_despesa_parcela
         JOIN despesa_rateio dr ON dr.id_despesa = dp.id_despesa
         WHERE mf.id_empresa = $1
       ), totais AS (

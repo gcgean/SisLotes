@@ -10,7 +10,7 @@ import {
 } from "typeorm";
 import { Despesa } from "./Despesa";
 
-export type DespesaParcelaSituacao = "aberto" | "pago";
+export type DespesaParcelaSituacao = "aberto" | "parcial" | "pago";
 
 @Entity({ name: "despesa_parcelas" })
 @Index("idx_despesa_parcelas_despesa", ["id_despesa"])

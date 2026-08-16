@@ -65,6 +65,7 @@ import { SeedPlanoContasReceitas1700000000035 } from "../migrations/170000000003
 import { CreateTransferenciasContas1700000000036 } from "../migrations/1700000000036-CreateTransferenciasContas";
 import { CreateConciliacaoBancaria1700000000037 } from "../migrations/1700000000037-CreateConciliacaoBancaria";
 import { AddEncargosDespesaParcela1700000000038 } from "../migrations/1700000000038-AddEncargosDespesaParcela";
+import { CreateDespesaParcelaPagamentos1700000000039 } from "../migrations/1700000000039-CreateDespesaParcelaPagamentos";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -115,6 +116,7 @@ export const AppDataSource = new DataSource({
     CreateTransferenciasContas1700000000036,
     CreateConciliacaoBancaria1700000000037,
     AddEncargosDespesaParcela1700000000038,
+    CreateDespesaParcelaPagamentos1700000000039,
   ],
   synchronize: false,
   logging: false,
