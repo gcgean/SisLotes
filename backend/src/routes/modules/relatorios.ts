@@ -50,6 +50,53 @@ const jurosRecebidosQuerySchema = z.object({
     .transform((value) => parseInt(value, 10)),
 });
 
+const agingQuerySchema = z.object({
+  data_referencia: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data de referência inválida").optional(),
+});
+
+type AgingRow = { faixa: string; quantidade: string | number; total: string | number };
+const FAIXAS_AGING = ["0–30", "31–60", "61–90", "+90"] as const;
+
+function completarFaixasAging(rows: AgingRow[]) {
+  const porFaixa = new Map(rows.map((row) => [row.faixa, row]));
+  return FAIXAS_AGING.map((faixa) => ({
+    faixa,
+    quantidade: Number(porFaixa.get(faixa)?.quantidade ?? 0),
+    total: Number(porFaixa.get(faixa)?.total ?? 0),
+  }));
+}
+
+relatoriosRouter.get("/aging", async (req: AuthRequest, res: Response) => {
+  const parse = agingQuerySchema.safeParse(req.query);
+  if (!parse.success) return res.status(400).json({ error: "Parâmetros inválidos", issues: parse.error.issues });
+  const idEmpresa = req.user!.id_empresa;
+  const referencia = parse.data.data_referencia ?? null;
+  const faixaSql = `CASE WHEN dias <= 30 THEN '0–30' WHEN dias <= 60 THEN '31–60' WHEN dias <= 90 THEN '61–90' ELSE '+90' END`;
+
+  const receberQuery = `WITH titulos AS (
+    SELECT (($2::date) - p.vencimento)::int AS dias, p.valor::numeric AS saldo
+    FROM pagamentos p JOIN vendas v ON v.id_venda=p.id_venda
+    WHERE p.id_empresa=$1 AND p.situacao='aberto' AND v.status<>'cancelada' AND p.vencimento<=$2::date
+  ) SELECT ${faixaSql} AS faixa,COUNT(*)::int AS quantidade,COALESCE(SUM(saldo),0)::numeric AS total
+    FROM titulos GROUP BY faixa`;
+  const pagarQuery = `WITH baixas AS (
+      SELECT id_despesa_parcela,SUM(valor_principal+desconto)::numeric AS liquidado
+      FROM despesa_parcela_pagamentos WHERE id_empresa=$1 GROUP BY id_despesa_parcela
+    ), titulos AS (
+      SELECT (($2::date) - p.vencimento)::int AS dias,GREATEST(p.valor-COALESCE(b.liquidado,0),0)::numeric AS saldo
+      FROM despesa_parcelas p LEFT JOIN baixas b ON b.id_despesa_parcela=p.id_despesa_parcela
+      WHERE p.id_empresa=$1 AND p.situacao<>'pago' AND p.vencimento<=$2::date
+    ) SELECT ${faixaSql} AS faixa,COUNT(*) FILTER(WHERE saldo>0)::int AS quantidade,COALESCE(SUM(saldo) FILTER(WHERE saldo>0),0)::numeric AS total
+      FROM titulos GROUP BY faixa`;
+  const dataRows = referencia ? [{ data_referencia: referencia }] : await AppDataSource.query("SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') AS data_referencia");
+  const dataReferencia = String(dataRows[0].data_referencia);
+  const [receberRows, pagarRows] = await Promise.all([
+    AppDataSource.query(receberQuery, [idEmpresa, dataReferencia]),
+    AppDataSource.query(pagarQuery, [idEmpresa, dataReferencia]),
+  ]);
+  return res.json({ dataReferencia, receber: completarFaixasAging(receberRows), pagar: completarFaixasAging(pagarRows) });
+});
+
 relatoriosRouter.get(
   "/entradas-por-loteamento",
   requireAuth,

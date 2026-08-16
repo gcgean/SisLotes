@@ -15,6 +15,7 @@ import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
 import { formatDateBR } from "@/lib/date-br";
 import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
 import { useSearchParams } from "react-router-dom";
+import { AgingReport } from "@/components/financeiro/AgingReport";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -135,6 +136,12 @@ const reportTypes = [
     title: "DRE Mensal",
     description: "Receita menos despesas por natureza, mês a mês — geral ou por loteamento",
     icon: ClipboardList,
+  },
+  {
+    id: "aging",
+    title: "Aging Financeiro",
+    description: "Contas a pagar e a receber vencidas por faixa de atraso",
+    icon: AlertTriangle,
   },
 ];
 
@@ -882,7 +889,7 @@ const Relatorios = () => {
                     </SelectContent>
                   </Select>
                 )}
-                {selectedReport !== "juros" && selectedReport !== "clientes-loteamento" && (
+                {selectedReport !== "juros" && selectedReport !== "clientes-loteamento" && selectedReport !== "aging" && (
                   <div className="flex flex-wrap items-center gap-2">
                     <Input
                       className="w-full sm:w-[120px]"
@@ -939,7 +946,7 @@ const Relatorios = () => {
                     </SelectContent>
                   </Select>
                 )}
-                <Button
+                {selectedReport !== "aging" && <Button
                   variant="outline"
                   size="sm"
                   className="gap-2"
@@ -993,7 +1000,7 @@ const Relatorios = () => {
                   }}
                 >
                   Buscar
-                </Button>
+                </Button>}
                 <Button
                   variant="outline"
                   size="sm"
@@ -1204,6 +1211,7 @@ const Relatorios = () => {
             </div>
 
             <div ref={printRef} className="space-y-4">
+              {selectedReport === "aging" && <AgingReport />}
               {selectedReport === "entradas" && (
                 <div className="glass-card rounded-lg overflow-hidden">
                   <div className="p-5 border-b border-border">
