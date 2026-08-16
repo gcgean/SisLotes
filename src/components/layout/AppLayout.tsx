@@ -13,6 +13,7 @@ import { formatDateBR } from "@/lib/date-br";
 import { TableExportMenu } from "./TableExportMenu";
 import { ScreenHelp } from "./ScreenHelp";
 import { getScreenTutorial } from "@/lib/screen-tutorials";
+import { FirstAccessTutorial } from "@/components/onboarding/FirstAccessTutorial";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -76,10 +77,22 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [tutorialOpen, setTutorialOpen] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  const tutorialStorageKey = user ? `sislote:onboarding:v1:${user.id_usuario}` : null;
+
+  useEffect(() => {
+    if (!tutorialStorageKey) return;
+    if (window.localStorage.getItem(tutorialStorageKey) !== "completed") setTutorialOpen(true);
+  }, [tutorialStorageKey]);
+
+  function completeTutorial() {
+    if (tutorialStorageKey) window.localStorage.setItem(tutorialStorageKey, "completed");
+  }
 
   useEffect(() => {
     const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
@@ -198,7 +211,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     <SidebarProvider>
       <div className="min-h-screen flex w-full">
         {/* AppSidebar: on mobile renders as Sheet (drawer), on md+ as fixed sidebar */}
-        <AppSidebar />
+        <AppSidebar onOpenTutorial={() => setTutorialOpen(true)} />
 
         <div className="flex-1 flex flex-col min-h-screen overflow-hidden">
           <header className="h-14 flex items-center border-b border-border px-4 bg-background/80 backdrop-blur-sm sticky top-0 z-30">
@@ -292,6 +305,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Bottom navigation bar — only on mobile */}
       <BottomNav />
+
+      <FirstAccessTutorial open={tutorialOpen} onOpenChange={setTutorialOpen} onComplete={completeTutorial} />
 
 
       {/* ── Bloqueio de licença ───────────────────────────────────────── */}

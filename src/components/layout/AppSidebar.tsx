@@ -25,6 +25,7 @@ import {
   BellRing,
   BarChart3,
   LockKeyhole,
+  GraduationCap,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -96,7 +97,7 @@ const secondaryItems = [
 const WHATSAPP_SUPPORT_URL =
   "https://wa.me/5585991152749?text=Ol%C3%A1!%20Preciso%20de%20suporte%20com%20o%20SISLOTE.";
 
-export function AppSidebar() {
+export function AppSidebar({ onOpenTutorial }: { onOpenTutorial?: () => void }) {
   const location = useLocation();
   const { setOpenMobile } = useSidebar();
   const { user } = useAuth();
@@ -229,6 +230,18 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-md text-base text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent transition-colors cursor-pointer"
+                  onClick={() => {
+                    setOpenMobile(false);
+                    onOpenTutorial?.();
+                  }}
+                >
+                  <GraduationCap className="h-5 w-5 shrink-0" />
+                  <span>Tutorial guiado</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
               <SidebarMenuItem>
                 <SidebarMenuButton asChild>
                   <a

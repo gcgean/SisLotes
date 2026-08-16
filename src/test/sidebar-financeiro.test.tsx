@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/layout/AppSidebar";
@@ -19,11 +19,11 @@ vi.mock("@/hooks/useLicenseFeatures", () => ({
   }),
 }));
 
-function renderSidebar(rota = "/despesas") {
+function renderSidebar(rota = "/despesas", onOpenTutorial?: () => void) {
   return render(
     <MemoryRouter initialEntries={[rota]}>
       <SidebarProvider>
-        <AppSidebar />
+        <AppSidebar onOpenTutorial={onOpenTutorial} />
       </SidebarProvider>
     </MemoryRouter>,
   );
@@ -63,5 +63,12 @@ describe("Submenu Financeiro", () => {
     expect(screen.getByText("Plano de Contas").closest("a")).toHaveAttribute("href", "/despesas?tab=categorias");
     expect(screen.getByText("Fornecedores").closest("a")).toHaveAttribute("href", "/despesas?tab=fornecedores");
     expect(screen.getByText("Contas").closest("a")).toHaveAttribute("href", "/despesas?tab=contas");
+  });
+
+  it("mantém o tutorial guiado acessível pelo menu", () => {
+    const onOpenTutorial = vi.fn();
+    renderSidebar("/", onOpenTutorial);
+    fireEvent.click(screen.getByText("Tutorial guiado"));
+    expect(onOpenTutorial).toHaveBeenCalledOnce();
   });
 });
