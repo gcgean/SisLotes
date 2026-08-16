@@ -19,6 +19,7 @@ import { sugestoesRouter } from "./modules/sugestoes";
 import { lpRouter } from "./modules/lp";
 import { despesasRouter } from "./modules/despesas";
 import { lancamentosRouter } from "./modules/lancamentos";
+import { cobrancasRouter } from "./modules/cobrancas";
 
 export const router = Router();
 
@@ -42,3 +43,4 @@ router.use("/hub-billing", hubBillingRouter);
 router.use("/sugestoes", sugestoesRouter);
 router.use("/despesas", despesasRouter);
 router.use("/lancamentos", lancamentosRouter);
+router.use("/cobrancas", cobrancasRouter);

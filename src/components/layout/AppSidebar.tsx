@@ -72,6 +72,7 @@ const financeiroGrupos = [
     itens: [
       { title: "Contas", tab: "contas", icon: Landmark },
       { title: "Conciliação Bancária", tab: "conciliacao", icon: ListChecks },
+      { title: "Boletos e PIX", tab: "cobrancas", icon: ReceiptText },
       { title: "Plano de Contas", tab: "categorias", icon: ListTree },
       { title: "Fornecedores", tab: "fornecedores", icon: Truck },
     ],
