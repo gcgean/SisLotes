@@ -4,6 +4,7 @@ import { AppDataSource } from "../../db/data-source";
 import { Conta } from "../../entities/Conta";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
 import { AuditoriaService } from "../../services/AuditoriaService";
+import { hashOfx, parseOfx } from "../../utils/ofx";
 
 export const contasRouter = Router();
 
@@ -270,6 +271,72 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
     saldoFinalPeriodo: saldoCorrente,
     movimentos,
   });
+});
+
+const contaDaEmpresa = async (idConta: number, idEmpresa: number) => AppDataSource.getRepository(Conta).findOne({ where: { id_conta: idConta, id_empresa: idEmpresa } });
+
+contasRouter.post("/:id/conciliacao/importar", requireAuth, async (req: AuthRequest, res: Response) => {
+  const schema = z.object({ nome: z.string().min(1).max(255), conteudo: z.string().min(1).max(2 * 1024 * 1024) });
+  const parse = schema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Arquivo OFX inválido." });
+  const idConta = Number(req.params.id), idEmpresa = req.user!.id_empresa;
+  if (!(await contaDaEmpresa(idConta, idEmpresa))) return res.status(404).json({ error: "Conta não encontrada" });
+  let itens;
+  try { itens = parseOfx(parse.data.conteudo); } catch (e) { return res.status(400).json({ error: e instanceof Error ? e.message : "OFX inválido" }); }
+  try {
+    const resultado = await AppDataSource.transaction(async (manager) => {
+      const [imp] = await manager.query(`INSERT INTO conciliacao_importacoes (id_empresa,id_conta,nome_arquivo,hash_arquivo,id_usuario) VALUES ($1,$2,$3,$4,$5) RETURNING id_importacao`, [idEmpresa,idConta,parse.data.nome,hashOfx(parse.data.conteudo),req.user!.id_usuario]);
+      let inseridos = 0;
+      for (const item of itens) {
+        const rows = await manager.query(`INSERT INTO conciliacao_itens (id_importacao,id_empresa,id_conta,fitid,data,tipo,valor,descricao) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id_conta,fitid) DO NOTHING RETURNING id_item`, [imp.id_importacao,idEmpresa,idConta,item.fitid,item.data,item.tipo,item.valor,item.descricao]);
+        inseridos += rows.length;
+      }
+      return { id_importacao: imp.id_importacao, inseridos, duplicados: itens.length - inseridos };
+    });
+    await AuditoriaService.registrar(req,"conciliacao_importacoes","CREATE",resultado.id_importacao,undefined,resultado,`OFX importado — ${parse.data.nome}`);
+    return res.status(201).json(resultado);
+  } catch (e: any) {
+    if (e?.code === "23505") return res.status(409).json({ error: "Este arquivo OFX já foi importado para a conta." });
+    throw e;
+  }
+});
+
+contasRouter.get("/:id/conciliacao", requireAuth, async (req: AuthRequest, res: Response) => {
+  const idConta = Number(req.params.id), idEmpresa = req.user!.id_empresa;
+  if (!(await contaDaEmpresa(idConta,idEmpresa))) return res.status(404).json({ error: "Conta não encontrada" });
+  const status = ["pendente","conciliado","ignorado"].includes(String(req.query.status)) ? String(req.query.status) : "pendente";
+  const rows = await AppDataSource.query(`SELECT i.*, v.origem AS vinculo_origem, v.id_origem AS vinculo_id,
+    COALESCE((SELECT json_agg(s ORDER BY s.diferenca_dias, s.data) FROM (SELECT mf.origem,mf.id_origem,mf.data,mf.descricao,mf.valor,ABS(mf.data-i.data) AS diferenca_dias FROM movimentos_financeiros mf WHERE mf.id_empresa=i.id_empresa AND mf.id_conta=i.id_conta AND mf.tipo=i.tipo AND mf.valor=i.valor AND mf.data BETWEEN i.data-3 AND i.data+3 AND NOT EXISTS (SELECT 1 FROM conciliacao_vinculos cv WHERE cv.id_conta=i.id_conta AND cv.origem=mf.origem AND cv.id_origem=mf.id_origem) LIMIT 5) s),'[]'::json) AS sugestoes
+    FROM conciliacao_itens i LEFT JOIN conciliacao_vinculos v ON v.id_item=i.id_item WHERE i.id_empresa=$1 AND i.id_conta=$2 AND i.status=$3 ORDER BY i.data DESC,i.id_item DESC`, [idEmpresa,idConta,status]);
+  return res.json(rows);
+});
+
+contasRouter.post("/:id/conciliacao/:item/vincular", requireAuth, async (req: AuthRequest, res: Response) => {
+  const body = z.object({ origem: z.string().min(1).max(20), id_origem: z.number().int().positive() }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Movimento inválido" });
+  const idConta=Number(req.params.id), idItem=Number(req.params.item), idEmpresa=req.user!.id_empresa;
+  const [mov] = await AppDataSource.query(`SELECT 1 FROM movimentos_financeiros mf JOIN conciliacao_itens i ON i.id_item=$4 AND i.id_empresa=$1 AND i.id_conta=$2 AND i.status='pendente' WHERE mf.id_empresa=$1 AND mf.id_conta=$2 AND mf.origem=$3 AND mf.id_origem=$5 AND mf.tipo=i.tipo AND mf.valor=i.valor`,[idEmpresa,idConta,body.data.origem,idItem,body.data.id_origem]);
+  if (!mov) return res.status(400).json({ error: "O movimento não corresponde à conta, tipo e valor do item bancário." });
+  const v = await AppDataSource.transaction(async manager => {
+    const [saved] = await manager.query(`INSERT INTO conciliacao_vinculos (id_item,id_empresa,id_conta,origem,id_origem,id_usuario) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id_vinculo`,[idItem,idEmpresa,idConta,body.data.origem,body.data.id_origem,req.user!.id_usuario]);
+    await manager.query(`UPDATE conciliacao_itens SET status='conciliado' WHERE id_item=$1 AND id_empresa=$2`,[idItem,idEmpresa]);
+    return saved;
+  });
+  await AuditoriaService.registrar(req,"conciliacao_vinculos","CREATE",v.id_vinculo,undefined,{id_item:idItem,...body.data},"Movimento bancário conciliado");
+  return res.status(201).json(v);
+});
+
+contasRouter.patch("/:id/conciliacao/:item/status", requireAuth, async (req: AuthRequest, res: Response) => {
+  const parse=z.object({status:z.enum(["pendente","ignorado"])}).safeParse(req.body); if(!parse.success)return res.status(400).json({error:"Status inválido"});
+  const rows=await AppDataSource.query(`UPDATE conciliacao_itens SET status=$1 WHERE id_item=$2 AND id_conta=$3 AND id_empresa=$4 AND NOT EXISTS (SELECT 1 FROM conciliacao_vinculos WHERE id_item=$2) RETURNING id_item`,[parse.data.status,Number(req.params.item),Number(req.params.id),req.user!.id_empresa]);
+  if(!rows.length)return res.status(404).json({error:"Item não encontrado ou já conciliado"}); return res.json(rows[0]);
+});
+
+contasRouter.delete("/:id/conciliacao/:item/vinculo", requireAuth, async (req: AuthRequest, res: Response) => {
+  const idItem=Number(req.params.item),idConta=Number(req.params.id),idEmpresa=req.user!.id_empresa;
+  const rows=await AppDataSource.transaction(async manager => { const deleted=await manager.query(`DELETE FROM conciliacao_vinculos WHERE id_item=$1 AND id_conta=$2 AND id_empresa=$3 RETURNING id_vinculo`,[idItem,idConta,idEmpresa]); if(deleted.length)await manager.query(`UPDATE conciliacao_itens SET status='pendente' WHERE id_item=$1`,[idItem]); return deleted; });
+  if(!rows.length)return res.status(404).json({error:"Conciliação não encontrada"});
+  await AuditoriaService.registrar(req,"conciliacao_vinculos","DELETE",rows[0].id_vinculo,{id_item:idItem},undefined,"Conciliação desfeita"); return res.status(204).send();
 });
 
 // ─── POST / ───────────────────────────────────────────────────────────────────

@@ -63,6 +63,7 @@ import { AddChatAndAnexoToSugestoes1700000000033 } from "../migrations/170000000
 import { CreateMovimentosFinanceirosView1700000000034 } from "../migrations/1700000000034-CreateMovimentosFinanceirosView";
 import { SeedPlanoContasReceitas1700000000035 } from "../migrations/1700000000035-SeedPlanoContasReceitas";
 import { CreateTransferenciasContas1700000000036 } from "../migrations/1700000000036-CreateTransferenciasContas";
+import { CreateConciliacaoBancaria1700000000037 } from "../migrations/1700000000037-CreateConciliacaoBancaria";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -111,6 +112,7 @@ export const AppDataSource = new DataSource({
     CreateMovimentosFinanceirosView1700000000034,
     SeedPlanoContasReceitas1700000000035,
     CreateTransferenciasContas1700000000036,
+    CreateConciliacaoBancaria1700000000037,
   ],
   synchronize: false,
   logging: false,

@@ -11,6 +11,7 @@ import {
   Receipt,
   ReceiptText,
   ListTree,
+  ListChecks,
   Truck,
   Landmark,
   ScrollText,
@@ -70,6 +71,7 @@ const financeiroGrupos = [
     label: "Cadastros",
     itens: [
       { title: "Contas", tab: "contas", icon: Landmark },
+      { title: "Conciliação Bancária", tab: "conciliacao", icon: ListChecks },
       { title: "Plano de Contas", tab: "categorias", icon: ListTree },
       { title: "Fornecedores", tab: "fornecedores", icon: Truck },
     ],
