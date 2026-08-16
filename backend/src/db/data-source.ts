@@ -26,6 +26,8 @@ import { DespesaRateio } from "../entities/DespesaRateio";
 import { LancamentoRateio } from "../entities/LancamentoRateio";
 import { TransferenciaConta } from "../entities/TransferenciaConta";
 import { CobrancaBancaria } from "../entities/CobrancaBancaria";
+import { CobrancaRegra } from "../entities/CobrancaRegra";
+import { CobrancaComunicacao } from "../entities/CobrancaComunicacao";
 import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateClientes";
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
@@ -68,6 +70,7 @@ import { CreateConciliacaoBancaria1700000000037 } from "../migrations/1700000000
 import { AddEncargosDespesaParcela1700000000038 } from "../migrations/1700000000038-AddEncargosDespesaParcela";
 import { CreateDespesaParcelaPagamentos1700000000039 } from "../migrations/1700000000039-CreateDespesaParcelaPagamentos";
 import { CreateCobrancasBancarias1700000000040 } from "../migrations/1700000000040-CreateCobrancasBancarias";
+import { CreateReguaCobranca1700000000041 } from "../migrations/1700000000041-CreateReguaCobranca";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -76,7 +79,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, TransferenciaConta, CobrancaBancaria, SugestaoMensagem],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, TransferenciaConta, CobrancaBancaria, CobrancaRegra, CobrancaComunicacao, SugestaoMensagem],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -120,6 +123,7 @@ export const AppDataSource = new DataSource({
     AddEncargosDespesaParcela1700000000038,
     CreateDespesaParcelaPagamentos1700000000039,
     CreateCobrancasBancarias1700000000040,
+    CreateReguaCobranca1700000000041,
   ],
   synchronize: false,
   logging: false,

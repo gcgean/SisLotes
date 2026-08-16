@@ -47,6 +47,7 @@ import { ContasTab } from "@/components/financeiro/ContasTab";
 import { LancamentosTab } from "@/components/financeiro/LancamentosTab";
 import { ConciliacaoTab } from "@/components/financeiro/ConciliacaoTab";
 import { CobrancasTab } from "@/components/financeiro/CobrancasTab";
+import { ReguaCobrancaTab } from "@/components/financeiro/ReguaCobrancaTab";
 import { RateioLoteamentoEditor, RateioLinha } from "@/components/financeiro/RateioLoteamentoEditor";
 import { imprimirContasPagar } from "@/utils/contasPagar";
 import type { ReciboEmpresa } from "@/utils/reciboParcela";
@@ -226,7 +227,7 @@ const emptyDespesaForm = {
 const emptyCategoriaForm = { nome: "", tipo: "despesa" as "receita" | "despesa" };
 const emptyFornecedorForm = { nome: "", documento: "", telefone: "", email: "", contato: "", observacoes: "" };
 
-const ABAS_VALIDAS = ["visao-geral", "despesas", "categorias", "fornecedores", "contas", "lancamentos", "conciliacao", "cobrancas"] as const;
+const ABAS_VALIDAS = ["visao-geral", "despesas", "categorias", "fornecedores", "contas", "lancamentos", "conciliacao", "cobrancas", "regua-cobranca"] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1271,6 +1272,7 @@ export default function Despesas() {
           </TabsContent>
           <TabsContent value="conciliacao" className="mt-0"><ConciliacaoTab /></TabsContent>
           <TabsContent value="cobrancas" className="mt-0"><CobrancasTab /></TabsContent>
+          <TabsContent value="regua-cobranca" className="mt-0"><ReguaCobrancaTab /></TabsContent>
         </Tabs>
       </div>
 

@@ -68,6 +68,7 @@ const clienteBaseSchema = z.object({
   complemento: z.string().max(200).optional(),
   fone_res: z.string().max(20).optional(),
   fone_com: z.string().max(20).optional(),
+  email: z.string().email("E-mail inválido").max(200).optional().or(z.literal("")),
 });
 
 // For CREATE: add cross-field validation (CPF required for PF, CNPJ for PJ)

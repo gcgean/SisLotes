@@ -20,6 +20,7 @@ import { lpRouter } from "./modules/lp";
 import { despesasRouter } from "./modules/despesas";
 import { lancamentosRouter } from "./modules/lancamentos";
 import { cobrancasRouter } from "./modules/cobrancas";
+import { reguaCobrancaRouter } from "./modules/regua-cobranca";
 
 export const router = Router();
 
@@ -44,3 +45,4 @@ router.use("/sugestoes", sugestoesRouter);
 router.use("/despesas", despesasRouter);
 router.use("/lancamentos", lancamentosRouter);
 router.use("/cobrancas", cobrancasRouter);
+router.use("/regua-cobranca", reguaCobrancaRouter);

@@ -98,6 +98,7 @@ const Auditoria = () => {
             <option value="conciliacao_importacoes">Importações OFX</option>
             <option value="conciliacao_vinculos">Conciliação bancária</option>
             <option value="cobrancas_bancarias">Cobranças bancárias</option>
+            <option value="cobranca_regras">Régua de cobrança</option>
             <option value="contas">Contas financeiras</option>
             <option value="plano_de_contas">Plano de contas</option>
             <option value="fornecedores">Fornecedores</option>
