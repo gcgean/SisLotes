@@ -8,6 +8,7 @@ import { HubBillingService } from "../../services/HubBillingService";
 import { TelegramService } from "../../services/TelegramService";
 import { PlanoDeContas } from "../../entities/PlanoDeContas";
 import { CATEGORIAS_DESPESA_PADRAO } from "../../config/categorias-despesa-padrao";
+import { CONTAS_RECEITA_PADRAO, GRUPO_RECEITA_PADRAO } from "../../config/contas-receita-padrao";
 
 export const setupRouter = Router();
 
@@ -445,6 +446,31 @@ setupRouter.post("/primeiro-acesso", async (req, res) => {
           nome: c.nome,
         });
       })
+    );
+
+    const maiorCodigoRaiz = gruposSalvos.reduce((maior, grupo) => {
+      const codigo = Number(grupo.codigo);
+      return Number.isInteger(codigo) ? Math.max(maior, codigo) : maior;
+    }, 0);
+    const grupoReceitas = await planoRepo.save(
+      planoRepo.create({
+        id_empresa: empresaSalva.id_empresa,
+        id_pai: null,
+        tipo: "receita",
+        codigo: String(maiorCodigoRaiz + 1),
+        nome: GRUPO_RECEITA_PADRAO,
+      })
+    );
+    await planoRepo.save(
+      CONTAS_RECEITA_PADRAO.map((nome, indice) =>
+        planoRepo.create({
+          id_empresa: empresaSalva.id_empresa,
+          id_pai: grupoReceitas.id_conta_contabil,
+          tipo: "receita",
+          codigo: `${grupoReceitas.codigo}.${indice + 1}`,
+          nome,
+        })
+      )
     );
   } catch (err) {
     console.warn("[Setup] Falha ao semear plano de contas padrão:", err instanceof Error ? err.message : err);
