@@ -11,7 +11,8 @@
     "hub:diag": "tsx src/scripts/hub-billing-diagnostic.ts",
     "financeiro:reconciliar": "tsx src/scripts/reconciliar-financeiro.ts",
     "financeiro:validar-fase1": "tsx src/scripts/validar-financeiro-fase1.ts",
-    "financeiro:cenario-fase1": "tsx src/scripts/cenario-financeiro-fase1.ts"
+    "financeiro:cenario-fase1": "tsx src/scripts/cenario-financeiro-fase1.ts",
+    "financeiro:diagnosticar-sinteticas": "npm run build --silent && node dist/scripts/diagnosticar-contas-sinteticas.js"
   },
   "dependencies": {
     "@types/bcryptjs": "^2.4.6",
