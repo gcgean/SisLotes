@@ -60,6 +60,18 @@ export class Venda {
   @Column({ type: "varchar", length: 20, default: "aberta" })
   status!: VendaStatus;
 
+  @Column({ type: "integer", name: "id_corretor", nullable: true })
+  id_corretor?: number | null;
+
+  @Column({ type: "decimal", precision: 7, scale: 4, name: "comissao_percentual", nullable: true })
+  comissao_percentual?: string | null;
+
+  @Column({ type: "decimal", precision: 12, scale: 2, name: "comissao_valor", nullable: true })
+  comissao_valor?: string | null;
+
+  @Column({ type: "date", name: "comissao_vencimento", nullable: true })
+  comissao_vencimento?: string | null;
+
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 

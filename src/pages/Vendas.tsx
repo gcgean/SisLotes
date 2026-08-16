@@ -105,6 +105,10 @@ interface VendaDetalhe {
   porcentagem: string;
   valor_parcela?: string | null;
   status: VendaStatus;
+  id_corretor?: number | null;
+  comissao_percentual?: string | null;
+  comissao_valor?: string | null;
+  comissao_vencimento?: string | null;
   pagamentos: Pagamento[];
   cliente?: { nome: string };
   lote?: { quadra: number; lote: number; area?: string; loteamento?: { nome: string; cidade?: string; estado?: string } };
@@ -140,6 +144,7 @@ interface Conta {
   id_conta: number;
   apelido: string;
 }
+interface Corretor { id_fornecedor: number; nome: string; documento?: string | null }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function getAuthHeaders() {
@@ -198,6 +203,12 @@ const Vendas = () => {
   const [valorEntrada, setValorEntrada] = useState("0");
   const [numParcelas, setNumParcelas] = useState("12");
   const [valorParcelaVenda, setValorParcelaVenda] = useState("");
+  const [usarComissao, setUsarComissao] = useState(false);
+  const [corretorId, setCorretorId] = useState("");
+  const [comissaoTipo, setComissaoTipo] = useState<"percentual" | "valor">("percentual");
+  const [comissaoPercentual, setComissaoPercentual] = useState("");
+  const [comissaoValor, setComissaoValor] = useState("");
+  const [comissaoVencimento, setComissaoVencimento] = useState(new Date().toISOString().split("T")[0]);
 
   // ── success after create
   const [vendaCriada, setVendaCriada] = useState<VendaDetalhe | null>(null);
@@ -346,6 +357,17 @@ const Vendas = () => {
     enabled: dialogBaixaAberto,
   });
 
+  const { data: corretores = [] } = useQuery<Corretor[]>({
+    queryKey: ["corretores-venda"],
+    queryFn: async () => {
+      const r = await fetch("/api/vendas/opcoes/corretores", { headers: { ...getAuthHeaders() } });
+      if (!r.ok) throw new Error("Erro ao carregar corretores");
+      return r.json();
+    },
+    enabled: novaVendaAberto && usarComissao,
+    staleTime: 2 * 60 * 1000,
+  });
+
   const { data: empresaConfig } = useQuery<ReciboEmpresa | null>({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
@@ -408,6 +430,13 @@ const Vendas = () => {
         valor_entrada: Number(valorEntrada),
         parcelas: Number(numParcelas),
         valor_parcela: Number(valorParcelaVenda),
+        comissao: usarComissao ? {
+          id_corretor: Number(corretorId),
+          tipo: comissaoTipo,
+          percentual: comissaoTipo === "percentual" ? Number(comissaoPercentual) : undefined,
+          valor: comissaoTipo === "valor" ? Number(comissaoValor) : undefined,
+          vencimento: comissaoVencimento,
+        } : null,
       };
       const r = await fetch("/api/vendas", {
         method: "POST",
@@ -773,6 +802,12 @@ const Vendas = () => {
     setValorEntrada("0");
     setNumParcelas("12");
     setValorParcelaVenda("");
+    setUsarComissao(false);
+    setCorretorId("");
+    setComissaoTipo("percentual");
+    setComissaoPercentual("");
+    setComissaoValor("");
+    setComissaoVencimento(new Date().toISOString().split("T")[0]);
   }
 
   function resetHistorico() {
@@ -1006,6 +1041,10 @@ const Vendas = () => {
   const valorParcela = Number(valorParcelaVenda) > 0 ? Number(valorParcelaVenda) : 0;
   const totalParcelado = Number(numParcelas) * valorParcela;
   const totalContrato = Number(valorEntrada) + totalParcelado;
+  const valorComissaoPreview = comissaoTipo === "percentual"
+    ? totalContrato * (Number(comissaoPercentual) || 0) / 100
+    : Number(comissaoValor) || 0;
+  const comissaoValida = !usarComissao || Boolean(corretorId && comissaoVencimento && valorComissaoPreview > 0);
 
   // Opções derivadas das vendas carregadas
   const loteamentosDisponiveis = useMemo(() =>
@@ -1521,6 +1560,41 @@ const Vendas = () => {
                   </div>
                 </div>
 
+                <div className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Switch id="gerar-comissao" checked={usarComissao} onCheckedChange={setUsarComissao} />
+                    <div>
+                      <Label htmlFor="gerar-comissao" className="cursor-pointer">Gerar comissão de corretor</Label>
+                      <p className="text-xs text-muted-foreground">Cria automaticamente uma conta a pagar vinculada à venda.</p>
+                    </div>
+                  </div>
+                  {usarComissao ? (
+                    <div className="grid grid-cols-2 gap-3 border-t pt-3">
+                      <div className="col-span-2">
+                        <Label>Corretor *</Label>
+                        <Select value={corretorId} onValueChange={setCorretorId}>
+                          <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione um fornecedor…" /></SelectTrigger>
+                          <SelectContent>{corretores.map((corretor) => <SelectItem key={corretor.id_fornecedor} value={String(corretor.id_fornecedor)}>{corretor.nome}</SelectItem>)}</SelectContent>
+                        </Select>
+                        <p className="mt-1 text-xs text-muted-foreground">Corretores são cadastrados em Financeiro → Fornecedores.</p>
+                      </div>
+                      <div>
+                        <Label>Forma de cálculo</Label>
+                        <Select value={comissaoTipo} onValueChange={(valor: "percentual" | "valor") => setComissaoTipo(valor)}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="percentual">Percentual do contrato</SelectItem><SelectItem value="valor">Valor fixo</SelectItem></SelectContent></Select>
+                      </div>
+                      <div>
+                        <Label>{comissaoTipo === "percentual" ? "Percentual (%)" : "Valor da comissão"}</Label>
+                        {comissaoTipo === "percentual" ? <Input className="mt-1" type="number" min="0.0001" max="100" step="0.01" value={comissaoPercentual} onChange={(e) => setComissaoPercentual(e.target.value)} /> : <MoneyInput className="mt-1" value={comissaoValor} onValueChange={setComissaoValor} placeholder="R$ 0,00" />}
+                      </div>
+                      <div>
+                        <Label>Vencimento</Label>
+                        <Input className="mt-1" type="date" value={comissaoVencimento} onChange={(e) => setComissaoVencimento(e.target.value)} />
+                      </div>
+                      <div className="flex items-end justify-end pb-2 text-sm"><span className="text-muted-foreground">Comissão: </span><strong className="ml-1">{fmtCurrency(valorComissaoPreview)}</strong></div>
+                    </div>
+                  ) : null}
+                </div>
+
                 {/* Cálculo preview */}
                 {Number(valorParcelaVenda) > 0 && (
                   <div className="bg-muted/40 border border-border rounded-lg p-4 space-y-2 text-sm">
@@ -1570,6 +1644,8 @@ const Vendas = () => {
                   </div>
                 </div>
 
+                {usarComissao ? <div className="rounded-lg border p-3 text-sm"><span className="text-muted-foreground">Comissão de corretor:</span> <strong>{fmtCurrency(valorComissaoPreview)}</strong> · vencimento {fmtDate(comissaoVencimento)}</div> : null}
+
                 {/* Toggle timbrado */}
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
                   <Switch checked={usarTimbradoVenda} onCheckedChange={setUsarTimbradoVenda} id="timbrado-venda" />
@@ -1604,7 +1680,7 @@ const Vendas = () => {
                 disabled={
                   (step === 1 && !selectedLote) ||
                   (step === 2 && !selectedCliente) ||
-                  (step === 3 && (Number(valorParcelaVenda) <= 0 || !dataVenda || Number(numParcelas) < 1))
+                  (step === 3 && (Number(valorParcelaVenda) <= 0 || !dataVenda || Number(numParcelas) < 1 || !comissaoValida))
                 }
                 className="gap-1"
               >
@@ -1618,7 +1694,7 @@ const Vendas = () => {
                   disabled={
                     criarVendaMutation.isPending ||
                     Number(valorParcelaVenda) <= 0 ||
-                    !dataVenda || Number(numParcelas) < 1
+                    !dataVenda || Number(numParcelas) < 1 || !comissaoValida
                   }
                   className="gap-2"
                 >
@@ -1796,6 +1872,14 @@ const Vendas = () => {
               </>
             )}
           </DialogHeader>
+
+          {vendaDetalhe?.comissao_valor ? (
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+              <span className="text-muted-foreground">Comissão vinculada:</span> <strong>{fmtCurrency(vendaDetalhe.comissao_valor)}</strong>
+              {vendaDetalhe.comissao_percentual ? ` (${Number(vendaDetalhe.comissao_percentual).toLocaleString("pt-BR")}% do contrato)` : ""}
+              {vendaDetalhe.comissao_vencimento ? ` · vencimento ${fmtDate(vendaDetalhe.comissao_vencimento)}` : ""}
+            </div>
+          ) : null}
 
           {/* KPIs */}
           {vendaDetalheInfo && vendaDetalhe && (

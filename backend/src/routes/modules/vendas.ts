@@ -7,6 +7,10 @@ import { Cliente } from "../../entities/Cliente";
 import { Lote } from "../../entities/Lote";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
+import { Despesa } from "../../entities/Despesa";
+import { DespesaParcela } from "../../entities/DespesaParcela";
+import { Fornecedor } from "../../entities/Fornecedor";
+import { PlanoDeContas } from "../../entities/PlanoDeContas";
 import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
 import { AuditoriaService } from "../../services/AuditoriaService";
 
@@ -42,6 +46,17 @@ const createHistoricoSchema = z.object({
   pagamentos: z.array(historicoParcelaSchema),
 });
 
+const comissaoSchema = z.object({
+  id_corretor: z.number().int().positive(),
+  tipo: z.enum(["percentual", "valor"]),
+  percentual: z.number().positive().max(100).optional(),
+  valor: z.number().positive().optional(),
+  vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+}).superRefine((comissao, ctx) => {
+  if (comissao.tipo === "percentual" && !comissao.percentual) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Informe o percentual da comissão.", path: ["percentual"] });
+  if (comissao.tipo === "valor" && !comissao.valor) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Informe o valor da comissão.", path: ["valor"] });
+});
+
 const createVendaSchema = z.object({
   id_cliente: z.number().int().positive(),
   id_lote: z.number().int().positive(),
@@ -49,6 +64,15 @@ const createVendaSchema = z.object({
   valor_entrada: z.number().nonnegative(),
   parcelas: z.number().int().positive(),
   valor_parcela: z.number().nonnegative(),
+  comissao: comissaoSchema.optional().nullable(),
+});
+
+vendasRouter.get("/opcoes/corretores", async (req: AuthRequest, res) => {
+  const corretores = await AppDataSource.getRepository(Fornecedor).find({
+    where: { id_empresa: req.user!.id_empresa, ativo: true },
+    order: { nome: "ASC" },
+  });
+  return res.json(corretores.map(({ id_fornecedor, nome, documento }) => ({ id_fornecedor, nome, documento })));
 });
 
 vendasRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
@@ -155,7 +179,7 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
   }
 
-  const { id_cliente, id_lote, data_venda, valor_entrada, parcelas, valor_parcela } = parseResult.data;
+  const { id_cliente, id_lote, data_venda, valor_entrada, parcelas, valor_parcela, comissao } = parseResult.data;
   const dataVendaIso = normalizeIsoDate(data_venda);
 
   if (!dataVendaIso) {
@@ -187,6 +211,17 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     return res.status(400).json({ error: "Lote inválido" });
   }
 
+  let corretor: Fornecedor | null = null;
+  let categoriaComissao: PlanoDeContas | null = null;
+  if (comissao) {
+    [corretor, categoriaComissao] = await Promise.all([
+      AppDataSource.getRepository(Fornecedor).findOne({ where: { id_fornecedor: comissao.id_corretor, id_empresa: user?.id_empresa ?? 1, ativo: true } }),
+      AppDataSource.getRepository(PlanoDeContas).findOne({ where: { id_empresa: user?.id_empresa ?? 1, tipo: "despesa", nome: "Comissão de Corretor", ativo: true } }),
+    ]);
+    if (!corretor) return res.status(400).json({ error: "Selecione um corretor ativo cadastrado como fornecedor." });
+    if (!categoriaComissao) return res.status(409).json({ error: "A conta contábil Comissão de Corretor não está disponível." });
+  }
+
   const existingVendaWhere: Record<string, unknown> = {
     id_lote,
     status: Not("cancelada"),
@@ -207,6 +242,10 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
 
   const valorParcela = Math.round(valor_parcela * 100) / 100;
   const totalParcelado = parcelas * valorParcela;
+  const totalContrato = valor_entrada + totalParcelado;
+  const valorComissao = comissao
+    ? Math.round((comissao.tipo === "percentual" ? totalContrato * (comissao.percentual! / 100) : comissao.valor!) * 100) / 100
+    : 0;
 
   const queryRunner = AppDataSource.createQueryRunner();
   await queryRunner.connect();
@@ -224,6 +263,10 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
       valor_parcela: valorParcela.toFixed(2),
       status: "aberta",
       id_empresa: user?.id_empresa ?? 1,
+      id_corretor: comissao?.id_corretor ?? null,
+      comissao_percentual: comissao?.tipo === "percentual" ? comissao.percentual!.toFixed(4) : null,
+      comissao_valor: comissao ? valorComissao.toFixed(2) : null,
+      comissao_vencimento: comissao?.vencimento ?? null,
     });
 
     const savedVenda = await queryRunner.manager.save(venda);
@@ -271,6 +314,30 @@ vendasRouter.post("/", requireAuth, requirePermission("vendas_cadastrar"), async
     }
 
     await queryRunner.manager.save(pagamentos);
+
+    if (comissao && corretor && categoriaComissao) {
+      const despesaComissao = await queryRunner.manager.save(queryRunner.manager.create(Despesa, {
+        id_empresa: user?.id_empresa ?? 1,
+        id_loteamento: lote.id_loteamento,
+        id_categoria: categoriaComissao.id_conta_contabil,
+        id_fornecedor: corretor.id_fornecedor,
+        id_venda_origem: savedVenda.id_venda,
+        descricao: `Comissão de corretor — venda #${savedVenda.id_venda}`,
+        valor_total: valorComissao.toFixed(2),
+        numero_parcelas: 1,
+        recorrente: false,
+        recorrencia_ativa: false,
+        observacoes: `Gerada automaticamente para ${corretor.nome}.`,
+      }));
+      await queryRunner.manager.save(queryRunner.manager.create(DespesaParcela, {
+        id_empresa: user?.id_empresa ?? 1,
+        id_despesa: despesaComissao.id_despesa,
+        numero_parcela: 1,
+        vencimento: comissao.vencimento,
+        valor: valorComissao.toFixed(2),
+        situacao: "aberto",
+      }));
+    }
 
     const log = queryRunner.manager.create(Log, {
       id_usuario: user?.id_usuario ?? 1,
@@ -470,6 +537,12 @@ vendasRouter.patch("/:id/editar", requireAuth, requirePermission("vendas_alterar
 
   const { data_venda, valor_entrada, parcelas: novaQtdParcelas, valor_parcela } = parse.data;
 
+  const despesaComissaoEdicao = await AppDataSource.getRepository(Despesa).findOne({ where: { id_venda_origem: venda.id_venda, id_empresa: id_empresa ?? 1 } });
+  if (despesaComissaoEdicao && venda.comissao_percentual && (valor_entrada !== undefined || valor_parcela !== undefined || novaQtdParcelas !== undefined)) {
+    const comissaoBaixada = await AppDataSource.getRepository(DespesaParcela).count({ where: { id_despesa: despesaComissaoEdicao.id_despesa, situacao: Not("aberto") } });
+    if (comissaoBaixada > 0) return res.status(409).json({ error: "comissao_paga", message: "Estorne a comissão antes de alterar os valores da venda." });
+  }
+
   const queryRunner = AppDataSource.createQueryRunner();
   await queryRunner.connect();
   await queryRunner.startTransaction();
@@ -545,6 +618,15 @@ vendasRouter.patch("/:id/editar", requireAuth, requirePermission("vendas_alterar
       venda.parcelas = novaQtdParcelas;
     }
 
+    if (despesaComissaoEdicao && venda.comissao_percentual) {
+      const novoTotalContrato = Number(venda.valor_entrada) + venda.parcelas * Number(venda.valor_parcela);
+      const novaComissao = Math.round(novoTotalContrato * Number(venda.comissao_percentual) / 100 * 100) / 100;
+      venda.comissao_valor = novaComissao.toFixed(2);
+      despesaComissaoEdicao.valor_total = novaComissao.toFixed(2);
+      await queryRunner.manager.save(despesaComissaoEdicao);
+      await queryRunner.manager.createQueryBuilder().update(DespesaParcela).set({ valor: novaComissao.toFixed(2) }).where("id_despesa = :id", { id: despesaComissaoEdicao.id_despesa }).andWhere("situacao = 'aberto'").execute();
+    }
+
     await queryRunner.manager.save(venda);
     await queryRunner.commitTransaction();
 
@@ -595,12 +677,29 @@ vendasRouter.patch("/:id/cancelar", requireAuth, requirePermission("vendas_alter
     });
   }
 
+  const despesaComissao = await AppDataSource.getRepository(Despesa).findOne({
+    where: { id_venda_origem: Number(id), id_empresa: req.user?.id_empresa ?? 1 },
+  });
+  if (despesaComissao) {
+    const baixasComissao = await AppDataSource.getRepository(DespesaParcela).count({
+      where: { id_despesa: despesaComissao.id_despesa, situacao: Not("aberto") },
+    });
+    if (baixasComissao > 0) {
+      return res.status(409).json({
+        error: "comissao_paga",
+        message: "A comissão desta venda possui baixa. Estorne o pagamento da comissão antes de cancelar a venda.",
+      });
+    }
+  }
+
   // Exclui as parcelas geradas para esta venda (neste ponto todas estão em aberto,
   // pois parcelas pagas bloqueiam o cancelamento acima).
   const parcelasExcluidas = await pagamentoRepo.delete({
     id_venda: Number(id),
     ...(req.user?.id_empresa ? { id_empresa: req.user.id_empresa } : {}),
   });
+
+  if (despesaComissao) await AppDataSource.getRepository(Despesa).remove(despesaComissao);
 
   venda.status = "cancelada";
   await vendaRepo.save(venda);

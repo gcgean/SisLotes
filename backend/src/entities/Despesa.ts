@@ -19,6 +19,9 @@ export class Despesa {
   @Column({ type: "integer", name: "id_fornecedor", nullable: true })
   id_fornecedor?: number | null;
 
+  @Column({ type: "integer", name: "id_venda_origem", nullable: true })
+  id_venda_origem?: number | null;
+
   @Column({ type: "varchar", length: 300 })
   descricao!: string;
 
