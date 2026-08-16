@@ -9,6 +9,7 @@ interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null;
   token: string | null;
+  isHydrated: boolean;
   login: (params: { token: string; usuario: AuthUser }) => void;
   logout: () => void;
 }
@@ -25,6 +26,7 @@ interface AuthProviderProps {
 export function AuthProvider({ children }: AuthProviderProps) {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   // ── Carrega sessão do localStorage ao iniciar ────────────────────────────
   useEffect(() => {
@@ -41,6 +43,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         setUser(null);
       }
     }
+    setIsHydrated(true);
   }, []);
 
   // ── Sincroniza token quando o interceptor o renovar silenciosamente ──────
@@ -83,6 +86,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       value={{
         user,
         token,
+        isHydrated,
         login: handleLogin,
         logout: handleLogout,
       }}
