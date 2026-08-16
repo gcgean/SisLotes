@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { gerarPreviewParcelas } from "@/lib/parcelas";
 
 const raiz = resolve(__dirname, "../..");
 const fonte = (path: string) => readFileSync(resolve(raiz, path), "utf8");
@@ -33,5 +34,28 @@ describe("usabilidade financeira — fase 4", () => {
     const visao = fonte("src/components/financeiro/VisaoGeralTab.tsx");
     expect(visao).toContain('receita === 0 ? "—"');
     expect(visao).toContain('resultadoLoteamento.every((item) => item.resultado === 0)');
+  });
+
+  it("abre recebíveis consolidados e oferece extrato pesquisável e exportável", () => {
+    const pagamentos = fonte("src/pages/Pagamentos.tsx");
+    expect(pagamentos).toContain('searchParams.get("view") === "cliente" ? "cliente" : "lote"');
+    expect(pagamentos).toContain('value="lote">Visão geral');
+    const extrato = fonte("src/components/financeiro/LancamentosTab.tsx");
+    expect(extrato).toContain("function exportarCsv()");
+    expect(extrato).toContain("Buscar descrição, conta ou categoria");
+    expect(extrato).toContain("Somente créditos");
+  });
+
+  it("liga a conta operacional ao cadastro bancário completo", () => {
+    expect(fonte("src/components/financeiro/ContasTab.tsx")).toContain('/configuracoes?tab=contas');
+    expect(fonte("src/pages/Configuracoes.tsx")).toContain("abaConfiguracao");
+  });
+
+  it("gera prévia mensal preservando centavos e datas civis", () => {
+    expect(gerarPreviewParcelas(100, 3, "2026-01-31")).toEqual([
+      { numero: 1, vencimento: "2026-01-31", valor: 33.33 },
+      { numero: 2, vencimento: "2026-02-28", valor: 33.33 },
+      { numero: 3, vencimento: "2026-03-31", valor: 33.34 },
+    ]);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -41,7 +41,7 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { formatDateBR } from "@/lib/date-br";
-import { rotuloParcela } from "@/lib/parcelas";
+import { gerarPreviewParcelas, rotuloParcela } from "@/lib/parcelas";
 import { VisaoGeralTab } from "@/components/financeiro/VisaoGeralTab";
 import { ContasTab } from "@/components/financeiro/ContasTab";
 import { LancamentosTab } from "@/components/financeiro/LancamentosTab";
@@ -396,6 +396,11 @@ export default function Despesas() {
     value: String(c.id_conta),
     label: `${c.apelido} · saldo ${fmtMoeda(c.saldo_atual ?? 0)}`,
   }));
+  const previewParcelas = useMemo(() => gerarPreviewParcelas(
+    Number(formDespesa.valor_total),
+    formDespesa.recorrente ? 1 : Number(formDespesa.numero_parcelas),
+    formDespesa.data_primeiro_vencimento,
+  ), [formDespesa.valor_total, formDespesa.numero_parcelas, formDespesa.data_primeiro_vencimento, formDespesa.recorrente]);
 
   const totalRateioDespesa = rateioDespesa.reduce((s, l) => s + (Number(l.percentual.replace(",", ".")) || 0), 0);
   const rateioDespesaValido =
@@ -1411,6 +1416,17 @@ export default function Despesas() {
                 <Label>Observações</Label>
                 <Textarea rows={2} value={formDespesa.observacoes} onChange={(e) => setFormDespesa((f) => ({ ...f, observacoes: e.target.value }))} />
               </div>
+              {modoDespesa === "novo" && previewParcelas.length > 0 ? (
+                <div className="sm:col-span-2 rounded-lg border bg-muted/20 p-3">
+                  <p className="text-xs font-semibold mb-2">Prévia das parcelas</p>
+                  <div className="grid sm:grid-cols-2 gap-1 text-xs">
+                    {previewParcelas.slice(0, 6).map((parcela) => (
+                      <div key={parcela.numero} className="flex justify-between gap-3"><span>Parcela {parcela.numero} · {formatDateBR(parcela.vencimento)}</span><strong>{fmtMoeda(parcela.valor)}</strong></div>
+                    ))}
+                  </div>
+                  {previewParcelas.length > 6 ? <p className="text-xs text-muted-foreground mt-2">Mais {previewParcelas.length - 6} parcela(s) seguirão o mesmo intervalo mensal.</p> : null}
+                </div>
+              ) : null}
             </div>
           </div>
           <DialogFooter className="sticky bottom-0 border-t bg-background p-4 sm:px-5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">

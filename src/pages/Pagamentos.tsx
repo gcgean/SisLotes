@@ -438,7 +438,7 @@ const Pagamentos = () => {
   // ─── Handlers ────────────────────────────────────────────────────────────
 
   // Aba principal da tela; não confundir com `aba` (sub-abas Abertas/Pagas).
-  const [abaPrincipal, setAbaPrincipal] = useState("cliente");
+  const [abaPrincipal, setAbaPrincipal] = useState(() => searchParams.get("view") === "cliente" ? "cliente" : "lote");
 
   function selecionarCliente(c: ClienteApi) {
     setClienteSelecionado(c);
@@ -878,10 +878,17 @@ const Pagamentos = () => {
           </p>
         </div>
 
-        <Tabs value={abaPrincipal} onValueChange={setAbaPrincipal}>
+        <Tabs value={abaPrincipal} onValueChange={(value) => {
+          setAbaPrincipal(value);
+          setSearchParams((current) => {
+            const next = new URLSearchParams(current);
+            next.set("view", value);
+            return next;
+          }, { replace: true });
+        }}>
           <TabsList className="grid grid-cols-2 w-full max-w-lg">
-            <TabsTrigger value="cliente">Por cliente</TabsTrigger>
-            <TabsTrigger value="lote">Por loteamento / lote</TabsTrigger>
+            <TabsTrigger value="lote">Visão geral</TabsTrigger>
+            <TabsTrigger value="cliente">Buscar cliente</TabsTrigger>
           </TabsList>
 
           <TabsContent value="lote" className="pt-4">
@@ -985,7 +992,7 @@ const Pagamentos = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="gap-2 text-destructive border-destructive/40 hover:bg-destructive/10"
+                  className="gap-2 ml-4 text-destructive border-destructive/40 hover:bg-destructive/10"
                   onClick={() => setConfirmarExcluirTodos(true)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -1320,8 +1327,8 @@ const Pagamentos = () => {
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Pago em</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Valor</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Valor Pago</th>
-                        <th className="text-left px-5 py-3 font-medium text-muted-foreground">Situação</th>
-                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Ações</th>
+                        <th className="text-left px-5 py-3 font-medium text-muted-foreground sticky right-[120px] bg-muted/95">Situação</th>
+                        <th className="text-right px-5 py-3 font-medium text-muted-foreground sticky right-0 bg-muted/95 shadow-[-4px_0_8px_rgba(0,0,0,0.04)]">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -1356,13 +1363,13 @@ const Pagamentos = () => {
                             <td className="px-5 py-3 font-medium text-success">
                               {pag.valor_pago != null ? formatCurrency(pag.valor_pago) : "—"}
                             </td>
-                            <td className="px-5 py-3">
+                            <td className="px-5 py-3 sticky right-[120px] bg-background">
                               <Badge variant="secondary" className="text-xs gap-1 text-success border-success/30">
                                 <CheckCircle2 className="h-3 w-3" />
                                 Pago
                               </Badge>
                             </td>
-                            <td className="px-3 py-3 text-right">
+                            <td className="px-3 py-3 text-right sticky right-0 bg-background shadow-[-4px_0_8px_rgba(0,0,0,0.04)]">
                               <div className="flex items-center justify-end gap-1.5">
                                 <Button
                                   variant="outline"

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DestructiveConfirmationDialog } from "@/components/ui/destructive-confirmation-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, Printer } from "lucide-react";
+import { Plus, Pencil, Trash2, Printer, Download, Search } from "lucide-react";
 import { formatDateBR } from "@/lib/date-br";
 import { LancamentoDialog, Lancamento } from "@/components/financeiro/LancamentoDialog";
 import { imprimirExtratoConta } from "@/utils/extratoConta";
@@ -69,6 +69,8 @@ export function LancamentosTab() {
   const [from, setFrom] = useState(primeiroDiaMes());
   const [to, setTo] = useState(hojeIso());
   const [contaFiltro, setContaFiltro] = useState<string>("todas");
+  const [tipoFiltro, setTipoFiltro] = useState("todos");
+  const [busca, setBusca] = useState("");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
@@ -138,7 +140,13 @@ export function LancamentosTab() {
     setDialogOpen(true);
   }
 
-  const movimentos = extrato?.movimentos ?? [];
+  const movimentos = useMemo(() => {
+    const termo = busca.trim().toLocaleLowerCase("pt-BR");
+    return (extrato?.movimentos ?? []).filter((movimento) =>
+      (tipoFiltro === "todos" || movimento.movimento === tipoFiltro) &&
+      (!termo || movimento.descricao.toLocaleLowerCase("pt-BR").includes(termo) || movimento.contaApelido.toLocaleLowerCase("pt-BR").includes(termo) || (movimento.contaContabil ?? "").toLocaleLowerCase("pt-BR").includes(termo))
+    );
+  }, [extrato, busca, tipoFiltro]);
   const lancamentoExcluido = deletingId ? lancamentos.find((item) => item.id_lancamento === deletingId) : null;
   const exibirSaldoCorrente = contaFiltro !== "todas";
 
@@ -172,6 +180,17 @@ export function LancamentosTab() {
     }
   }
 
+  function exportarCsv() {
+    const linhas = [["Data", "Descrição", "Conta", "Tipo", "Valor"], ...movimentos.map((m) => [m.data, m.descricao, m.contaApelido, m.movimento, m.valor.toFixed(2).replace(".", ",")])];
+    const csv = linhas.map((linha) => linha.map((valor) => `"${String(valor).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `extrato-${from}-${to}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -192,6 +211,18 @@ export function LancamentosTab() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
+            <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Créditos e débitos</SelectItem>
+              <SelectItem value="entrada">Somente créditos</SelectItem>
+              <SelectItem value="saida">Somente débitos</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="relative min-w-[200px] flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar descrição, conta ou categoria…" className="pl-9" />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
@@ -207,6 +238,9 @@ export function LancamentosTab() {
             disabled={!extrato || isLoading}
           >
             <Printer className="h-4 w-4" /> Imprimir Extrato
+          </Button>
+          <Button variant="outline" className="gap-2" onClick={exportarCsv} disabled={movimentos.length === 0}>
+            <Download className="h-4 w-4" /> Exportar CSV
           </Button>
           <Button onClick={openNew} className="gap-2" disabled={contas.length === 0}>
             <Plus className="h-4 w-4" /> Novo Lançamento

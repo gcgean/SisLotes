@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Edit, Trash2, Shield, Building2, Upload, X, FileText, RotateCcw, AlertCircle, ToggleLeft, ToggleRight } from "lucide-react";
 import {
   Dialog,
@@ -158,6 +159,8 @@ function getAuthHeaders() {
 }
 
 const Configuracoes = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const abaConfiguracao = ["minha-empresa", "contas", "usuarios", "empresas", "modelo-contrato"].includes(searchParams.get("tab") ?? "") ? searchParams.get("tab")! : "minha-empresa";
   const [usuarioSelecionado, setUsuarioSelecionado] = useState<Usuario | null>(null);
   const [modoUsuario, setModoUsuario] = useState<"create" | "edit">("create");
   const [dialogUsuarioAberto, setDialogUsuarioAberto] = useState(false);
@@ -745,7 +748,7 @@ const Configuracoes = () => {
           <p className="text-sm text-muted-foreground mt-1">Contas bancárias, usuários e permissões</p>
         </div>
 
-        <Tabs defaultValue="minha-empresa" className="space-y-4">
+        <Tabs value={abaConfiguracao} onValueChange={(tab) => setSearchParams({ tab }, { replace: true })} className="space-y-4">
           <TabsList className="flex-wrap h-auto">
             <TabsTrigger value="minha-empresa" className="gap-2">
               <Building2 className="h-4 w-4" />
