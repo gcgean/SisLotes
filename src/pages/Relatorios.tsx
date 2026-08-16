@@ -14,6 +14,8 @@ import { FileText, Download, BarChart3, DollarSign, Users, Calendar, Printer, Tr
 import { useLicenseFeatures } from "@/hooks/useLicenseFeatures";
 import { formatDateBR } from "@/lib/date-br";
 import { LoteamentoCombobox } from "@/components/ui/loteamento-combobox";
+import { useSearchParams } from "react-router-dom";
+import { AgingReport } from "@/components/financeiro/AgingReport";
 
 function getAuthHeaders() {
   const token = window.localStorage.getItem("token");
@@ -41,13 +43,6 @@ const parseDateBR = (value: string) => {
   const date = new Date(y, m - 1, d);
   if (Number.isNaN(date.getTime())) return null;
   return date;
-};
-
-const formatDateBR = (date: Date) => {
-  const dd = String(date.getDate()).padStart(2, "0");
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const yyyy = date.getFullYear();
-  return `${dd}/${mm}/${yyyy}`;
 };
 
 const toIsoFromBr = (value: string) => {
@@ -141,6 +136,12 @@ const reportTypes = [
     title: "DRE Mensal",
     description: "Receita menos despesas por natureza, mês a mês — geral ou por loteamento",
     icon: ClipboardList,
+  },
+  {
+    id: "aging",
+    title: "Aging Financeiro",
+    description: "Contas a pagar e a receber vencidas por faixa de atraso",
+    icon: AlertTriangle,
   },
 ];
 
@@ -283,7 +284,12 @@ interface DreMes {
 
 const Relatorios = () => {
   const { canExportCsv, canExportPdf } = useLicenseFeatures();
-  const [selectedReport, setSelectedReport] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const reportParam = searchParams.get("r");
+  const selectedReport = reportTypes.some((report) => report.id === reportParam) ? reportParam : null;
+  const selecionarRelatorio = (report: string | null) => {
+    setSearchParams(report ? { r: report } : {}, { replace: false });
+  };
   const [ano] = useState("2026");
 
   const defaultDataIni = (() => {
@@ -314,20 +320,34 @@ const Relatorios = () => {
   const [contaIdJuros, setContaIdJuros] = useState<string>("");
   const [anoJuros, setAnoJuros] = useState(String(currentYear));
 
-  const [hasSearchedEntradas, setHasSearchedEntradas] = useState(false);
-  const [hasSearchedAtraso, setHasSearchedAtraso] = useState(false);
-  const [hasSearchedEnderecos, setHasSearchedEnderecos] = useState(false);
-  const [hasSearchedTotalConta, setHasSearchedTotalConta] = useState(false);
+  const [hasSearchedEntradas, setHasSearchedEntradas] = useState(() => selectedReport === "entradas");
+  const [hasSearchedAtraso, setHasSearchedAtraso] = useState(() => selectedReport === "atraso");
+  const [hasSearchedEnderecos, setHasSearchedEnderecos] = useState(() => selectedReport === "enderecos");
+  const [hasSearchedTotalConta, setHasSearchedTotalConta] = useState(() => selectedReport === "total-conta");
   const [hasSearchedJuros, setHasSearchedJuros] = useState(false);
-  const [hasSearchedClientesLoteamento, setHasSearchedClientesLoteamento] = useState(false);
-  const [hasSearchedResultadoLoteamento, setHasSearchedResultadoLoteamento] = useState(false);
-  const [hasSearchedContasPagar, setHasSearchedContasPagar] = useState(false);
-  const [hasSearchedFluxoCaixa, setHasSearchedFluxoCaixa] = useState(false);
-  const [hasSearchedDespesasCategoria, setHasSearchedDespesasCategoria] = useState(false);
-  const [hasSearchedDreMensal, setHasSearchedDreMensal] = useState(false);
+  const [hasSearchedClientesLoteamento, setHasSearchedClientesLoteamento] = useState(() => selectedReport === "clientes-loteamento");
+  const [hasSearchedResultadoLoteamento, setHasSearchedResultadoLoteamento] = useState(() => selectedReport === "resultado-loteamento");
+  const [hasSearchedContasPagar, setHasSearchedContasPagar] = useState(() => selectedReport === "contas-pagar");
+  const [hasSearchedFluxoCaixa, setHasSearchedFluxoCaixa] = useState(() => selectedReport === "fluxo-caixa");
+  const [hasSearchedDespesasCategoria, setHasSearchedDespesasCategoria] = useState(() => selectedReport === "despesas-categoria");
+  const [hasSearchedDreMensal, setHasSearchedDreMensal] = useState(() => selectedReport === "dre-mensal");
 
   const [apenasAtrasoInput, setApenasAtrasoInput] = useState(false);
   const [apenasAtraso, setApenasAtraso] = useState(false);
+
+  useEffect(() => {
+    if (!selectedReport) return;
+    if (selectedReport === "entradas") setHasSearchedEntradas(true);
+    else if (selectedReport === "atraso") setHasSearchedAtraso(true);
+    else if (selectedReport === "enderecos") setHasSearchedEnderecos(true);
+    else if (selectedReport === "total-conta") setHasSearchedTotalConta(true);
+    else if (selectedReport === "clientes-loteamento") setHasSearchedClientesLoteamento(true);
+    else if (selectedReport === "resultado-loteamento") setHasSearchedResultadoLoteamento(true);
+    else if (selectedReport === "contas-pagar") setHasSearchedContasPagar(true);
+    else if (selectedReport === "fluxo-caixa") setHasSearchedFluxoCaixa(true);
+    else if (selectedReport === "despesas-categoria") setHasSearchedDespesasCategoria(true);
+    else if (selectedReport === "dre-mensal") setHasSearchedDreMensal(true);
+  }, [selectedReport]);
 
   const [pageEntradas, setPageEntradas] = useState(1);
   const [pageAtraso, setPageAtraso] = useState(1);
@@ -816,7 +836,7 @@ const Relatorios = () => {
             {reportTypes.map((report, i) => (
               <button
                 key={report.id}
-                onClick={() => setSelectedReport(report.id)}
+                onClick={() => selecionarRelatorio(report.id)}
                 className="glass-card rounded-lg p-5 text-left hover:border-primary/40 transition-all cursor-pointer animate-fade-in group"
                 style={{ animationDelay: `${i * 60}ms` }}
               >
@@ -835,7 +855,7 @@ const Relatorios = () => {
         ) : (
           <div className="space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <Button variant="outline" size="sm" onClick={() => setSelectedReport(null)} className="w-fit">
+              <Button variant="outline" size="sm" onClick={() => selecionarRelatorio(null)} className="w-fit">
                 ← Voltar
               </Button>
               <div className="flex flex-wrap gap-2">
@@ -869,7 +889,7 @@ const Relatorios = () => {
                     </SelectContent>
                   </Select>
                 )}
-                {selectedReport !== "juros" && selectedReport !== "clientes-loteamento" && (
+                {selectedReport !== "juros" && selectedReport !== "clientes-loteamento" && selectedReport !== "aging" && (
                   <div className="flex flex-wrap items-center gap-2">
                     <Input
                       className="w-full sm:w-[120px]"
@@ -926,7 +946,7 @@ const Relatorios = () => {
                     </SelectContent>
                   </Select>
                 )}
-                <Button
+                {selectedReport !== "aging" && <Button
                   variant="outline"
                   size="sm"
                   className="gap-2"
@@ -980,7 +1000,7 @@ const Relatorios = () => {
                   }}
                 >
                   Buscar
-                </Button>
+                </Button>}
                 <Button
                   variant="outline"
                   size="sm"
@@ -1191,6 +1211,7 @@ const Relatorios = () => {
             </div>
 
             <div ref={printRef} className="space-y-4">
+              {selectedReport === "aging" && <AgingReport />}
               {selectedReport === "entradas" && (
                 <div className="glass-card rounded-lg overflow-hidden">
                   <div className="p-5 border-b border-border">

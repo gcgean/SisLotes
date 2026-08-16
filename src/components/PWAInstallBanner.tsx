@@ -5,7 +5,11 @@ import { Download, X, Share } from "lucide-react";
 
 export function PWAInstallBanner() {
   const { installPrompt, isInstalled, isIOS, install } = usePWA();
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => Number(localStorage.getItem("sislote:pwa-dismissed-until") ?? 0) > Date.now());
+  const dismiss = () => {
+    localStorage.setItem("sislote:pwa-dismissed-until", String(Date.now() + 7 * 24 * 60 * 60 * 1000));
+    setDismissed(true);
+  };
 
   if (isInstalled || dismissed) return null;
 
@@ -26,7 +30,7 @@ export function PWAInstallBanner() {
               </p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setDismissed(true)}>
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={dismiss}>
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -50,12 +54,12 @@ export function PWAInstallBanner() {
             </p>
           </div>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => setDismissed(true)}>
+        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={dismiss}>
           <X className="h-4 w-4" />
         </Button>
       </div>
       <div className="flex gap-2 mt-3">
-        <Button variant="outline" size="sm" className="flex-1" onClick={() => setDismissed(true)}>
+        <Button variant="outline" size="sm" className="flex-1" onClick={dismiss}>
           Agora não
         </Button>
         <Button size="sm" className="flex-1 gap-2" onClick={install}>

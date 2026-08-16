@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Combobox, ComboboxOption } from "@/components/ui/combobox";
@@ -22,6 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { RateioLoteamentoEditor, RateioLinha } from "@/components/financeiro/RateioLoteamentoEditor";
+import { ComprovanteInput } from "@/components/financeiro/ComprovanteInput";
 
 export interface LancamentoRateioItem {
   id_loteamento: number;
@@ -40,6 +42,8 @@ export interface Lancamento {
   valor: string;
   data: string;
   rateio?: LancamentoRateioItem[];
+  anexo_nome?: string | null;
+  anexo_base64?: string | null;
 }
 
 interface Conta {
@@ -53,6 +57,7 @@ interface Loteamento {
 }
 interface PlanoConta {
   id_conta_contabil: number;
+  id_pai: number | null;
   codigo: string;
   nome: string;
   tipo: "receita" | "despesa";
@@ -73,6 +78,8 @@ const emptyForm = {
   descricao: "",
   valor: "",
   data: new Date().toISOString().slice(0, 10),
+  anexo_nome: "",
+  anexo_base64: "",
 };
 
 interface Props {
@@ -144,6 +151,8 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
         descricao: editing.descricao,
         valor: editing.valor,
         data: editing.data.slice(0, 10),
+        anexo_nome: editing.anexo_nome ?? "",
+        anexo_base64: editing.anexo_base64 ?? "",
       });
       const temRateio = Boolean(editing.rateio && editing.rateio.length > 0);
       setRatear(temRateio);
@@ -160,8 +169,9 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing, contaPadraoId, contas.length]);
 
+  const contasSinteticas = new Set(planoContas.map((p) => p.id_pai).filter((id): id is number => id !== null));
   const contaContabilOptions: ComboboxOption[] = planoContas
-    .filter((p) => p.ativo && p.tipo === form.tipo)
+    .filter((p) => p.ativo && p.tipo === form.tipo && !contasSinteticas.has(p.id_conta_contabil))
     .slice()
     .sort((a, b) => a.codigo.localeCompare(b.codigo, undefined, { numeric: true }))
     .map((p) => ({ value: String(p.id_conta_contabil), label: `${p.codigo} — ${p.nome}` }));
@@ -193,6 +203,8 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
         descricao: form.descricao.trim(),
         valor: Number(form.valor.replace(",", ".")),
         data: form.data,
+        anexo_nome: form.anexo_nome || null,
+        anexo_base64: form.anexo_base64 || null,
         ...(rateioPayload ? { rateio: rateioPayload } : {}),
       };
       const url = editing ? `/api/lancamentos/${editing.id_lancamento}` : "/api/lancamentos";
@@ -268,11 +280,10 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
             </div>
             <div>
               <Label>Valor</Label>
-              <Input
-                inputMode="decimal"
+              <MoneyInput
                 value={form.valor}
-                onChange={(e) => setForm((f) => ({ ...f, valor: e.target.value }))}
-                placeholder="0,00"
+                onValueChange={(valor) => setForm((f) => ({ ...f, valor }))}
+                placeholder="R$ 0,00"
                 required
               />
             </div>
@@ -324,6 +335,12 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
               />
             </div>
           )}
+
+          <ComprovanteInput
+            value={{ anexo_nome: form.anexo_nome, anexo_base64: form.anexo_base64 }}
+            onChange={(anexo) => setForm((atual) => ({ ...atual, ...anexo }))}
+            onError={(message) => toast({ title: message, variant: "destructive" })}
+          />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>

@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -24,6 +25,7 @@ import {
 import { Wallet, Search, Plus, Landmark, ArrowRightLeft } from "lucide-react";
 import { formatDateBR } from "@/lib/date-br";
 import { LancamentoDialog } from "@/components/financeiro/LancamentoDialog";
+import { Link } from "react-router-dom";
 
 interface Conta {
   id_conta: number;
@@ -156,6 +158,7 @@ export function ContasTab() {
   return (
     <div className="space-y-4">
       <div className="flex justify-end gap-2">
+        <Button variant="ghost" asChild><Link to="/configuracoes?tab=contas">Editar dados bancários e inativar</Link></Button>
         <Button variant="outline" onClick={() => abrirNovoLancamento(undefined)} className="gap-2" disabled={contas.length === 0}>
           <ArrowRightLeft className="h-4 w-4" /> Novo Lançamento
         </Button>
@@ -265,7 +268,7 @@ export function ContasTab() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Saldo inicial</Label>
-                <Input inputMode="decimal" value={formConta.saldo_inicial} onChange={(e) => setFormConta((f) => ({ ...f, saldo_inicial: e.target.value }))} />
+                <MoneyInput value={formConta.saldo_inicial} onValueChange={(saldo_inicial) => setFormConta((f) => ({ ...f, saldo_inicial }))} />
               </div>
               <div>
                 <Label>Data do saldo inicial</Label>

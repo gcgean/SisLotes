@@ -21,6 +21,7 @@ import Admin from "./pages/Admin";
 import Planos from "./pages/Planos";
 import Sugestoes from "./pages/Sugestoes";
 import { AuthProvider, useAuth } from "./hooks/useAuth";
+import { RequireAuth } from "./components/auth/RequireAuth";
 import { useLicenseFeatures } from "./hooks/useLicenseFeatures";
 import { PWAInstallBanner } from "./components/PWAInstallBanner";
 
@@ -33,16 +34,6 @@ const queryClient = new QueryClient({
     },
   },
 });
-
-function RequireAuth({ children }: { children: JSX.Element }) {
-  const { token } = useAuth();
-
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return children;
-}
 
 function RequirePlatformAdmin({ children }: { children: JSX.Element }) {
   const { user } = useAuth();

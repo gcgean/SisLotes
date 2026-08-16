@@ -11,6 +11,7 @@ import {
   Receipt,
   ReceiptText,
   ListTree,
+  ListChecks,
   Truck,
   Landmark,
   ScrollText,
@@ -21,6 +22,9 @@ import {
   MessageSquare,
   HeadphonesIcon,
   ChevronDown,
+  BellRing,
+  BarChart3,
+  LockKeyhole,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -64,12 +68,17 @@ const financeiroGrupos = [
       { title: "Fluxo de Caixa", tab: "visao-geral", icon: LayoutDashboard },
       { title: "Contas a Pagar", tab: "despesas", icon: ReceiptText },
       { title: "Extrato / Lançamento", tab: "lancamentos", icon: ScrollText },
+      { title: "Régua de Cobrança", tab: "regua-cobranca", icon: BellRing },
+      { title: "Orçado × Realizado", tab: "orcado-realizado", icon: BarChart3 },
+      { title: "Fechamento", tab: "fechamento", icon: LockKeyhole },
     ],
   },
   {
     label: "Cadastros",
     itens: [
       { title: "Contas", tab: "contas", icon: Landmark },
+      { title: "Conciliação Bancária", tab: "conciliacao", icon: ListChecks },
+      { title: "Boletos e PIX", tab: "cobrancas", icon: ReceiptText },
       { title: "Plano de Contas", tab: "categorias", icon: ListTree },
       { title: "Fornecedores", tab: "fornecedores", icon: Truck },
     ],

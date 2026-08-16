@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
+import { DestructiveConfirmationDialog } from "@/components/ui/destructive-confirmation-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -39,10 +41,17 @@ import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { toast } from "@/hooks/use-toast";
 import { formatDateBR } from "@/lib/date-br";
+import { gerarPreviewParcelas, rotuloParcela } from "@/lib/parcelas";
 import { VisaoGeralTab } from "@/components/financeiro/VisaoGeralTab";
 import { ContasTab } from "@/components/financeiro/ContasTab";
 import { LancamentosTab } from "@/components/financeiro/LancamentosTab";
+import { ConciliacaoTab } from "@/components/financeiro/ConciliacaoTab";
+import { CobrancasTab } from "@/components/financeiro/CobrancasTab";
+import { ReguaCobrancaTab } from "@/components/financeiro/ReguaCobrancaTab";
+import { OrcadoRealizadoTab } from "@/components/financeiro/OrcadoRealizadoTab";
+import { FechamentoPeriodoTab } from "@/components/financeiro/FechamentoPeriodoTab";
 import { RateioLoteamentoEditor, RateioLinha } from "@/components/financeiro/RateioLoteamentoEditor";
+import { ComprovanteInput } from "@/components/financeiro/ComprovanteInput";
 import { imprimirContasPagar } from "@/utils/contasPagar";
 import type { ReciboEmpresa } from "@/utils/reciboParcela";
 import {
@@ -79,6 +88,7 @@ interface Conta {
   id_conta: number;
   apelido: string;
   ativo: boolean;
+  saldo_atual?: number;
 }
 
 interface PlanoConta {
@@ -139,11 +149,15 @@ interface DespesaParcela {
   numero_parcela: number;
   vencimento: string;
   valor: string;
-  situacao: "aberto" | "pago";
+  situacao: "aberto" | "parcial" | "pago";
   pago_data: string | null;
   valor_pago: string | null;
+  multa_paga?: string; juros_pagos?: string; desconto_obtido?: string;
+  iss_retido?: string; irrf_retido?: string; inss_retido?: string;
+  pagamentos?: Array<{id_parcela_pagamento:number;pago_data:string;valor_pago:string;conta_apelido:string;iss_retido?:string;irrf_retido?:string;inss_retido?:string;anexo_nome?:string|null;anexo_base64?:string|null}>;
   id_conta: number | null;
 }
+interface EmpresaFinanceira extends ReciboEmpresa { multa_percentual?: string; juros_percentual_dia?: string; carencia_dias?: number }
 
 interface DespesaDetalhe extends DespesaResumo {
   parcelas: DespesaParcela[];
@@ -183,6 +197,7 @@ function fmtMoeda(value: string | number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 }
+export function encargosSugeridos(valor:number,vencimento:string|null,dataPagamento:string,empresa?:EmpresaFinanceira){if(!vencimento||dataPagamento<=vencimento)return{multa:0,juros:0,desconto:0};const dias=Math.floor((Date.UTC(...dataPagamento.split("-").map(Number).map((n,i)=>i===1?n-1:n) as [number,number,number])-Date.UTC(...vencimento.split("-").map(Number).map((n,i)=>i===1?n-1:n) as [number,number,number]))/86400000);const cobraveis=Math.max(0,dias-(empresa?.carencia_dias??0));if(!cobraveis)return{multa:0,juros:0,desconto:0};return{multa:Number((valor*Number(empresa?.multa_percentual??0)/100).toFixed(2)),juros:Number((valor*Number(empresa?.juros_percentual_dia??0)/100*cobraveis).toFixed(2)),desconto:0};}
 
 async function parseJson(response: Response) {
   try {
@@ -216,7 +231,7 @@ const emptyDespesaForm = {
 const emptyCategoriaForm = { nome: "", tipo: "despesa" as "receita" | "despesa" };
 const emptyFornecedorForm = { nome: "", documento: "", telefone: "", email: "", contato: "", observacoes: "" };
 
-const ABAS_VALIDAS = ["visao-geral", "despesas", "categorias", "fornecedores", "contas", "lancamentos"] as const;
+const ABAS_VALIDAS = ["visao-geral", "despesas", "categorias", "fornecedores", "contas", "lancamentos", "conciliacao", "cobrancas", "regua-cobranca", "orcado-realizado", "fechamento"] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -248,12 +263,20 @@ export default function Despesas() {
   const [carregandoAnexo, setCarregandoAnexo] = useState(false);
   const [dialogDetalheAberto, setDialogDetalheAberto] = useState(false);
   const [despesaSelecionadaId, setDespesaSelecionadaId] = useState<number | null>(null);
-  const [dialogExcluirDespesa, setDialogExcluirDespesa] = useState<{ aberto: boolean; id: number | null }>({ aberto: false, id: null });
+  const [dialogExcluirDespesa, setDialogExcluirDespesa] = useState<{ aberto: boolean; despesa: DespesaResumo | null }>({ aberto: false, despesa: null });
+  const [parcelaParaEstorno, setParcelaParaEstorno] = useState<DespesaParcela | null>(null);
+  const [tentouSalvarDespesa, setTentouSalvarDespesa] = useState(false);
+  const [cadastroDestrutivo, setCadastroDestrutivo] = useState<{
+    tipo: "categoria" | "fornecedor";
+    acao: "desativar" | "excluir";
+    id: number;
+    nome: string;
+  } | null>(null);
 
   // ─── Dialog: pagar parcela ────────────────────────────────────────────────
   const [dialogPagarAberto, setDialogPagarAberto] = useState(false);
   const [parcelaSelecionada, setParcelaSelecionada] = useState<DespesaParcela | null>(null);
-  const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_pago: "", id_conta: "" });
+  const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_base: "", multa: "0", juros: "0", desconto: "0", iss_retido: "0", irrf_retido: "0", inss_retido: "0", id_conta: "", anexo_nome: "", anexo_base64: "" });
 
   // ─── Pagamento em lote ─────────────────────────────────────────────────────
   const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set());
@@ -348,7 +371,8 @@ export default function Despesas() {
     if (erroFornecedores) toast({ title: "Erro ao carregar fornecedores", description: erroFornecedoresMsg instanceof Error ? erroFornecedoresMsg.message : undefined, variant: "destructive" });
   }, [erroFornecedores, erroFornecedoresMsg]);
 
-  const categoriasAtivas = categorias.filter((c) => c.ativo && c.tipo === "despesa");
+  const categoriasSinteticas = new Set(categorias.map((c) => c.id_pai).filter((id): id is number => id !== null));
+  const categoriasAtivas = categorias.filter((c) => c.ativo && c.tipo === "despesa" && !categoriasSinteticas.has(c.id_conta_contabil));
   const fornecedoresAtivos = fornecedores.filter((f) => f.ativo);
 
   function planoContaDepth(c: PlanoConta): number {
@@ -379,7 +403,15 @@ export default function Despesas() {
     ...fornecedoresAtivos.map((f) => ({ value: String(f.id_fornecedor), label: f.nome })),
   ];
 
-  const contaOptions: ComboboxOption[] = contas.map((c) => ({ value: String(c.id_conta), label: c.apelido }));
+  const contaOptions: ComboboxOption[] = contas.map((c) => ({
+    value: String(c.id_conta),
+    label: `${c.apelido} · saldo ${fmtMoeda(c.saldo_atual ?? 0)}`,
+  }));
+  const previewParcelas = useMemo(() => gerarPreviewParcelas(
+    Number(formDespesa.valor_total),
+    formDespesa.recorrente ? 1 : Number(formDespesa.numero_parcelas),
+    formDespesa.data_primeiro_vencimento,
+  ), [formDespesa.valor_total, formDespesa.numero_parcelas, formDespesa.data_primeiro_vencimento, formDespesa.recorrente]);
 
   const totalRateioDespesa = rateioDespesa.reduce((s, l) => s + (Number(l.percentual.replace(",", ".")) || 0), 0);
   const rateioDespesaValido =
@@ -409,7 +441,7 @@ export default function Despesas() {
   // ─── Impressão do relatório de contas a pagar ────────────────────────────
   const [usarTimbradoRelatorio, setUsarTimbradoRelatorio] = useState(true);
 
-  const { data: empresaRelatorio } = useQuery<ReciboEmpresa>({
+  const { data: empresaRelatorio } = useQuery<EmpresaFinanceira>({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
       const r = await fetch("/api/empresas/minha", { headers: getAuthHeaders() });
@@ -531,6 +563,7 @@ export default function Despesas() {
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       setDialogDespesaAberto(false);
+      setTentouSalvarDespesa(false);
       setFormDespesa(emptyDespesaForm);
       toast({ title: modoDespesa === "novo" ? "Conta a pagar cadastrada" : "Conta a pagar atualizada" });
     },
@@ -549,6 +582,7 @@ export default function Despesas() {
       queryClient.invalidateQueries({ queryKey: ["despesas"] });
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       queryClient.invalidateQueries({ queryKey: ["financeiro"] });
+      setDialogExcluirDespesa({ aberto: false, despesa: null });
       toast({ title: "Conta a pagar excluída" });
     },
     onError: (e: Error) => toast({ title: "Não foi possível excluir", description: e.message, variant: "destructive" }),
@@ -578,8 +612,11 @@ export default function Despesas() {
       if (!parcelaSelecionada) throw new Error("Parcela não selecionada");
       const body = {
         pago_data: formPagar.pago_data,
-        valor_pago: Number(formPagar.valor_pago),
+        valor_base: Number(formPagar.valor_base), multa: Number(formPagar.multa), juros: Number(formPagar.juros), desconto: Number(formPagar.desconto),
+        iss_retido: Number(formPagar.iss_retido), irrf_retido: Number(formPagar.irrf_retido), inss_retido: Number(formPagar.inss_retido),
         id_conta: formPagar.id_conta ? Number(formPagar.id_conta) : null,
+        anexo_nome: formPagar.anexo_nome || null,
+        anexo_base64: formPagar.anexo_base64 || null,
       };
       const r = await fetch(`/api/despesas/parcelas/${parcelaSelecionada.id_despesa_parcela}/pagar`, {
         method: "POST",
@@ -606,6 +643,7 @@ export default function Despesas() {
       const itens = despesasSelecionadasParaPagar.map((d) => ({
         id_despesa_parcela: d.proxima_parcela_id!,
         valor_pago: Number((valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total).toString().replace(",", ".")),
+        ...encargosSugeridos(Number(valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total),d.vencimento,formPagarLote.pago_data,empresaRelatorio),
       }));
       const body = {
         pago_data: formPagarLote.pago_data,
@@ -644,6 +682,7 @@ export default function Despesas() {
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       queryClient.invalidateQueries({ queryKey: ["despesa-detalhe", despesaSelecionadaId] });
       queryClient.invalidateQueries({ queryKey: ["financeiro"] });
+      setParcelaParaEstorno(null);
       toast({ title: "Parcela estornada" });
     },
     onError: (e: Error) => toast({ title: "Erro ao estornar", description: e.message, variant: "destructive" }),
@@ -753,6 +792,7 @@ export default function Despesas() {
     setFormDespesa(emptyDespesaForm);
     setRatearDespesa(false);
     setRateioDespesa([]);
+    setTentouSalvarDespesa(false);
     setDialogDespesaAberto(true);
   }
 
@@ -775,6 +815,7 @@ export default function Despesas() {
     });
     setRatearDespesa(false);
     setRateioDespesa([]);
+    setTentouSalvarDespesa(false);
     setDialogDespesaAberto(true);
   }
 
@@ -785,7 +826,9 @@ export default function Despesas() {
 
   function abrirPagarParcela(parcela: DespesaParcela) {
     setParcelaSelecionada(parcela);
-    setFormPagar({ pago_data: new Date().toISOString().slice(0, 10), valor_pago: parcela.valor, id_conta: "" });
+    const liquidado=Math.max(0,Number(parcela.valor_pago??0)-Number(parcela.multa_paga??0)-Number(parcela.juros_pagos??0)+Number(parcela.desconto_obtido??0)+Number(parcela.iss_retido??0)+Number(parcela.irrf_retido??0)+Number(parcela.inss_retido??0));
+    const restante=Math.max(0,Number(parcela.valor)-liquidado);const data=new Date().toISOString().slice(0,10),e=encargosSugeridos(restante,parcela.vencimento,data,empresaRelatorio);
+    setFormPagar({pago_data:data,valor_base:restante.toFixed(2),multa:String(e.multa),juros:String(e.juros),desconto:"0",iss_retido:"0",irrf_retido:"0",inss_retido:"0",id_conta:"",anexo_nome:"",anexo_base64:""});
     setDialogPagarAberto(true);
   }
 
@@ -1023,7 +1066,7 @@ export default function Despesas() {
                     <th className="px-4 py-3 text-left font-semibold">Parcelas</th>
                     <th className="px-4 py-3 text-left font-semibold">Vencimento</th>
                     <th className="px-4 py-3 text-left font-semibold">Situação</th>
-                    <th className="px-4 py-3 text-left font-semibold">Ações</th>
+                    <th className="px-4 py-3 text-left font-semibold sticky right-0 bg-muted/95 shadow-[-4px_0_8px_rgba(0,0,0,0.04)]">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1036,7 +1079,7 @@ export default function Despesas() {
                       const situacao = d.parcelas_pagas === d.parcelas_total ? "pago" : d.parcelas_pagas === 0 ? "aberto" : "parcial";
                       return (
                         <tr key={d.id_despesa} className="border-b last:border-0 hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => abrirDetalheDespesa(d.id_despesa)}>
-                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <td className="px-4 py-3 sticky right-0 bg-background shadow-[-4px_0_8px_rgba(0,0,0,0.04)]" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               className="h-4 w-4 rounded border-gray-300 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
@@ -1076,7 +1119,7 @@ export default function Despesas() {
                           <td className="px-4 py-3 text-muted-foreground">{d.categoria_nome ?? "—"}</td>
                           <td className="px-4 py-3 text-muted-foreground">{d.fornecedor_nome ?? "—"}</td>
                           <td className="px-4 py-3 font-medium">{fmtMoeda(d.valor_total)}</td>
-                          <td className="px-4 py-3 text-muted-foreground">{d.parcelas_pagas}/{d.parcelas_total}</td>
+                          <td className="px-4 py-3 text-muted-foreground">{d.recorrente ? `${d.parcelas_pagas} paga(s) · recorrente` : `${d.parcelas_pagas} de ${d.parcelas_total} pagas`}</td>
                           <td className="px-4 py-3">
                             {d.vencimento ? (
                               <span
@@ -1105,7 +1148,7 @@ export default function Despesas() {
                               <Button
                                 size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive"
                                 title="Excluir"
-                                onClick={() => setDialogExcluirDespesa({ aberto: true, id: d.id_despesa })}
+                                onClick={() => setDialogExcluirDespesa({ aberto: true, despesa: d })}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1159,11 +1202,11 @@ export default function Despesas() {
                             <Button size="sm" variant="outline" onClick={() => abrirNovaSubconta(c)}>
                               + Sub-conta
                             </Button>
-                            <Button size="sm" variant="outline" onClick={() => toggleCategoriaMutation.mutate({ id: c.id_conta_contabil, ativo: !c.ativo })}>
+                            <Button size="sm" variant="outline" onClick={() => c.ativo ? setCadastroDestrutivo({ tipo: "categoria", acao: "desativar", id: c.id_conta_contabil, nome: `${c.codigo} — ${c.nome}` }) : toggleCategoriaMutation.mutate({ id: c.id_conta_contabil, ativo: true })}>
                               {c.ativo ? "Desativar" : "Ativar"}
                             </Button>
                             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => abrirEditarCategoria(c)}><Pencil className="h-4 w-4" /></Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => excluirCategoriaMutation.mutate(c.id_conta_contabil)}>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setCadastroDestrutivo({ tipo: "categoria", acao: "excluir", id: c.id_conta_contabil, nome: `${c.codigo} — ${c.nome}` })}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -1210,11 +1253,11 @@ export default function Despesas() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1">
-                            <Button size="sm" variant="outline" onClick={() => toggleFornecedorMutation.mutate({ id: f.id_fornecedor, ativo: !f.ativo })}>
+                            <Button size="sm" variant="outline" onClick={() => f.ativo ? setCadastroDestrutivo({ tipo: "fornecedor", acao: "desativar", id: f.id_fornecedor, nome: f.nome }) : toggleFornecedorMutation.mutate({ id: f.id_fornecedor, ativo: true })}>
                               {f.ativo ? "Desativar" : "Ativar"}
                             </Button>
                             <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => abrirEditarFornecedor(f)}><Pencil className="h-4 w-4" /></Button>
-                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => excluirFornecedorMutation.mutate(f.id_fornecedor)}>
+                            <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setCadastroDestrutivo({ tipo: "fornecedor", acao: "excluir", id: f.id_fornecedor, nome: f.nome })}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
@@ -1234,23 +1277,29 @@ export default function Despesas() {
           <TabsContent value="lancamentos" className="mt-0">
             <LancamentosTab />
           </TabsContent>
+          <TabsContent value="conciliacao" className="mt-0"><ConciliacaoTab /></TabsContent>
+          <TabsContent value="cobrancas" className="mt-0"><CobrancasTab /></TabsContent>
+          <TabsContent value="regua-cobranca" className="mt-0"><ReguaCobrancaTab /></TabsContent>
+          <TabsContent value="orcado-realizado" className="mt-0"><OrcadoRealizadoTab /></TabsContent>
+          <TabsContent value="fechamento" className="mt-0"><FechamentoPeriodoTab /></TabsContent>
         </Tabs>
       </div>
 
       {/* Dialog: Nova/Editar Conta a Pagar */}
       <Dialog open={dialogDespesaAberto} onOpenChange={setDialogDespesaAberto}>
-        <DialogContent className="max-w-2xl max-h-[94vh] overflow-y-auto p-4 sm:p-5">
-          <DialogHeader className="space-y-0.5">
+        <DialogContent className="max-w-2xl max-h-[94vh] overflow-hidden p-0 gap-0">
+          <DialogHeader className="space-y-0.5 p-4 sm:p-5 pb-3 border-b">
             <DialogTitle className="text-base">{modoDespesa === "novo" ? "Nova Conta a Pagar" : "Editar Conta a Pagar"}</DialogTitle>
             <DialogDescription className="text-xs leading-snug">
               Deixe "Loteamento" em branco para lançar como conta administrativa da empresa.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-y-auto p-4 sm:p-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
                 <Label>Descrição *</Label>
                 <Input value={formDespesa.descricao} onChange={(e) => setFormDespesa((f) => ({ ...f, descricao: e.target.value }))} placeholder="Ex: Terraplanagem — Quadra B" />
+                {tentouSalvarDespesa && !formDespesa.descricao.trim() ? <p className="text-xs text-destructive mt-1">Informe a descrição.</p> : null}
               </div>
               <div className={ratearDespesa && modoDespesa === "novo" ? "sm:col-span-2" : ""}>
                 <div className="flex items-center justify-between gap-2">
@@ -1304,6 +1353,7 @@ export default function Despesas() {
                   searchPlaceholder="Buscar categoria..."
                   emptyText="Nenhuma categoria encontrada."
                 />
+                {tentouSalvarDespesa && !formDespesa.id_categoria ? <p className="text-xs text-destructive mt-1">Selecione uma categoria.</p> : null}
               </div>
               <div>
                 <Label>Fornecedor (opcional)</Label>
@@ -1318,7 +1368,8 @@ export default function Despesas() {
               </div>
               <div>
                 <Label>Valor Total *</Label>
-                <Input type="number" step="0.01" min="0.01" value={formDespesa.valor_total} onChange={(e) => setFormDespesa((f) => ({ ...f, valor_total: e.target.value }))} />
+                <MoneyInput value={formDespesa.valor_total} onValueChange={(valor_total) => setFormDespesa((f) => ({ ...f, valor_total }))} />
+                {tentouSalvarDespesa && !formDespesa.valor_total ? <p className="text-xs text-destructive mt-1">Informe um valor maior que zero.</p> : null}
               </div>
               {modoDespesa === "novo" && (
                 <>
@@ -1387,13 +1438,28 @@ export default function Despesas() {
                 <Label>Observações</Label>
                 <Textarea rows={2} value={formDespesa.observacoes} onChange={(e) => setFormDespesa((f) => ({ ...f, observacoes: e.target.value }))} />
               </div>
+              {modoDespesa === "novo" && previewParcelas.length > 0 ? (
+                <div className="sm:col-span-2 rounded-lg border bg-muted/20 p-3">
+                  <p className="text-xs font-semibold mb-2">Prévia das parcelas</p>
+                  <div className="grid sm:grid-cols-2 gap-1 text-xs">
+                    {previewParcelas.slice(0, 6).map((parcela) => (
+                      <div key={parcela.numero} className="flex justify-between gap-3"><span>Parcela {parcela.numero} · {formatDateBR(parcela.vencimento)}</span><strong>{fmtMoeda(parcela.valor)}</strong></div>
+                    ))}
+                  </div>
+                  {previewParcelas.length > 6 ? <p className="text-xs text-muted-foreground mt-2">Mais {previewParcelas.length - 6} parcela(s) seguirão o mesmo intervalo mensal.</p> : null}
+                </div>
+              ) : null}
             </div>
           </div>
-          <DialogFooter className="pt-1">
+          <DialogFooter className="sticky bottom-0 border-t bg-background p-4 sm:px-5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
             <Button variant="outline" onClick={() => setDialogDespesaAberto(false)}>Cancelar</Button>
             <Button
-              disabled={salvarDespesaMutation.isPending || !formDespesa.descricao.trim() || !formDespesa.id_categoria || !formDespesa.valor_total || !rateioDespesaValido}
-              onClick={() => salvarDespesaMutation.mutate()}
+              disabled={salvarDespesaMutation.isPending}
+              onClick={() => {
+                setTentouSalvarDespesa(true);
+                if (!formDespesa.descricao.trim() || !formDespesa.id_categoria || !formDespesa.valor_total || !rateioDespesaValido) return;
+                salvarDespesaMutation.mutate();
+              }}
             >
               {salvarDespesaMutation.isPending ? "Salvando…" : "Salvar"}
             </Button>
@@ -1489,26 +1555,40 @@ export default function Despesas() {
                 <tbody>
                   {despesaDetalhe?.parcelas.map((p) => (
                     <tr key={p.id_despesa_parcela} className="border-b last:border-0">
-                      <td className="px-3 py-2">{p.numero_parcela}/{despesaDetalhe.numero_parcelas}</td>
+                      <td className="px-3 py-2">{rotuloParcela(p.numero_parcela, despesaDetalhe.parcelas.length, despesaDetalhe.recorrente)}</td>
                       <td className="px-3 py-2 text-muted-foreground">{formatDateBR(p.vencimento)}</td>
                       <td className="px-3 py-2 font-medium">{fmtMoeda(p.valor)}</td>
                       <td className="px-3 py-2">
                         {p.situacao === "pago" ? (
                           <Badge className="bg-green-100 text-green-700 border-green-200">Paga em {formatDateBR(p.pago_data)}</Badge>
+                        ) : p.situacao === "parcial" ? (
+                          <div><Badge variant="secondary">Parcial · {fmtMoeda(p.valor_pago)}</Badge><div className="text-xs text-muted-foreground mt-1">Saldo: {fmtMoeda(Math.max(0,Number(p.valor)-Number(p.valor_pago??0)+Number(p.multa_paga??0)+Number(p.juros_pagos??0)-Number(p.desconto_obtido??0)-Number(p.iss_retido??0)-Number(p.irrf_retido??0)-Number(p.inss_retido??0)))}</div></div>
                         ) : (
                           <Badge variant="outline">Em aberto</Badge>
                         )}
+                        {Number(p.iss_retido??0)+Number(p.irrf_retido??0)+Number(p.inss_retido??0)>0 ? (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Retido: {fmtMoeda(Number(p.iss_retido??0)+Number(p.irrf_retido??0)+Number(p.inss_retido??0))}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2">
-                        {p.situacao === "pago" ? (
-                          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => estornarParcelaMutation.mutate(p.id_despesa_parcela)}>
-                            <RotateCcw className="h-3.5 w-3.5" /> Estornar
-                          </Button>
-                        ) : (
-                          <Button size="sm" className="gap-1.5" onClick={() => abrirPagarParcela(p)}>
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Pagar
-                          </Button>
-                        )}
+                        <div className="flex flex-col items-start gap-1">
+                          {p.situacao === "pago" ? (
+                            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setParcelaParaEstorno(p)}>
+                              <RotateCcw className="h-3.5 w-3.5" /> Estornar
+                            </Button>
+                          ) : (
+                            <div className="flex gap-1"><Button size="sm" className="gap-1.5" onClick={() => abrirPagarParcela(p)}>
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Pagar
+                            </Button>{p.situacao==="parcial"?<Button size="sm" variant="outline" onClick={()=>setParcelaParaEstorno(p)}><RotateCcw className="h-3.5 w-3.5"/> Estornar baixas</Button>:null}</div>
+                          )}
+                          {p.pagamentos?.filter((pagamento) => pagamento.anexo_base64).map((pagamento) => (
+                            <a key={pagamento.id_parcela_pagamento} href={pagamento.anexo_base64!} download={pagamento.anexo_nome || "comprovante"} className="flex max-w-40 items-center gap-1 truncate text-xs text-primary hover:underline">
+                              <Paperclip className="h-3 w-3 shrink-0" /> {pagamento.anexo_nome || "Comprovante"}
+                            </a>
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1532,12 +1612,18 @@ export default function Despesas() {
           <div className="space-y-3">
             <div>
               <Label>Data do pagamento</Label>
-              <Input type="date" value={formPagar.pago_data} onChange={(e) => setFormPagar((f) => ({ ...f, pago_data: e.target.value }))} />
+              <Input type="date" value={formPagar.pago_data} onChange={(event) => { const data=event.target.value,e=encargosSugeridos(Number(formPagar.valor_base),parcelaSelecionada?.vencimento??null,data,empresaRelatorio);setFormPagar(f=>({...f,pago_data:data,multa:String(e.multa),juros:String(e.juros)})); }} />
             </div>
             <div>
-              <Label>Valor pago</Label>
-              <Input type="number" step="0.01" value={formPagar.valor_pago} onChange={(e) => setFormPagar((f) => ({ ...f, valor_pago: e.target.value }))} />
+              <Label>Valor original</Label><MoneyInput value={formPagar.valor_base} onValueChange={(valor_base) => setFormPagar((f) => ({ ...f, valor_base }))} />
             </div>
+            <div className="grid grid-cols-3 gap-2"><div><Label>Multa</Label><MoneyInput value={formPagar.multa} onValueChange={(multa)=>setFormPagar(f=>({...f,multa}))}/></div><div><Label>Juros</Label><MoneyInput value={formPagar.juros} onValueChange={(juros)=>setFormPagar(f=>({...f,juros}))}/></div><div><Label>Desconto</Label><MoneyInput value={formPagar.desconto} onValueChange={(desconto)=>setFormPagar(f=>({...f,desconto}))}/></div></div>
+            <div>
+              <Label>Retenções do serviço</Label>
+              <div className="mt-1 grid grid-cols-3 gap-2"><div><Label className="text-xs text-muted-foreground">ISS</Label><MoneyInput value={formPagar.iss_retido} onValueChange={(iss_retido)=>setFormPagar(f=>({...f,iss_retido}))}/></div><div><Label className="text-xs text-muted-foreground">IRRF</Label><MoneyInput value={formPagar.irrf_retido} onValueChange={(irrf_retido)=>setFormPagar(f=>({...f,irrf_retido}))}/></div><div><Label className="text-xs text-muted-foreground">INSS</Label><MoneyInput value={formPagar.inss_retido} onValueChange={(inss_retido)=>setFormPagar(f=>({...f,inss_retido}))}/></div></div>
+              <p className="mt-1 text-xs text-muted-foreground">As retenções reduzem a saída da conta, sem reduzir o valor bruto liquidado.</p>
+            </div>
+            <div className="rounded-md bg-muted p-3 flex justify-between"><span className="text-sm text-muted-foreground">Total líquido a pagar</span><strong>{fmtMoeda(Number(formPagar.valor_base||0)+Number(formPagar.multa||0)+Number(formPagar.juros||0)-Number(formPagar.desconto||0)-Number(formPagar.iss_retido||0)-Number(formPagar.irrf_retido||0)-Number(formPagar.inss_retido||0))}</strong></div>
             <div>
               <Label>Conta / local do pagamento *</Label>
               <Combobox
@@ -1552,10 +1638,15 @@ export default function Despesas() {
                 Obrigatório — é o que faz esse pagamento aparecer no extrato da conta.
               </p>
             </div>
+            <ComprovanteInput
+              value={{ anexo_nome: formPagar.anexo_nome, anexo_base64: formPagar.anexo_base64 }}
+              onChange={(anexo) => setFormPagar((atual) => ({ ...atual, ...anexo }))}
+              onError={(message) => toast({ title: message, variant: "destructive" })}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogPagarAberto(false)}>Cancelar</Button>
-            <Button disabled={pagarParcelaMutation.isPending || !formPagar.valor_pago || !formPagar.id_conta} onClick={() => pagarParcelaMutation.mutate()}>
+            <Button disabled={pagarParcelaMutation.isPending || !formPagar.valor_base || !formPagar.id_conta} onClick={() => pagarParcelaMutation.mutate()}>
               {pagarParcelaMutation.isPending ? "Salvando…" : "Confirmar pagamento"}
             </Button>
           </DialogFooter>
@@ -1605,12 +1696,10 @@ export default function Despesas() {
                       <td className="px-3 py-2">{d.descricao}</td>
                       <td className="px-3 py-2 text-muted-foreground text-xs">{d.vencimento ? formatDateBR(d.vencimento) : "—"}</td>
                       <td className="px-3 py-2 text-right">
-                        <Input
-                          type="number"
-                          step="0.01"
+                        <MoneyInput
                           className="w-28 h-8 text-right ml-auto"
                           value={valoresLote[d.id_despesa] ?? d.proxima_parcela_valor ?? d.valor_total}
-                          onChange={(e) => setValoresLote((v) => ({ ...v, [d.id_despesa]: e.target.value }))}
+                          onValueChange={(value) => setValoresLote((v) => ({ ...v, [d.id_despesa]: value }))}
                         />
                       </td>
                     </tr>
@@ -1714,29 +1803,45 @@ export default function Despesas() {
         </DialogContent>
       </Dialog>
 
-      {/* AlertDialog: excluir conta a pagar */}
-      <AlertDialog open={dialogExcluirDespesa.aberto} onOpenChange={(o) => !o && setDialogExcluirDespesa({ aberto: false, id: null })}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir conta a pagar?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta ação não pode ser desfeita. Só é permitida se nenhuma parcela já tiver sido paga.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (dialogExcluirDespesa.id) excluirDespesaMutation.mutate(dialogExcluirDespesa.id);
-                setDialogExcluirDespesa({ aberto: false, id: null });
-              }}
-            >
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DestructiveConfirmationDialog
+        open={dialogExcluirDespesa.aberto}
+        onOpenChange={(open) => !open && setDialogExcluirDespesa({ aberto: false, despesa: null })}
+        title="Excluir conta a pagar?"
+        description={dialogExcluirDespesa.despesa ? `${dialogExcluirDespesa.despesa.descricao} · ${fmtMoeda(dialogExcluirDespesa.despesa.valor_total)}` : "Conta selecionada"}
+        consequence="A conta e suas parcelas serão removidas permanentemente. A exclusão só será aceita se nenhuma parcela estiver paga."
+        confirmLabel="Excluir conta"
+        pending={excluirDespesaMutation.isPending}
+        onConfirm={() => {
+          if (dialogExcluirDespesa.despesa) excluirDespesaMutation.mutate(dialogExcluirDespesa.despesa.id_despesa);
+        }}
+      />
+      <DestructiveConfirmationDialog
+        open={Boolean(parcelaParaEstorno)}
+        onOpenChange={(open) => !open && setParcelaParaEstorno(null)}
+        title="Estornar pagamento?"
+        description={parcelaParaEstorno && despesaDetalhe ? `${despesaDetalhe.descricao} · parcela ${parcelaParaEstorno.numero_parcela} · ${fmtMoeda(parcelaParaEstorno.valor_pago ?? parcelaParaEstorno.valor)} · paga em ${formatDateBR(parcelaParaEstorno.pago_data)}` : "Parcela selecionada"}
+        consequence="A parcela voltará para Em Aberto, o valor pago será apagado e a saída deixará de compor o extrato da conta."
+        confirmLabel="Estornar pagamento"
+        pending={estornarParcelaMutation.isPending}
+        onConfirm={() => parcelaParaEstorno && estornarParcelaMutation.mutate(parcelaParaEstorno.id_despesa_parcela)}
+      />
+      <DestructiveConfirmationDialog
+        open={Boolean(cadastroDestrutivo)}
+        onOpenChange={(open) => !open && setCadastroDestrutivo(null)}
+        title={`${cadastroDestrutivo?.acao === "excluir" ? "Excluir" : "Desativar"} ${cadastroDestrutivo?.tipo === "categoria" ? "conta contábil" : "fornecedor"}?`}
+        description={cadastroDestrutivo?.nome ?? "Cadastro selecionado"}
+        consequence={cadastroDestrutivo?.acao === "excluir" ? "O cadastro será removido permanentemente se não possuir vínculos." : "O cadastro deixará de aparecer para seleção em novos lançamentos."}
+        confirmLabel={cadastroDestrutivo?.acao === "excluir" ? "Excluir" : "Desativar"}
+        pending={toggleCategoriaMutation.isPending || excluirCategoriaMutation.isPending || toggleFornecedorMutation.isPending || excluirFornecedorMutation.isPending}
+        onConfirm={() => {
+          if (!cadastroDestrutivo) return;
+          if (cadastroDestrutivo.tipo === "categoria") {
+            if (cadastroDestrutivo.acao === "excluir") excluirCategoriaMutation.mutate(cadastroDestrutivo.id, { onSuccess: () => setCadastroDestrutivo(null) });
+            else toggleCategoriaMutation.mutate({ id: cadastroDestrutivo.id, ativo: false }, { onSuccess: () => setCadastroDestrutivo(null) });
+          } else if (cadastroDestrutivo.acao === "excluir") excluirFornecedorMutation.mutate(cadastroDestrutivo.id, { onSuccess: () => setCadastroDestrutivo(null) });
+          else toggleFornecedorMutation.mutate({ id: cadastroDestrutivo.id, ativo: false }, { onSuccess: () => setCadastroDestrutivo(null) });
+        }}
+      />
     </AppLayout>
   );
 }

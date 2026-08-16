@@ -3,6 +3,8 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { Conta } from "../../entities/Conta";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { AuditoriaService } from "../../services/AuditoriaService";
+import { hashOfx, parseOfx } from "../../utils/ofx";
 
 export const contasRouter = Router();
 
@@ -35,25 +37,10 @@ contasRouter.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
       c.*,
       c.saldo_inicial
         + COALESCE((
-            SELECT SUM(COALESCE(p.valor_pago, p.valor)) FROM pagamentos p
-            JOIN vendas v ON v.id_venda = p.id_venda
-            WHERE p.id_conta = c.id_conta AND p.situacao = 'pago' AND v.status <> 'cancelada'
-              AND (c.data_saldo_inicial IS NULL OR p.pago_data >= c.data_saldo_inicial)
-          ), 0)
-        + COALESCE((
-            SELECT SUM(l.valor) FROM lancamentos_manuais l
-            WHERE l.id_conta = c.id_conta AND l.tipo = 'receita'
-              AND (c.data_saldo_inicial IS NULL OR l.data >= c.data_saldo_inicial)
-          ), 0)
-        - COALESCE((
-            SELECT SUM(dp.valor_pago) FROM despesa_parcelas dp
-            WHERE dp.id_conta = c.id_conta AND dp.situacao = 'pago'
-              AND (c.data_saldo_inicial IS NULL OR dp.pago_data >= c.data_saldo_inicial)
-          ), 0)
-        - COALESCE((
-            SELECT SUM(l2.valor) FROM lancamentos_manuais l2
-            WHERE l2.id_conta = c.id_conta AND l2.tipo = 'despesa'
-              AND (c.data_saldo_inicial IS NULL OR l2.data >= c.data_saldo_inicial)
+            SELECT SUM(CASE WHEN mf.tipo = 'receita' THEN mf.valor ELSE -mf.valor END)
+            FROM movimentos_financeiros mf
+            WHERE mf.id_conta = c.id_conta
+              AND (c.data_saldo_inicial IS NULL OR mf.data >= c.data_saldo_inicial)
           ), 0) AS saldo_atual
     FROM contas c
     WHERE ${conditions.join(" AND ")}
@@ -74,17 +61,11 @@ contasRouter.get("/", requireAuth, async (req: AuthRequest, res: Response) => {
 // inteiro (usado para o saldo atual "de hoje").
 export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: string, idConta?: number): Promise<number> {
   const params: unknown[] = [idEmpresa];
-  let cutoffP = "";
-  let cutoffL = "";
-  let cutoffDp = "";
-  let cutoffL2 = "";
+  let cutoff = "";
   if (ateExclusive) {
     params.push(ateExclusive);
     const idx = params.length;
-    cutoffP = `AND p.pago_data < $${idx}`;
-    cutoffL = `AND l.data < $${idx}`;
-    cutoffDp = `AND dp.pago_data < $${idx}`;
-    cutoffL2 = `AND l2.data < $${idx}`;
+    cutoff = `AND mf.data < $${idx}`;
   }
   let contaClause = "";
   if (idConta) {
@@ -96,29 +77,11 @@ export async function deltaMovimentosEmpresa(idEmpresa: number, ateExclusive?: s
     `
     SELECT
       COALESCE((
-        SELECT SUM(COALESCE(p.valor_pago, p.valor)) FROM pagamentos p
-        JOIN vendas v ON v.id_venda = p.id_venda
-        JOIN contas c ON c.id_conta = p.id_conta
-        WHERE c.id_empresa = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-          AND p.pago_data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffP} ${contaClause}
-      ), 0)
-      + COALESCE((
-        SELECT SUM(l.valor) FROM lancamentos_manuais l
-        JOIN contas c ON c.id_conta = l.id_conta
-        WHERE c.id_empresa = $1 AND l.tipo = 'receita'
-          AND l.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffL} ${contaClause}
-      ), 0)
-      - COALESCE((
-        SELECT SUM(dp.valor_pago) FROM despesa_parcelas dp
-        JOIN contas c ON c.id_conta = dp.id_conta
-        WHERE c.id_empresa = $1 AND dp.situacao = 'pago'
-          AND dp.pago_data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffDp} ${contaClause}
-      ), 0)
-      - COALESCE((
-        SELECT SUM(l2.valor) FROM lancamentos_manuais l2
-        JOIN contas c ON c.id_conta = l2.id_conta
-        WHERE c.id_empresa = $1 AND l2.tipo = 'despesa'
-          AND l2.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoffL2} ${contaClause}
+        SELECT SUM(CASE WHEN mf.tipo = 'receita' THEN mf.valor ELSE -mf.valor END)
+        FROM movimentos_financeiros mf
+        JOIN contas c ON c.id_conta = mf.id_conta
+        WHERE c.id_empresa = $1
+          AND mf.data >= COALESCE(c.data_saldo_inicial, '1900-01-01') ${cutoff} ${contaClause}
       ), 0) AS delta
     `,
     params
@@ -174,42 +137,16 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
     deltaMovimentosEmpresa(idEmpresa, from, idConta),
     AppDataSource.query(
       `
-      SELECT * FROM (
-        SELECT TO_CHAR(p.pago_data, 'YYYY-MM-DD') AS data, 'entrada' AS movimento, 'venda' AS origem,
-               CONCAT('Recebimento venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
-               COALESCE(p.valor_pago, p.valor) AS valor,
-               NULL::text AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
-               NULL::int AS id_lancamento
-        FROM pagamentos p
-        JOIN vendas v ON v.id_venda = p.id_venda
-        JOIN contas c ON c.id_conta = p.id_conta
-        WHERE c.id_empresa = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-          AND p.pago_data >= $2 AND p.pago_data <= $3 ${movContaClause}
-
-        UNION ALL
-
-        SELECT TO_CHAR(dp.pago_data, 'YYYY-MM-DD') AS data, 'saida' AS movimento, 'despesa' AS origem,
-               d.descricao AS descricao, dp.valor_pago AS valor,
-               cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
-               NULL::int AS id_lancamento
-        FROM despesa_parcelas dp
-        JOIN despesas d ON d.id_despesa = dp.id_despesa
-        JOIN contas c ON c.id_conta = dp.id_conta
-        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = d.id_categoria
-        WHERE c.id_empresa = $1 AND dp.situacao = 'pago'
-          AND dp.pago_data >= $2 AND dp.pago_data <= $3 ${movContaClause}
-
-        UNION ALL
-
-        SELECT TO_CHAR(l.data, 'YYYY-MM-DD') AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
-               'lancamento' AS origem, l.descricao AS descricao, l.valor AS valor,
-               cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta AS id_conta,
-               l.id_lancamento AS id_lancamento
-        FROM lancamentos_manuais l
-        JOIN contas c ON c.id_conta = l.id_conta
-        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = l.id_conta_contabil
-        WHERE c.id_empresa = $1 AND l.data >= $2 AND l.data <= $3 ${movContaClause}
-      ) mov
+      SELECT TO_CHAR(mf.data, 'YYYY-MM-DD') AS data,
+             CASE WHEN mf.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
+             mf.origem, mf.descricao, mf.valor,
+             cat.nome AS conta_contabil, c.apelido AS conta_apelido, c.id_conta,
+             CASE WHEN mf.origem = 'manual' THEN mf.id_origem ELSE NULL END AS id_lancamento,
+             mf.id_transferencia
+      FROM movimentos_financeiros mf
+      JOIN contas c ON c.id_conta = mf.id_conta
+      LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = mf.id_conta_contabil
+      WHERE c.id_empresa = $1 AND mf.data >= $2 AND mf.data <= $3 ${movContaClause}
       ORDER BY data ASC, movimento ASC
       `,
       movParams
@@ -229,6 +166,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
     conta_apelido: string;
     id_conta: number;
     id_lancamento: number | null;
+    id_transferencia: number | null;
   };
 
   let saldoCorrente = saldoInicialPeriodo;
@@ -253,6 +191,7 @@ contasRouter.get("/extrato-geral", requireAuth, async (req: AuthRequest, res: Re
       contaApelido: m.conta_apelido,
       idConta: m.id_conta,
       idLancamento: m.id_lancamento,
+      idTransferencia: m.id_transferencia,
       saldo: saldoCorrente,
     };
   });
@@ -295,59 +234,21 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
       `
       SELECT
         COALESCE((
-          SELECT SUM(COALESCE(p.valor_pago, p.valor)) FROM pagamentos p
-          JOIN vendas v ON v.id_venda = p.id_venda
-          WHERE p.id_conta = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-            AND p.pago_data >= $2 AND p.pago_data < $3
-        ), 0)
-        + COALESCE((
-          SELECT SUM(l.valor) FROM lancamentos_manuais l
-          WHERE l.id_conta = $1 AND l.tipo = 'receita' AND l.data >= $2 AND l.data < $3
-        ), 0)
-        - COALESCE((
-          SELECT SUM(dp.valor_pago) FROM despesa_parcelas dp
-          WHERE dp.id_conta = $1 AND dp.situacao = 'pago' AND dp.pago_data >= $2 AND dp.pago_data < $3
-        ), 0)
-        - COALESCE((
-          SELECT SUM(l2.valor) FROM lancamentos_manuais l2
-          WHERE l2.id_conta = $1 AND l2.tipo = 'despesa' AND l2.data >= $2 AND l2.data < $3
+          SELECT SUM(CASE WHEN mf.tipo = 'receita' THEN mf.valor ELSE -mf.valor END)
+          FROM movimentos_financeiros mf
+          WHERE mf.id_conta = $1 AND mf.data >= $2 AND mf.data < $3
         ), 0) AS delta
       `,
       [idConta, dataSaldoInicial, from]
     ),
     AppDataSource.query(
       `
-      SELECT * FROM (
-        SELECT TO_CHAR(p.pago_data, 'YYYY-MM-DD') AS data, 'entrada' AS movimento, 'venda' AS origem,
-               CONCAT('Recebimento venda #', v.id_venda, ' — parcela ', p.numero_parcela) AS descricao,
-               COALESCE(p.valor_pago, p.valor) AS valor,
-               NULL::text AS conta_contabil
-        FROM pagamentos p
-        JOIN vendas v ON v.id_venda = p.id_venda
-        WHERE p.id_conta = $1 AND p.situacao = 'pago' AND v.status <> 'cancelada'
-          AND p.pago_data >= $2 AND p.pago_data <= $3
-
-        UNION ALL
-
-        SELECT TO_CHAR(dp.pago_data, 'YYYY-MM-DD') AS data, 'saida' AS movimento, 'despesa' AS origem,
-               d.descricao AS descricao,
-               dp.valor_pago AS valor,
-               cat.nome AS conta_contabil
-        FROM despesa_parcelas dp
-        JOIN despesas d ON d.id_despesa = dp.id_despesa
-        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = d.id_categoria
-        WHERE dp.id_conta = $1 AND dp.situacao = 'pago'
-          AND dp.pago_data >= $2 AND dp.pago_data <= $3
-
-        UNION ALL
-
-        SELECT TO_CHAR(l.data, 'YYYY-MM-DD') AS data, CASE WHEN l.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
-               'lancamento' AS origem, l.descricao AS descricao, l.valor AS valor,
-               cat.nome AS conta_contabil
-        FROM lancamentos_manuais l
-        LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = l.id_conta_contabil
-        WHERE l.id_conta = $1 AND l.data >= $2 AND l.data <= $3
-      ) mov
+      SELECT TO_CHAR(mf.data, 'YYYY-MM-DD') AS data,
+             CASE WHEN mf.tipo = 'receita' THEN 'entrada' ELSE 'saida' END AS movimento,
+             mf.origem, mf.descricao, mf.valor, cat.nome AS conta_contabil
+      FROM movimentos_financeiros mf
+      LEFT JOIN plano_de_contas cat ON cat.id_conta_contabil = mf.id_conta_contabil
+      WHERE mf.id_conta = $1 AND mf.data >= $2 AND mf.data <= $3
       ORDER BY data ASC
       `,
       [idConta, from, to]
@@ -372,6 +273,72 @@ contasRouter.get("/:id/extrato", requireAuth, async (req: AuthRequest, res: Resp
   });
 });
 
+const contaDaEmpresa = async (idConta: number, idEmpresa: number) => AppDataSource.getRepository(Conta).findOne({ where: { id_conta: idConta, id_empresa: idEmpresa } });
+
+contasRouter.post("/:id/conciliacao/importar", requireAuth, async (req: AuthRequest, res: Response) => {
+  const schema = z.object({ nome: z.string().min(1).max(255), conteudo: z.string().min(1).max(2 * 1024 * 1024) });
+  const parse = schema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Arquivo OFX inválido." });
+  const idConta = Number(req.params.id), idEmpresa = req.user!.id_empresa;
+  if (!(await contaDaEmpresa(idConta, idEmpresa))) return res.status(404).json({ error: "Conta não encontrada" });
+  let itens;
+  try { itens = parseOfx(parse.data.conteudo); } catch (e) { return res.status(400).json({ error: e instanceof Error ? e.message : "OFX inválido" }); }
+  try {
+    const resultado = await AppDataSource.transaction(async (manager) => {
+      const [imp] = await manager.query(`INSERT INTO conciliacao_importacoes (id_empresa,id_conta,nome_arquivo,hash_arquivo,id_usuario) VALUES ($1,$2,$3,$4,$5) RETURNING id_importacao`, [idEmpresa,idConta,parse.data.nome,hashOfx(parse.data.conteudo),req.user!.id_usuario]);
+      let inseridos = 0;
+      for (const item of itens) {
+        const rows = await manager.query(`INSERT INTO conciliacao_itens (id_importacao,id_empresa,id_conta,fitid,data,tipo,valor,descricao) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id_conta,fitid) DO NOTHING RETURNING id_item`, [imp.id_importacao,idEmpresa,idConta,item.fitid,item.data,item.tipo,item.valor,item.descricao]);
+        inseridos += rows.length;
+      }
+      return { id_importacao: imp.id_importacao, inseridos, duplicados: itens.length - inseridos };
+    });
+    await AuditoriaService.registrar(req,"conciliacao_importacoes","CREATE",resultado.id_importacao,undefined,resultado,`OFX importado — ${parse.data.nome}`);
+    return res.status(201).json(resultado);
+  } catch (e: any) {
+    if (e?.code === "23505") return res.status(409).json({ error: "Este arquivo OFX já foi importado para a conta." });
+    throw e;
+  }
+});
+
+contasRouter.get("/:id/conciliacao", requireAuth, async (req: AuthRequest, res: Response) => {
+  const idConta = Number(req.params.id), idEmpresa = req.user!.id_empresa;
+  if (!(await contaDaEmpresa(idConta,idEmpresa))) return res.status(404).json({ error: "Conta não encontrada" });
+  const status = ["pendente","conciliado","ignorado"].includes(String(req.query.status)) ? String(req.query.status) : "pendente";
+  const rows = await AppDataSource.query(`SELECT i.*, v.origem AS vinculo_origem, v.id_origem AS vinculo_id,
+    COALESCE((SELECT json_agg(s ORDER BY s.diferenca_dias, s.data) FROM (SELECT mf.origem,mf.id_origem,mf.data,mf.descricao,mf.valor,ABS(mf.data-i.data) AS diferenca_dias FROM movimentos_financeiros mf WHERE mf.id_empresa=i.id_empresa AND mf.id_conta=i.id_conta AND mf.tipo=i.tipo AND mf.valor=i.valor AND mf.data BETWEEN i.data-3 AND i.data+3 AND NOT EXISTS (SELECT 1 FROM conciliacao_vinculos cv WHERE cv.id_conta=i.id_conta AND cv.origem=mf.origem AND cv.id_origem=mf.id_origem) LIMIT 5) s),'[]'::json) AS sugestoes
+    FROM conciliacao_itens i LEFT JOIN conciliacao_vinculos v ON v.id_item=i.id_item WHERE i.id_empresa=$1 AND i.id_conta=$2 AND i.status=$3 ORDER BY i.data DESC,i.id_item DESC`, [idEmpresa,idConta,status]);
+  return res.json(rows);
+});
+
+contasRouter.post("/:id/conciliacao/:item/vincular", requireAuth, async (req: AuthRequest, res: Response) => {
+  const body = z.object({ origem: z.string().min(1).max(20), id_origem: z.number().int().positive() }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: "Movimento inválido" });
+  const idConta=Number(req.params.id), idItem=Number(req.params.item), idEmpresa=req.user!.id_empresa;
+  const [mov] = await AppDataSource.query(`SELECT 1 FROM movimentos_financeiros mf JOIN conciliacao_itens i ON i.id_item=$4 AND i.id_empresa=$1 AND i.id_conta=$2 AND i.status='pendente' WHERE mf.id_empresa=$1 AND mf.id_conta=$2 AND mf.origem=$3 AND mf.id_origem=$5 AND mf.tipo=i.tipo AND mf.valor=i.valor`,[idEmpresa,idConta,body.data.origem,idItem,body.data.id_origem]);
+  if (!mov) return res.status(400).json({ error: "O movimento não corresponde à conta, tipo e valor do item bancário." });
+  const v = await AppDataSource.transaction(async manager => {
+    const [saved] = await manager.query(`INSERT INTO conciliacao_vinculos (id_item,id_empresa,id_conta,origem,id_origem,id_usuario) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id_vinculo`,[idItem,idEmpresa,idConta,body.data.origem,body.data.id_origem,req.user!.id_usuario]);
+    await manager.query(`UPDATE conciliacao_itens SET status='conciliado' WHERE id_item=$1 AND id_empresa=$2`,[idItem,idEmpresa]);
+    return saved;
+  });
+  await AuditoriaService.registrar(req,"conciliacao_vinculos","CREATE",v.id_vinculo,undefined,{id_item:idItem,...body.data},"Movimento bancário conciliado");
+  return res.status(201).json(v);
+});
+
+contasRouter.patch("/:id/conciliacao/:item/status", requireAuth, async (req: AuthRequest, res: Response) => {
+  const parse=z.object({status:z.enum(["pendente","ignorado"])}).safeParse(req.body); if(!parse.success)return res.status(400).json({error:"Status inválido"});
+  const rows=await AppDataSource.query(`UPDATE conciliacao_itens SET status=$1 WHERE id_item=$2 AND id_conta=$3 AND id_empresa=$4 AND NOT EXISTS (SELECT 1 FROM conciliacao_vinculos WHERE id_item=$2) RETURNING id_item`,[parse.data.status,Number(req.params.item),Number(req.params.id),req.user!.id_empresa]);
+  if(!rows.length)return res.status(404).json({error:"Item não encontrado ou já conciliado"}); return res.json(rows[0]);
+});
+
+contasRouter.delete("/:id/conciliacao/:item/vinculo", requireAuth, async (req: AuthRequest, res: Response) => {
+  const idItem=Number(req.params.item),idConta=Number(req.params.id),idEmpresa=req.user!.id_empresa;
+  const rows=await AppDataSource.transaction(async manager => { const deleted=await manager.query(`DELETE FROM conciliacao_vinculos WHERE id_item=$1 AND id_conta=$2 AND id_empresa=$3 RETURNING id_vinculo`,[idItem,idConta,idEmpresa]); if(deleted.length)await manager.query(`UPDATE conciliacao_itens SET status='pendente' WHERE id_item=$1`,[idItem]); return deleted; });
+  if(!rows.length)return res.status(404).json({error:"Conciliação não encontrada"});
+  await AuditoriaService.registrar(req,"conciliacao_vinculos","DELETE",rows[0].id_vinculo,{id_item:idItem},undefined,"Conciliação desfeita"); return res.status(204).send();
+});
+
 // ─── POST / ───────────────────────────────────────────────────────────────────
 contasRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
   const parseResult = contaBodySchema.safeParse(req.body);
@@ -394,6 +361,9 @@ contasRouter.post("/", requireAuth, async (req: AuthRequest, res: Response) => {
   });
 
   const saved = await repo.save(conta);
+  await AuditoriaService.registrar(req, "contas", "CREATE", saved.id_conta, undefined, {
+    apelido: saved.apelido, tipo: saved.tipo, saldo_inicial: saved.saldo_inicial, data_saldo_inicial: saved.data_saldo_inicial, ativo: saved.ativo,
+  }, `Conta financeira criada — ${saved.apelido}`);
 
   return res.status(201).json(saved);
 });
@@ -420,12 +390,16 @@ contasRouter.put("/:id", requireAuth, async (req: AuthRequest, res: Response) =>
   if (!conta) {
     return res.status(404).json({ error: "Conta não encontrada" });
   }
+  const valoresAntigos = { apelido: conta.apelido, tipo: conta.tipo, saldo_inicial: conta.saldo_inicial, data_saldo_inicial: conta.data_saldo_inicial, ativo: conta.ativo };
 
   const { saldo_inicial, ...rest } = parseResult.data;
   Object.assign(conta, rest);
   if (saldo_inicial !== undefined) conta.saldo_inicial = String(saldo_inicial);
 
   const saved = await repo.save(conta);
+  await AuditoriaService.registrar(req, "contas", "UPDATE", saved.id_conta, valoresAntigos, {
+    apelido: saved.apelido, tipo: saved.tipo, saldo_inicial: saved.saldo_inicial, data_saldo_inicial: saved.data_saldo_inicial, ativo: saved.ativo,
+  }, `Conta financeira editada — ${saved.apelido}`);
 
   return res.json(saved);
 });
@@ -451,9 +425,11 @@ contasRouter.patch("/:id/ativo", requireAuth, async (req: AuthRequest, res: Resp
   if (!conta) {
     return res.status(404).json({ error: "Conta não encontrada" });
   }
+  const ativoAnterior = conta.ativo;
 
   conta.ativo = ativo;
   const saved = await repo.save(conta);
+  await AuditoriaService.registrar(req, "contas", "UPDATE", saved.id_conta, { ativo: ativoAnterior }, { ativo: saved.ativo }, `${saved.ativo ? "Conta ativada" : "Conta desativada"} — ${saved.apelido}`);
 
   return res.json(saved);
 });
@@ -476,6 +452,9 @@ contasRouter.delete("/:id", requireAuth, async (req: AuthRequest, res: Response)
   }
 
   await repo.remove(conta);
+  await AuditoriaService.registrar(req, "contas", "DELETE", Number(id), {
+    apelido: conta.apelido, tipo: conta.tipo, saldo_inicial: conta.saldo_inicial, data_saldo_inicial: conta.data_saldo_inicial, ativo: conta.ativo,
+  }, undefined, `Conta financeira excluída — ${conta.apelido}`);
 
   return res.status(204).send();
 });

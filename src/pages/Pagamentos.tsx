@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -54,9 +55,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { gerarReciboParcela } from "@/utils/reciboParcela";
 import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
-import { formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
+import { compareDateOnly, formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AReceberPorLoteTab } from "@/components/pagamentos/AReceberPorLoteTab";
+import { contaRecebimentoValida } from "@/lib/financeiro";
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -335,11 +337,8 @@ const Pagamentos = () => {
       return json
         .filter((p) => p.situacao !== "pago")
         .map<Pagamento>((p) => {
-          const venc = new Date(p.vencimento);
-          venc.setHours(0, 0, 0, 0);
-          const hojeCopy = new Date(hoje);
-          hojeCopy.setHours(0, 0, 0, 0);
-          const situacao: PagamentoSituacao = venc < hojeCopy ? "atrasado" : "aberto";
+          const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+          const situacao: PagamentoSituacao = compareDateOnly(p.vencimento, hojeIso) < 0 ? "atrasado" : "aberto";
 
           return {
             id: p.id_pagamento,
@@ -410,7 +409,7 @@ const Pagamentos = () => {
   // ─── Mutação de baixa ────────────────────────────────────────────────────
 
   const baixaMutation = useMutation({
-    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number | null; multa_override?: number; juros_override?: number; desconto?: number }) => {
+    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number; multa_override?: number; juros_override?: number; desconto?: number }) => {
       const res = await fetch(`/api/pagamentos/${payload.id_pagamento}/baixa`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -439,7 +438,7 @@ const Pagamentos = () => {
   // ─── Handlers ────────────────────────────────────────────────────────────
 
   // Aba principal da tela; não confundir com `aba` (sub-abas Abertas/Pagas).
-  const [abaPrincipal, setAbaPrincipal] = useState("cliente");
+  const [abaPrincipal, setAbaPrincipal] = useState(() => searchParams.get("view") === "cliente" ? "cliente" : "lote");
 
   function selecionarCliente(c: ClienteApi) {
     setClienteSelecionado(c);
@@ -521,6 +520,10 @@ const Pagamentos = () => {
     }
 
     const contaSelecionada = contasBancarias.find((c) => String(c.id_conta) === baixaContaId) ?? null;
+    if (!contaRecebimentoValida(baixaContaId) || !contaSelecionada) {
+      toast({ title: "Selecione a conta bancária", description: "A conta é obrigatória para registrar o recebimento no extrato.", variant: "destructive" });
+      return;
+    }
     const parcSelecionadas = pagamentosAbertosFiltered.filter((p) => selecionados.has(p.id));
     const descontoRaw = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
     const totalBaixaConf = parcSelecionadas.reduce((acc, p) => {
@@ -543,7 +546,7 @@ const Pagamentos = () => {
           id_pagamento: parc.id,
           pago_data: pagoIso,
           valor_pago: totalFinal,
-          id_conta: contaSelecionada ? contaSelecionada.id_conta : null,
+          id_conta: contaSelecionada.id_conta,
           multa_override: multaFinal,
           juros_override: jurosFinal,
           desconto: descontoVal,
@@ -875,10 +878,17 @@ const Pagamentos = () => {
           </p>
         </div>
 
-        <Tabs value={abaPrincipal} onValueChange={setAbaPrincipal}>
+        <Tabs value={abaPrincipal} onValueChange={(value) => {
+          setAbaPrincipal(value);
+          setSearchParams((current) => {
+            const next = new URLSearchParams(current);
+            next.set("view", value);
+            return next;
+          }, { replace: true });
+        }}>
           <TabsList className="grid grid-cols-2 w-full max-w-lg">
-            <TabsTrigger value="cliente">Por cliente</TabsTrigger>
-            <TabsTrigger value="lote">Por loteamento / lote</TabsTrigger>
+            <TabsTrigger value="lote">Visão geral</TabsTrigger>
+            <TabsTrigger value="cliente">Buscar cliente</TabsTrigger>
           </TabsList>
 
           <TabsContent value="lote" className="pt-4">
@@ -982,7 +992,7 @@ const Pagamentos = () => {
                 <Button
                   variant="outline"
                   size="sm"
-                  className="gap-2 text-destructive border-destructive/40 hover:bg-destructive/10"
+                  className="gap-2 ml-4 text-destructive border-destructive/40 hover:bg-destructive/10"
                   onClick={() => setConfirmarExcluirTodos(true)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
@@ -1317,8 +1327,8 @@ const Pagamentos = () => {
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Pago em</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Valor</th>
                         <th className="text-left px-5 py-3 font-medium text-muted-foreground">Valor Pago</th>
-                        <th className="text-left px-5 py-3 font-medium text-muted-foreground">Situação</th>
-                        <th className="text-right px-5 py-3 font-medium text-muted-foreground">Ações</th>
+                        <th className="text-left px-5 py-3 font-medium text-muted-foreground sticky right-[120px] bg-muted/95">Situação</th>
+                        <th className="text-right px-5 py-3 font-medium text-muted-foreground sticky right-0 bg-muted/95 shadow-[-4px_0_8px_rgba(0,0,0,0.04)]">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
@@ -1353,13 +1363,13 @@ const Pagamentos = () => {
                             <td className="px-5 py-3 font-medium text-success">
                               {pag.valor_pago != null ? formatCurrency(pag.valor_pago) : "—"}
                             </td>
-                            <td className="px-5 py-3">
+                            <td className="px-5 py-3 sticky right-[120px] bg-background">
                               <Badge variant="secondary" className="text-xs gap-1 text-success border-success/30">
                                 <CheckCircle2 className="h-3 w-3" />
                                 Pago
                               </Badge>
                             </td>
-                            <td className="px-3 py-3 text-right">
+                            <td className="px-3 py-3 text-right sticky right-0 bg-background shadow-[-4px_0_8px_rgba(0,0,0,0.04)]">
                               <div className="flex items-center justify-end gap-1.5">
                                 <Button
                                   variant="outline"
@@ -2036,16 +2046,20 @@ const Pagamentos = () => {
                       className="h-8 px-2 text-xs"
                       onClick={() => { setBaixaDescontoTipo("percentual"); setBaixaDesconto(""); }}
                     >%</Button>
-                    <Input
-                      type="number"
-                      min="0"
-                      step={baixaDescontoTipo === "percentual" ? "0.1" : "0.01"}
-                      max={baixaDescontoTipo === "percentual" ? "100" : undefined}
-                      value={baixaDesconto}
-                      onChange={(e) => setBaixaDesconto(e.target.value)}
-                      placeholder={baixaDescontoTipo === "percentual" ? "0%" : "0,00"}
-                      className="h-8"
-                    />
+                    {baixaDescontoTipo === "valor" ? (
+                      <MoneyInput value={baixaDesconto} onValueChange={setBaixaDesconto} placeholder="R$ 0,00" className="h-8" />
+                    ) : (
+                      <Input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        max="100"
+                        value={baixaDesconto}
+                        onChange={(e) => setBaixaDesconto(e.target.value)}
+                        placeholder="0%"
+                        className="h-8"
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -2062,10 +2076,10 @@ const Pagamentos = () => {
                     <Input value={baixaData} onChange={(e) => setBaixaData(e.target.value)} placeholder="dd/mm/aaaa" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs">Conta Bancária</Label>
+                    <Label className="text-xs">Conta Bancária *</Label>
                     <Select value={baixaContaId} onValueChange={setBaixaContaId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Conta (opcional)" />
+                        <SelectValue placeholder="Selecione a conta" />
                       </SelectTrigger>
                       <SelectContent>
                         {contasBancarias.length === 0 ? (
@@ -2079,6 +2093,7 @@ const Pagamentos = () => {
                         )}
                       </SelectContent>
                     </Select>
+                    <p className="text-xs text-muted-foreground">Obrigatório — é o que faz esse recebimento aparecer no extrato da conta.</p>
                   </div>
                 </div>
               </div>

@@ -5,8 +5,9 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { MoneyInput } from "@/components/ui/money-input";
 import { Label } from "@/components/ui/label";
-import { formatDateBR } from "@/lib/date-br";
+import { compareDateOnly, formatDateBR } from "@/lib/date-br";
 import {
   Dialog,
   DialogContent,
@@ -104,6 +105,10 @@ interface VendaDetalhe {
   porcentagem: string;
   valor_parcela?: string | null;
   status: VendaStatus;
+  id_corretor?: number | null;
+  comissao_percentual?: string | null;
+  comissao_valor?: string | null;
+  comissao_vencimento?: string | null;
   pagamentos: Pagamento[];
   cliente?: { nome: string };
   lote?: { quadra: number; lote: number; area?: string; loteamento?: { nome: string; cidade?: string; estado?: string } };
@@ -139,6 +144,7 @@ interface Conta {
   id_conta: number;
   apelido: string;
 }
+interface Corretor { id_fornecedor: number; nome: string; documento?: string | null }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 function getAuthHeaders() {
@@ -197,6 +203,12 @@ const Vendas = () => {
   const [valorEntrada, setValorEntrada] = useState("0");
   const [numParcelas, setNumParcelas] = useState("12");
   const [valorParcelaVenda, setValorParcelaVenda] = useState("");
+  const [usarComissao, setUsarComissao] = useState(false);
+  const [corretorId, setCorretorId] = useState("");
+  const [comissaoTipo, setComissaoTipo] = useState<"percentual" | "valor">("percentual");
+  const [comissaoPercentual, setComissaoPercentual] = useState("");
+  const [comissaoValor, setComissaoValor] = useState("");
+  const [comissaoVencimento, setComissaoVencimento] = useState(new Date().toISOString().split("T")[0]);
 
   // ── success after create
   const [vendaCriada, setVendaCriada] = useState<VendaDetalhe | null>(null);
@@ -233,6 +245,11 @@ const Vendas = () => {
   const [baixaData, setBaixaData] = useState(new Date().toISOString().split("T")[0]);
   const [baixaValor, setBaixaValor] = useState("");
   const [baixaConta, setBaixaConta] = useState("");
+  const [acordoTipo, setAcordoTipo] = useState<"distrato" | "renegociacao" | null>(null);
+  const [acordoMotivo, setAcordoMotivo] = useState("");
+  const [renegociacaoParcelas, setRenegociacaoParcelas] = useState("1");
+  const [renegociacaoValor, setRenegociacaoValor] = useState("");
+  const [renegociacaoPrimeiroVencimento, setRenegociacaoPrimeiroVencimento] = useState(new Date().toISOString().split("T")[0]);
 
   // ── seleção de intervalo de parcelas para impressão do carnê
   const [carneRangeAberto, setCarneRangeAberto] = useState(false);
@@ -345,6 +362,17 @@ const Vendas = () => {
     enabled: dialogBaixaAberto,
   });
 
+  const { data: corretores = [] } = useQuery<Corretor[]>({
+    queryKey: ["corretores-venda"],
+    queryFn: async () => {
+      const r = await fetch("/api/vendas/opcoes/corretores", { headers: { ...getAuthHeaders() } });
+      if (!r.ok) throw new Error("Erro ao carregar corretores");
+      return r.json();
+    },
+    enabled: novaVendaAberto && usarComissao,
+    staleTime: 2 * 60 * 1000,
+  });
+
   const { data: empresaConfig } = useQuery<ReciboEmpresa | null>({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
@@ -407,6 +435,13 @@ const Vendas = () => {
         valor_entrada: Number(valorEntrada),
         parcelas: Number(numParcelas),
         valor_parcela: Number(valorParcelaVenda),
+        comissao: usarComissao ? {
+          id_corretor: Number(corretorId),
+          tipo: comissaoTipo,
+          percentual: comissaoTipo === "percentual" ? Number(comissaoPercentual) : undefined,
+          valor: comissaoTipo === "valor" ? Number(comissaoValor) : undefined,
+          vencimento: comissaoVencimento,
+        } : null,
       };
       const r = await fetch("/api/vendas", {
         method: "POST",
@@ -660,6 +695,33 @@ const Vendas = () => {
     },
   });
 
+  const acordoMutation = useMutation({
+    mutationFn: async () => {
+      if (!vendaDetalhe || !acordoTipo) throw new Error("Venda não selecionada");
+      const body: Record<string, unknown> = { motivo: acordoMotivo.trim() };
+      if (acordoTipo === "renegociacao") {
+        const quantidade = Number(renegociacaoParcelas), valor = Number(renegociacaoValor);
+        const base = new Date(`${renegociacaoPrimeiroVencimento}T12:00:00`);
+        body.parcelas = Array.from({ length: quantidade }, (_, indice) => {
+          const data = new Date(base); data.setMonth(data.getMonth() + indice);
+          return { vencimento: data.toISOString().slice(0, 10), valor };
+        });
+      }
+      const r = await fetch(`/api/vendas/${vendaDetalhe.id_venda}/${acordoTipo === "distrato" ? "distratar" : "renegociar"}`, { method: "POST", headers: { "Content-Type": "application/json", ...getAuthHeaders() }, body: JSON.stringify(body) });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(data.error || data.message || "Não foi possível concluir a operação");
+      return data;
+    },
+    onSuccess: async () => {
+      await Promise.all([queryClient.invalidateQueries({ queryKey: ["vendas"] }), queryClient.invalidateQueries({ queryKey: ["lotes"] }), queryClient.invalidateQueries({ queryKey: ["financeiro"] })]);
+      if (acordoTipo === "renegociacao" && vendaDetalhe) await fetchDetalhe(vendaDetalhe.id_venda);
+      else setDialogDetalheAberto(false);
+      toast({ title: acordoTipo === "distrato" ? "Distrato registrado" : "Renegociação aplicada" });
+      setAcordoTipo(null); setAcordoMotivo("");
+    },
+    onError: (error: Error) => toast({ title: error.message, variant: "destructive" }),
+  });
+
   const darBaixaMutation = useMutation({
     mutationFn: async () => {
       if (!parcelaParaBaixa) throw new Error();
@@ -772,6 +834,12 @@ const Vendas = () => {
     setValorEntrada("0");
     setNumParcelas("12");
     setValorParcelaVenda("");
+    setUsarComissao(false);
+    setCorretorId("");
+    setComissaoTipo("percentual");
+    setComissaoPercentual("");
+    setComissaoValor("");
+    setComissaoVencimento(new Date().toISOString().split("T")[0]);
   }
 
   function resetHistorico() {
@@ -1005,6 +1073,10 @@ const Vendas = () => {
   const valorParcela = Number(valorParcelaVenda) > 0 ? Number(valorParcelaVenda) : 0;
   const totalParcelado = Number(numParcelas) * valorParcela;
   const totalContrato = Number(valorEntrada) + totalParcelado;
+  const valorComissaoPreview = comissaoTipo === "percentual"
+    ? totalContrato * (Number(comissaoPercentual) || 0) / 100
+    : Number(comissaoValor) || 0;
+  const comissaoValida = !usarComissao || Boolean(corretorId && comissaoVencimento && valorComissaoPreview > 0);
 
   // Opções derivadas das vendas carregadas
   const loteamentosDisponiveis = useMemo(() =>
@@ -1490,11 +1562,11 @@ const Vendas = () => {
                   </div>
                   <div>
                     <Label htmlFor="valor_entrada">Entrada (R$)</Label>
-                    <Input
+                    <MoneyInput
                       id="valor_entrada"
-                      type="number" min="0" step="0.01" placeholder="0,00"
+                      placeholder="R$ 0,00"
                       value={valorEntrada}
-                      onChange={(e) => setValorEntrada(e.target.value)}
+                      onValueChange={setValorEntrada}
                       className="mt-1.5"
                     />
                   </div>
@@ -1510,14 +1582,49 @@ const Vendas = () => {
                   </div>
                   <div>
                     <Label htmlFor="valor_parcela">Valor de Cada Parcela (R$)</Label>
-                    <Input
+                    <MoneyInput
                       id="valor_parcela"
-                      type="number" min="0" step="0.01" placeholder="0,00"
+                      placeholder="R$ 0,00"
                       value={valorParcelaVenda}
-                      onChange={(e) => setValorParcelaVenda(e.target.value)}
+                      onValueChange={setValorParcelaVenda}
                       className="mt-1.5"
                     />
                   </div>
+                </div>
+
+                <div className="rounded-lg border p-3 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <Switch id="gerar-comissao" checked={usarComissao} onCheckedChange={setUsarComissao} />
+                    <div>
+                      <Label htmlFor="gerar-comissao" className="cursor-pointer">Gerar comissão de corretor</Label>
+                      <p className="text-xs text-muted-foreground">Cria automaticamente uma conta a pagar vinculada à venda.</p>
+                    </div>
+                  </div>
+                  {usarComissao ? (
+                    <div className="grid grid-cols-2 gap-3 border-t pt-3">
+                      <div className="col-span-2">
+                        <Label>Corretor *</Label>
+                        <Select value={corretorId} onValueChange={setCorretorId}>
+                          <SelectTrigger className="mt-1"><SelectValue placeholder="Selecione um fornecedor…" /></SelectTrigger>
+                          <SelectContent>{corretores.map((corretor) => <SelectItem key={corretor.id_fornecedor} value={String(corretor.id_fornecedor)}>{corretor.nome}</SelectItem>)}</SelectContent>
+                        </Select>
+                        <p className="mt-1 text-xs text-muted-foreground">Corretores são cadastrados em Financeiro → Fornecedores.</p>
+                      </div>
+                      <div>
+                        <Label>Forma de cálculo</Label>
+                        <Select value={comissaoTipo} onValueChange={(valor: "percentual" | "valor") => setComissaoTipo(valor)}><SelectTrigger className="mt-1"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="percentual">Percentual do contrato</SelectItem><SelectItem value="valor">Valor fixo</SelectItem></SelectContent></Select>
+                      </div>
+                      <div>
+                        <Label>{comissaoTipo === "percentual" ? "Percentual (%)" : "Valor da comissão"}</Label>
+                        {comissaoTipo === "percentual" ? <Input className="mt-1" type="number" min="0.0001" max="100" step="0.01" value={comissaoPercentual} onChange={(e) => setComissaoPercentual(e.target.value)} /> : <MoneyInput className="mt-1" value={comissaoValor} onValueChange={setComissaoValor} placeholder="R$ 0,00" />}
+                      </div>
+                      <div>
+                        <Label>Vencimento</Label>
+                        <Input className="mt-1" type="date" value={comissaoVencimento} onChange={(e) => setComissaoVencimento(e.target.value)} />
+                      </div>
+                      <div className="flex items-end justify-end pb-2 text-sm"><span className="text-muted-foreground">Comissão: </span><strong className="ml-1">{fmtCurrency(valorComissaoPreview)}</strong></div>
+                    </div>
+                  ) : null}
                 </div>
 
                 {/* Cálculo preview */}
@@ -1569,6 +1676,8 @@ const Vendas = () => {
                   </div>
                 </div>
 
+                {usarComissao ? <div className="rounded-lg border p-3 text-sm"><span className="text-muted-foreground">Comissão de corretor:</span> <strong>{fmtCurrency(valorComissaoPreview)}</strong> · vencimento {fmtDate(comissaoVencimento)}</div> : null}
+
                 {/* Toggle timbrado */}
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
                   <Switch checked={usarTimbradoVenda} onCheckedChange={setUsarTimbradoVenda} id="timbrado-venda" />
@@ -1603,7 +1712,7 @@ const Vendas = () => {
                 disabled={
                   (step === 1 && !selectedLote) ||
                   (step === 2 && !selectedCliente) ||
-                  (step === 3 && (Number(valorParcelaVenda) <= 0 || !dataVenda || Number(numParcelas) < 1))
+                  (step === 3 && (Number(valorParcelaVenda) <= 0 || !dataVenda || Number(numParcelas) < 1 || !comissaoValida))
                 }
                 className="gap-1"
               >
@@ -1617,7 +1726,7 @@ const Vendas = () => {
                   disabled={
                     criarVendaMutation.isPending ||
                     Number(valorParcelaVenda) <= 0 ||
-                    !dataVenda || Number(numParcelas) < 1
+                    !dataVenda || Number(numParcelas) < 1 || !comissaoValida
                   }
                   className="gap-2"
                 >
@@ -1796,6 +1905,14 @@ const Vendas = () => {
             )}
           </DialogHeader>
 
+          {vendaDetalhe?.comissao_valor ? (
+            <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+              <span className="text-muted-foreground">Comissão vinculada:</span> <strong>{fmtCurrency(vendaDetalhe.comissao_valor)}</strong>
+              {vendaDetalhe.comissao_percentual ? ` (${Number(vendaDetalhe.comissao_percentual).toLocaleString("pt-BR")}% do contrato)` : ""}
+              {vendaDetalhe.comissao_vencimento ? ` · vencimento ${fmtDate(vendaDetalhe.comissao_vencimento)}` : ""}
+            </div>
+          ) : null}
+
           {/* KPIs */}
           {vendaDetalheInfo && vendaDetalhe && (
             <div className="grid grid-cols-3 gap-3 py-1">
@@ -1835,7 +1952,9 @@ const Vendas = () => {
                   {[...vendaDetalhe.pagamentos]
                     .sort((a, b) => a.numero_parcela - b.numero_parcela)
                     .map((p) => {
-                      const atrasado = p.situacao === "aberto" && new Date(p.vencimento) < new Date(new Date().toDateString());
+                      const agora = new Date();
+                      const hojeIso = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
+                      const atrasado = p.situacao === "aberto" && compareDateOnly(p.vencimento, hojeIso) < 0;
                       return (
                         <tr key={p.id_pagamento} className={`hover:bg-muted/30 transition-colors ${atrasado ? "bg-destructive/5" : ""}`}>
                           <td className="px-4 py-2.5 font-medium">{String(p.numero_parcela).padStart(2, "0")}</td>
@@ -1919,6 +2038,10 @@ const Vendas = () => {
             </div>
             {/* Ações */}
             <div className="flex w-full gap-2 justify-end">
+              {vendaDetalheInfo?.status === "aberta" ? <>
+                <Button variant="outline" onClick={() => { setAcordoTipo("renegociacao"); setAcordoMotivo(""); }}>Renegociar</Button>
+                <Button variant="destructive" onClick={() => { setAcordoTipo("distrato"); setAcordoMotivo(""); }}>Distratar</Button>
+              </> : null}
               <Button
                 variant="outline"
                 className="gap-2"
@@ -1931,6 +2054,25 @@ const Vendas = () => {
               <Button variant="outline" onClick={() => setDialogDetalheAberto(false)}>Fechar</Button>
             </div>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={acordoTipo !== null} onOpenChange={(open) => { if (!open && !acordoMutation.isPending) setAcordoTipo(null); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{acordoTipo === "distrato" ? "Distratar venda" : "Renegociar parcelas"}</DialogTitle>
+            <DialogDescription>{acordoTipo === "distrato" ? "Parcelas pagas serão preservadas; somente parcelas futuras serão canceladas. Nenhuma devolução será gerada automaticamente." : "Somente as parcelas em aberto serão substituídas. Recebimentos anteriores não serão alterados."}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div><Label>Motivo *</Label><Input value={acordoMotivo} onChange={(e) => setAcordoMotivo(e.target.value)} placeholder="Descreva o acordo realizado" /></div>
+            {acordoTipo === "renegociacao" ? <div className="grid grid-cols-2 gap-3">
+              <div><Label>Novas parcelas</Label><Input type="number" min="1" max="120" value={renegociacaoParcelas} onChange={(e) => setRenegociacaoParcelas(e.target.value)} /></div>
+              <div><Label>Valor por parcela</Label><MoneyInput value={renegociacaoValor} onValueChange={setRenegociacaoValor} /></div>
+              <div className="col-span-2"><Label>Primeiro vencimento</Label><Input type="date" value={renegociacaoPrimeiroVencimento} onChange={(e) => setRenegociacaoPrimeiroVencimento(e.target.value)} /></div>
+              <div className="col-span-2 rounded-md bg-muted p-2 text-sm">Novo total: <strong>{fmtCurrency(Number(renegociacaoParcelas || 0) * Number(renegociacaoValor || 0))}</strong></div>
+            </div> : null}
+          </div>
+          <DialogFooter><Button variant="outline" onClick={() => setAcordoTipo(null)}>Cancelar</Button><Button variant={acordoTipo === "distrato" ? "destructive" : "default"} disabled={acordoMutation.isPending || acordoMotivo.trim().length < 3 || (acordoTipo === "renegociacao" && (!renegociacaoPrimeiroVencimento || Number(renegociacaoParcelas) < 1 || Number(renegociacaoValor) <= 0))} onClick={() => acordoMutation.mutate()}>{acordoMutation.isPending ? "Processando..." : acordoTipo === "distrato" ? "Confirmar distrato" : "Aplicar renegociação"}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1958,11 +2100,10 @@ const Vendas = () => {
             </div>
             <div>
               <Label htmlFor="baixa_valor">Valor Recebido (R$)</Label>
-              <Input
+              <MoneyInput
                 id="baixa_valor"
-                type="number" min="0.01" step="0.01"
                 value={baixaValor}
-                onChange={(e) => setBaixaValor(e.target.value)}
+                onValueChange={setBaixaValor}
                 className="mt-1.5"
               />
             </div>
@@ -2341,7 +2482,7 @@ const Vendas = () => {
                   </div>
                   <div>
                     <Label>Entrada Paga (R$)</Label>
-                    <Input type="number" min="0" step="0.01" placeholder="0,00" value={histEntrada} onChange={(e) => setHistEntrada(e.target.value)} className="mt-1.5" />
+                    <MoneyInput value={histEntrada} onValueChange={setHistEntrada} placeholder="R$ 0,00" className="mt-1.5" />
                   </div>
                   <div>
                     <Label>Número de Parcelas</Label>
@@ -2349,7 +2490,7 @@ const Vendas = () => {
                   </div>
                   <div>
                     <Label>Valor de Cada Parcela (R$)</Label>
-                    <Input type="number" min="0" step="0.01" placeholder="0,00" value={histValorParcela} onChange={(e) => setHistValorParcela(e.target.value)} className="mt-1.5" />
+                    <MoneyInput value={histValorParcela} onValueChange={setHistValorParcela} placeholder="R$ 0,00" className="mt-1.5" />
                   </div>
                 </div>
                 {histValorParcela && Number(histValorParcela) > 0 && (
@@ -2416,10 +2557,9 @@ const Vendas = () => {
                               />
                             </td>
                             <td className="px-2 py-1">
-                              <Input
-                                type="number" min="0" step="0.01"
+                              <MoneyInput
                                 value={row.valor}
-                                onChange={(e) => updateHistRow(idx, "valor", e.target.value)}
+                                onValueChange={(value) => updateHistRow(idx, "valor", value)}
                                 className="h-7 text-xs px-2 w-24"
                               />
                             </td>
@@ -2449,10 +2589,9 @@ const Vendas = () => {
                             </td>
                             <td className="px-2 py-1">
                               {row.situacao === "pago" ? (
-                                <Input
-                                  type="number" min="0" step="0.01"
+                                <MoneyInput
                                   value={row.valor_pago}
-                                  onChange={(e) => updateHistRow(idx, "valor_pago", e.target.value)}
+                                  onValueChange={(value) => updateHistRow(idx, "valor_pago", value)}
                                   className="h-7 text-xs px-2 w-24"
                                 />
                               ) : <span className="text-muted-foreground px-2">—</span>}
@@ -2599,7 +2738,7 @@ const Vendas = () => {
             </div>
             <div className="space-y-1.5">
               <Label>Entrada (R$)</Label>
-              <Input type="number" min="0" step="0.01" value={editEntrada} onChange={(e) => setEditEntrada(e.target.value)} />
+              <MoneyInput value={editEntrada} onValueChange={setEditEntrada} />
             </div>
             <div className="space-y-1.5">
               <Label>Nº de Parcelas</Label>
@@ -2607,7 +2746,7 @@ const Vendas = () => {
             </div>
             <div className="col-span-2 space-y-1.5">
               <Label>Valor da Parcela (R$)</Label>
-              <Input type="number" min="0.01" step="0.01" value={editValorParcela} onChange={(e) => setEditValorParcela(e.target.value)} />
+              <MoneyInput value={editValorParcela} onValueChange={setEditValorParcela} />
             </div>
           </div>
           <DialogFooter className="gap-2">

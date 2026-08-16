@@ -5,7 +5,11 @@ import { AppDataSource } from "../../db/data-source";
 import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
 import { Empresa } from "../../entities/Empresa";
-import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { Conta } from "../../entities/Conta";
+import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
+import { diferencaDiasCivis } from "../../utils/date-only";
+import { AuditoriaService } from "../../services/AuditoriaService";
+import { verificarPeriodoFinanceiro, verificarPermissaoRetroativa } from "../../services/PeriodoFinanceiroService";
 
 export const pagamentosRouter = Router();
 pagamentosRouter.use(requireAuth, requireFeature("module_pagamentos"));
@@ -13,7 +17,7 @@ pagamentosRouter.use(requireAuth, requireFeature("module_pagamentos"));
 const baixaSchema = z.object({
   pago_data: z.string(),
   valor_pago: z.number().positive(),
-  id_conta: z.number().int().positive().optional().nullable(),
+  id_conta: z.number().int().positive({ message: "Informe a conta que receberá o pagamento." }),
   // Encargos calculados/ajustados pelo frontend (dispensar = 0)
   multa_override: z.number().min(0).optional().nullable(),
   juros_override: z.number().min(0).optional().nullable(),
@@ -74,12 +78,10 @@ pagamentosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
 
 pagamentosRouter.get("/atrasados", requireAuth, async (req: AuthRequest, res) => {
   const repo = AppDataSource.getRepository(Pagamento);
-  const hoje = new Date().toISOString().slice(0, 10);
-
   const qb = repo
     .createQueryBuilder("pagamento")
     .leftJoin("pagamento.venda", "venda")
-    .where("pagamento.vencimento < :hoje", { hoje })
+    .where("pagamento.vencimento < CURRENT_DATE")
     .andWhere("pagamento.situacao = :situacao", { situacao: "aberto" })
     .andWhere("(venda.status IS NULL OR venda.status <> :cancelada)", { cancelada: "cancelada" });
 
@@ -243,10 +245,13 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   }
 
   const { pago_data, valor_pago, id_conta, multa_override, juros_override, desconto } = parseResult.data;
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,pago_data);if(retroativo)return res.status(403).json({error:retroativo});
 
   const pagamentoRepo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);
   const empresaRepo = AppDataSource.getRepository(Empresa);
+  const contaRepo = AppDataSource.getRepository(Conta);
 
   const where: Record<string, unknown> = { id_pagamento: Number(id) };
 
@@ -263,6 +268,14 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   if (pagamento.situacao === "pago") {
     return res.status(409).json({ error: "Este pagamento já foi baixado.", situacao: "pago", pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago });
   }
+  const valoresAntigos = { situacao: pagamento.situacao, pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago, id_conta: pagamento.id_conta };
+
+  const conta = await contaRepo.findOne({
+    where: { id_conta, id_empresa: pagamento.id_empresa, ativo: true },
+  });
+  if (!conta) {
+    return res.status(400).json({ error: "Conta bancária inválida ou inativa." });
+  }
 
   // Busca configurações de encargos da empresa
   const empresa = req.user?.id_empresa
@@ -272,10 +285,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   const jurosPercDia = empresa ? Number(empresa.juros_percentual_dia) / 100 : 0.002;
   const carenciaDias = empresa ? empresa.carencia_dias : 0;
 
-  const vencimentoDate = new Date(pagamento.vencimento);
-  const pagoDate = new Date(pago_data);
-  const diffMs = pagoDate.getTime() - vencimentoDate.getTime();
-  const dias_atraso = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  const dias_atraso = Math.max(0, diferencaDiasCivis(pagamento.vencimento, pago_data));
   const dias_efetivos = Math.max(0, dias_atraso - carenciaDias);
 
   const valor = Number(pagamento.valor);
@@ -292,7 +302,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   pagamento.valor_pago = valor_pago.toFixed(2);
   pagamento.multa = multa.toFixed(2);
   pagamento.juros = juros.toFixed(2);
-  pagamento.id_conta = id_conta ?? null;
+  pagamento.id_conta = id_conta;
   pagamento.id_usuario = req.user?.id_usuario ?? 1;
 
   const saved = await pagamentoRepo.save(pagamento);
@@ -308,6 +318,9 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   });
 
   await logRepo.save(log);
+  await AuditoriaService.registrar(req, "pagamentos", "UPDATE", saved.id_pagamento, valoresAntigos, {
+    situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, id_conta: saved.id_conta,
+  }, `Recebimento confirmado — parcela ${saved.numero_parcela}, valor ${saved.valor_pago}`);
 
   return res.json(saved);
 });
@@ -317,7 +330,7 @@ pagamentosRouter.post("/retorno", (_req, res) => {
 });
 
 // ─── POST /bulk-delete — Excluir múltiplos pagamentos ────────────────────────
-pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res) => {
+pagamentosRouter.post("/bulk-delete", requireAuth, requirePermission("financeiro_excluir"), async (req: AuthRequest, res) => {
   const schema = z.object({ ids: z.array(z.number().int().positive()).min(1) });
   const parse = schema.safeParse(req.body);
   if (!parse.success) {
@@ -328,6 +341,10 @@ pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res)
   const idEmpresa = Number(req.user?.id_empresa ?? 0);
 
   try {
+    const registros = await AppDataSource.getRepository(Pagamento).find({ where: { id_empresa: idEmpresa } });
+    const excluidos = registros.filter((p) => ids.includes(p.id_pagamento)).map((p) => ({
+      id_pagamento: p.id_pagamento, id_venda: p.id_venda, numero_parcela: p.numero_parcela, situacao: p.situacao, valor: p.valor,
+    }));
     const result = await AppDataSource.query(
       `DELETE FROM pagamentos WHERE id_pagamento = ANY($1::int[]) AND id_empresa = $2`,
       [ids, idEmpresa]
@@ -341,6 +358,9 @@ pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res)
       url: "/api/pagamentos/bulk-delete",
       log: `${deletados} pagamento(s) excluído(s): [${ids.join(",")}]`,
     }));
+    for (const registro of excluidos) {
+      await AuditoriaService.registrar(req, "pagamentos", "DELETE", registro.id_pagamento, registro, undefined, `Parcela excluída em lote — venda ${registro.id_venda}, parcela ${registro.numero_parcela}`);
+    }
 
     return res.json({ deletados });
   } catch (err) {
@@ -350,7 +370,7 @@ pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res)
 });
 
 // ─── POST /:id/estornar — Cancelar pagamento e voltar para aberto ─────────────
-pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res) => {
+pagamentosRouter.post("/:id/estornar", requireAuth, requirePermission("financeiro_estornar"), async (req: AuthRequest, res) => {
   const { id } = req.params;
   const repo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);
@@ -361,7 +381,9 @@ pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res
   const pagamento = await repo.findOne({ where });
 
   if (!pagamento) return res.status(404).json({ error: "Pagamento não encontrado" });
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pagamento.pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
   if (pagamento.situacao !== "pago") return res.status(400).json({ error: "Este pagamento não está pago e não pode ser estornado." });
+  const valoresAntigos = { situacao: pagamento.situacao, pago_data: pagamento.pago_data, valor_pago: pagamento.valor_pago, id_conta: pagamento.id_conta };
 
   pagamento.situacao = "aberto";
   pagamento.pago_data = null as unknown as string;
@@ -377,6 +399,9 @@ pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res
     log: `Pagamento ${saved.id_pagamento} estornado — voltou para aberto`,
   });
   await logRepo.save(log);
+  await AuditoriaService.registrar(req, "pagamentos", "UPDATE", saved.id_pagamento, valoresAntigos, {
+    situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, id_conta: saved.id_conta,
+  }, `Recebimento cancelado — parcela ${saved.numero_parcela}`);
 
   return res.json(saved);
 });

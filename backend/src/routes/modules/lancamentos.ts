@@ -3,8 +3,14 @@ import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
 import { LancamentoManual } from "../../entities/LancamentoManual";
 import { LancamentoRateio } from "../../entities/LancamentoRateio";
+import { Conta } from "../../entities/Conta";
+import { TransferenciaConta } from "../../entities/TransferenciaConta";
 import { Log } from "../../entities/Log";
-import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
+import { AuditoriaService } from "../../services/AuditoriaService";
+import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
+import { verificarPeriodoFinanceiro, verificarPermissaoRetroativa } from "../../services/PeriodoFinanceiroService";
+import { anexoFinanceiroCampos, refinarAnexoFinanceiro } from "../../utils/anexo-financeiro";
 
 export const lancamentosRouter = Router();
 lancamentosRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -26,9 +32,11 @@ const lancamentoBodyObjectSchema = z.object({
   // Rateio entre loteamentos (ex: despesa que atende mais de um empreendimento).
   // Quando informado, "id_loteamento" deve ficar vazio e a soma dos percentuais = 100.
   rateio: z.array(lancamentoRateioItemSchema).optional(),
+  ...anexoFinanceiroCampos,
 });
 
 const lancamentoBodySchema = lancamentoBodyObjectSchema
+  .superRefine(refinarAnexoFinanceiro)
   .refine((d) => !d.rateio || d.rateio.length === 0 || d.id_loteamento == null, {
     message: 'Ao ratear entre loteamentos, deixe o campo "Loteamento" em branco.',
     path: ["id_loteamento"],
@@ -48,6 +56,103 @@ const listQuerySchema = z.object({
   id_loteamento: z.string().regex(/^\d+$/).transform((v) => parseInt(v, 10)).optional(),
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+const transferenciaBodySchema = z.object({
+  id_conta_origem: z.number().int().positive(),
+  id_conta_destino: z.number().int().positive(),
+  descricao: z.string().trim().min(1).max(300),
+  valor: z.number().positive(),
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+}).refine((data) => data.id_conta_origem !== data.id_conta_destino, {
+  message: "As contas de origem e destino devem ser diferentes.",
+  path: ["id_conta_destino"],
+});
+
+async function validarContasTransferencia(idEmpresa: number, ids: number[]): Promise<boolean> {
+  const contas = await AppDataSource.getRepository(Conta)
+    .createQueryBuilder("conta")
+    .where("conta.id_empresa = :idEmpresa", { idEmpresa })
+    .andWhere("conta.id_conta IN (:...ids)", { ids })
+    .andWhere("conta.ativo = true")
+    .getMany();
+  return contas.length === new Set(ids).size;
+}
+
+// ─── GET /transferencias ─────────────────────────────────────────────────────
+lancamentosRouter.get("/transferencias", async (req: AuthRequest, res: Response) => {
+  const rows = await AppDataSource.query(
+    `SELECT t.*, origem.apelido AS conta_origem_apelido, destino.apelido AS conta_destino_apelido
+     FROM transferencias_contas t
+     JOIN contas origem ON origem.id_conta = t.id_conta_origem
+     JOIN contas destino ON destino.id_conta = t.id_conta_destino
+     WHERE t.id_empresa = $1
+     ORDER BY t.data DESC, t.id_transferencia DESC`,
+    [req.user!.id_empresa]
+  );
+  return res.json(rows);
+});
+
+// ─── POST /transferencias ────────────────────────────────────────────────────
+lancamentosRouter.post("/transferencias", async (req: AuthRequest, res: Response) => {
+  const parse = transferenciaBodySchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+  const idEmpresa = req.user!.id_empresa;
+  const bloqueioNovo=await verificarPeriodoFinanceiro(idEmpresa,parse.data.data);if(bloqueioNovo)return res.status(409).json({error:bloqueioNovo});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,parse.data.data);if(retroativo)return res.status(403).json({error:retroativo});
+  if (!(await validarContasTransferencia(idEmpresa, [parse.data.id_conta_origem, parse.data.id_conta_destino]))) {
+    return res.status(400).json({ error: "As contas de origem e destino devem pertencer à empresa." });
+  }
+
+  const repo = AppDataSource.getRepository(TransferenciaConta);
+  const saved = await repo.save(repo.create({
+    ...parse.data,
+    valor: parse.data.valor.toFixed(2),
+    id_empresa: idEmpresa,
+    id_usuario: req.user!.id_usuario,
+  }));
+  await AuditoriaService.registrar(req, "transferencias_contas", "CREATE", saved.id_transferencia, undefined, {
+    id_conta_origem: saved.id_conta_origem, id_conta_destino: saved.id_conta_destino,
+    descricao: saved.descricao, valor: saved.valor, data: saved.data,
+  }, `Transferência criada — ${saved.descricao}, valor ${saved.valor}`);
+  return res.status(201).json(saved);
+});
+
+// ─── PUT /transferencias/:id ─────────────────────────────────────────────────
+lancamentosRouter.put("/transferencias/:id", async (req: AuthRequest, res: Response) => {
+  const parse = transferenciaBodySchema.safeParse(req.body);
+  if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
+  const idEmpresa = req.user!.id_empresa;
+  const bloqueio=await verificarPeriodoFinanceiro(idEmpresa,parse.data.data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,parse.data.data);if(retroativo)return res.status(403).json({error:retroativo});
+  if (!(await validarContasTransferencia(idEmpresa, [parse.data.id_conta_origem, parse.data.id_conta_destino]))) {
+    return res.status(400).json({ error: "As contas de origem e destino devem pertencer à empresa." });
+  }
+
+  const repo = AppDataSource.getRepository(TransferenciaConta);
+  const transferencia = await repo.findOne({ where: { id_transferencia: Number(req.params.id), id_empresa: idEmpresa } });
+  if (!transferencia) return res.status(404).json({ error: "Transferência não encontrada" });
+  const bloqueioAntigo=await verificarPeriodoFinanceiro(req.user!.id_empresa,transferencia.data);if(bloqueioAntigo)return res.status(409).json({error:bloqueioAntigo});
+  const valoresAntigos = { id_conta_origem: transferencia.id_conta_origem, id_conta_destino: transferencia.id_conta_destino, descricao: transferencia.descricao, valor: transferencia.valor, data: transferencia.data };
+  Object.assign(transferencia, parse.data, { valor: parse.data.valor.toFixed(2) });
+  const saved = await repo.save(transferencia);
+  await AuditoriaService.registrar(req, "transferencias_contas", "UPDATE", saved.id_transferencia, valoresAntigos, {
+    id_conta_origem: saved.id_conta_origem, id_conta_destino: saved.id_conta_destino,
+    descricao: saved.descricao, valor: saved.valor, data: saved.data,
+  }, `Transferência editada — ${saved.descricao}`);
+  return res.json(saved);
+});
+
+// ─── DELETE /transferencias/:id ──────────────────────────────────────────────
+lancamentosRouter.delete("/transferencias/:id", requirePermission("financeiro_excluir"), async (req: AuthRequest, res: Response) => {
+  const repo = AppDataSource.getRepository(TransferenciaConta);
+  const transferencia = await repo.findOne({ where: { id_transferencia: Number(req.params.id), id_empresa: req.user!.id_empresa } });
+  if (!transferencia) return res.status(404).json({ error: "Transferência não encontrada" });
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,transferencia.data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const valoresAntigos = { id_conta_origem: transferencia.id_conta_origem, id_conta_destino: transferencia.id_conta_destino, descricao: transferencia.descricao, valor: transferencia.valor, data: transferencia.data };
+  await repo.remove(transferencia);
+  await AuditoriaService.registrar(req, "transferencias_contas", "DELETE", Number(req.params.id), valoresAntigos, undefined, `Transferência excluída — ${transferencia.descricao}, valor ${transferencia.valor}`);
+  return res.status(204).send();
 });
 
 // ─── GET / ────────────────────────────────────────────────────────────────────
@@ -96,6 +201,11 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
 
   const { rateio, ...data } = parse.data;
   const idEmpresa = req.user!.id_empresa;
+  const bloqueio=await verificarPeriodoFinanceiro(idEmpresa,data.data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,data.data);if(retroativo)return res.status(403).json({error:retroativo});
+  if (data.id_conta_contabil && !(await contaContabilAceitaLancamento(data.id_conta_contabil, idEmpresa, data.tipo))) {
+    return res.status(400).json({ error: "Selecione uma conta contábil analítica e compatível com o tipo do lançamento." });
+  }
 
   const repo = AppDataSource.getRepository(LancamentoManual);
   const lancamento = repo.create({
@@ -128,13 +238,16 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
     log: `Lançamento manual ${saved.id_lancamento} (${saved.tipo}) criado — ${saved.descricao} — valor=${saved.valor}`,
     query: JSON.stringify(parse.data),
   }));
+  await AuditoriaService.registrar(req, "lancamentos_manuais", "CREATE", saved.id_lancamento, undefined, {
+    tipo: saved.tipo, id_conta: saved.id_conta, id_loteamento: saved.id_loteamento, descricao: saved.descricao, valor: saved.valor, data: saved.data,
+  }, `Lançamento manual criado — ${saved.descricao}, valor ${saved.valor}`);
 
   return res.status(201).json(saved);
 });
 
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
-  const parse = lancamentoBodyObjectSchema.partial().safeParse(req.body);
+  const parse = lancamentoBodyObjectSchema.partial().superRefine(refinarAnexoFinanceiro).safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
 
   const repo = AppDataSource.getRepository(LancamentoManual);
@@ -142,8 +255,17 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
     where: { id_lancamento: Number(req.params.id), id_empresa: req.user!.id_empresa },
   });
   if (!lancamento) return res.status(404).json({ error: "Lançamento não encontrado" });
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,parse.data.data??lancamento.data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,parse.data.data??lancamento.data);if(retroativo)return res.status(403).json({error:retroativo});
+  const valoresAntigos = { tipo: lancamento.tipo, id_conta: lancamento.id_conta, id_loteamento: lancamento.id_loteamento, descricao: lancamento.descricao, valor: lancamento.valor, data: lancamento.data };
 
   const { valor, rateio, ...rest } = parse.data;
+
+  const contaContabil = rest.id_conta_contabil ?? lancamento.id_conta_contabil;
+  const tipoLancamento = rest.tipo ?? lancamento.tipo;
+  if (contaContabil && !(await contaContabilAceitaLancamento(contaContabil, req.user!.id_empresa, tipoLancamento))) {
+    return res.status(400).json({ error: "Selecione uma conta contábil analítica e compatível com o tipo do lançamento." });
+  }
 
   if (rateio && rateio.length > 0) {
     const soma = rateio.reduce((s, r) => s + r.percentual, 0);
@@ -177,17 +299,21 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
       );
     }
   }
+  await AuditoriaService.registrar(req, "lancamentos_manuais", "UPDATE", saved.id_lancamento, valoresAntigos, {
+    tipo: saved.tipo, id_conta: saved.id_conta, id_loteamento: saved.id_loteamento, descricao: saved.descricao, valor: saved.valor, data: saved.data,
+  }, `Lançamento manual editado — ${saved.descricao}`);
 
   return res.json(saved);
 });
 
 // ─── DELETE /:id ──────────────────────────────────────────────────────────────
-lancamentosRouter.delete("/:id", async (req: AuthRequest, res: Response) => {
+lancamentosRouter.delete("/:id", requirePermission("financeiro_excluir"), async (req: AuthRequest, res: Response) => {
   const repo = AppDataSource.getRepository(LancamentoManual);
   const lancamento = await repo.findOne({
     where: { id_lancamento: Number(req.params.id), id_empresa: req.user!.id_empresa },
   });
   if (!lancamento) return res.status(404).json({ error: "Lançamento não encontrado" });
+  const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,lancamento.data);if(bloqueio)return res.status(409).json({error:bloqueio});
 
   await repo.remove(lancamento);
 
@@ -198,6 +324,9 @@ lancamentosRouter.delete("/:id", async (req: AuthRequest, res: Response) => {
     url: `/api/lancamentos/${req.params.id}`,
     log: `Lançamento manual ${req.params.id} (${lancamento.tipo}) excluído — ${lancamento.descricao} — valor=${lancamento.valor}`,
   }));
+  await AuditoriaService.registrar(req, "lancamentos_manuais", "DELETE", Number(req.params.id), {
+    tipo: lancamento.tipo, id_conta: lancamento.id_conta, id_loteamento: lancamento.id_loteamento, descricao: lancamento.descricao, valor: lancamento.valor, data: lancamento.data,
+  }, undefined, `Lançamento manual excluído — ${lancamento.descricao}, valor ${lancamento.valor}`);
 
   return res.status(204).send();
 });

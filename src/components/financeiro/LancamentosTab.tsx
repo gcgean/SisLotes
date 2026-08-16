@@ -1,25 +1,17 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { DestructiveConfirmationDialog } from "@/components/ui/destructive-confirmation-dialog";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { Plus, Pencil, Trash2, Printer } from "lucide-react";
+import { Plus, Pencil, Trash2, Printer, Download, Search, ArrowRightLeft } from "lucide-react";
 import { formatDateBR } from "@/lib/date-br";
 import { LancamentoDialog, Lancamento } from "@/components/financeiro/LancamentoDialog";
+import { TransferenciaDialog, TransferenciaConta } from "@/components/financeiro/TransferenciaDialog";
 import { imprimirExtratoConta } from "@/utils/extratoConta";
 import type { ReciboEmpresa } from "@/utils/reciboParcela";
 
@@ -32,13 +24,14 @@ interface Conta {
 interface MovimentoGeral {
   data: string;
   movimento: "entrada" | "saida";
-  origem: "venda" | "despesa" | "lancamento";
+  origem: "recebimento" | "pagamento" | "manual" | "transferencia";
   descricao: string;
   valor: number;
   contaContabil: string | null;
   contaApelido: string;
   idConta: number;
   idLancamento: number | null;
+  idTransferencia: number | null;
   saldo: number;
 }
 
@@ -52,9 +45,10 @@ interface ExtratoGeral {
 }
 
 const ORIGEM_LABEL: Record<string, string> = {
-  venda: "Recebimento de venda",
-  despesa: "Pagamento de despesa",
-  lancamento: "Lançamento manual",
+  recebimento: "Recebimento de venda",
+  pagamento: "Pagamento de despesa",
+  manual: "Lançamento manual",
+  transferencia: "Transferência entre contas",
 };
 
 function fmt(v: number) {
@@ -78,10 +72,15 @@ export function LancamentosTab() {
   const [from, setFrom] = useState(primeiroDiaMes());
   const [to, setTo] = useState(hojeIso());
   const [contaFiltro, setContaFiltro] = useState<string>("todas");
+  const [tipoFiltro, setTipoFiltro] = useState("todos");
+  const [busca, setBusca] = useState("");
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
+  const [transferenciaOpen, setTransferenciaOpen] = useState(false);
+  const [editingTransferencia, setEditingTransferencia] = useState<TransferenciaConta | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [deletingTransferenciaId, setDeletingTransferenciaId] = useState<number | null>(null);
   const [usarTimbrado, setUsarTimbrado] = useState(true);
 
   const { data: empresaInfo } = useQuery<ReciboEmpresa>({
@@ -112,6 +111,15 @@ export function LancamentosTab() {
     },
   });
 
+  const { data: transferencias = [] } = useQuery<TransferenciaConta[]>({
+    queryKey: ["financeiro", "transferencias"],
+    queryFn: async () => {
+      const r = await fetch("/api/lancamentos/transferencias", { headers });
+      if (!r.ok) throw new Error("Erro ao carregar transferências");
+      return r.json();
+    },
+  });
+
   const { data: extrato, isLoading } = useQuery<ExtratoGeral>({
     queryKey: ["financeiro", "extrato-geral", from, to, contaFiltro],
     queryFn: async () => {
@@ -136,6 +144,19 @@ export function LancamentosTab() {
     onError: () => toast({ title: "Erro ao excluir lançamento", variant: "destructive" }),
   });
 
+  const deleteTransferenciaMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/lancamentos/transferencias/${id}`, { method: "DELETE", headers });
+      if (!r.ok) throw new Error("Erro ao excluir transferência");
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["financeiro"] });
+      setDeletingTransferenciaId(null);
+      toast({ title: "Transferência excluída" });
+    },
+    onError: () => toast({ title: "Erro ao excluir transferência", variant: "destructive" }),
+  });
+
   function openNew() {
     setEditing(null);
     setDialogOpen(true);
@@ -146,8 +167,23 @@ export function LancamentosTab() {
     setEditing(l);
     setDialogOpen(true);
   }
+  function openEditTransferencia(idTransferencia: number) {
+    const transferencia = transferencias.find((item) => item.id_transferencia === idTransferencia);
+    if (!transferencia) return;
+    setEditingTransferencia(transferencia);
+    setTransferenciaOpen(true);
+  }
 
-  const movimentos = extrato?.movimentos ?? [];
+  const movimentos = useMemo(() => {
+    const termo = busca.trim().toLocaleLowerCase("pt-BR");
+    return (extrato?.movimentos ?? []).filter((movimento) =>
+      (tipoFiltro === "todos" || movimento.movimento === tipoFiltro) &&
+      (!termo || movimento.descricao.toLocaleLowerCase("pt-BR").includes(termo) || movimento.contaApelido.toLocaleLowerCase("pt-BR").includes(termo) || (movimento.contaContabil ?? "").toLocaleLowerCase("pt-BR").includes(termo))
+    );
+  }, [extrato, busca, tipoFiltro]);
+  const lancamentoExcluido = deletingId ? lancamentos.find((item) => item.id_lancamento === deletingId) : null;
+  const transferenciaExcluida = deletingTransferenciaId ? transferencias.find((item) => item.id_transferencia === deletingTransferenciaId) : null;
+  const exibirSaldoCorrente = contaFiltro !== "todas";
 
   const contaLabel =
     contaFiltro === "todas"
@@ -179,6 +215,17 @@ export function LancamentosTab() {
     }
   }
 
+  function exportarCsv() {
+    const linhas = [["Data", "Descrição", "Conta", "Tipo", "Valor"], ...movimentos.map((m) => [m.data, m.descricao, m.contaApelido, m.movimento, m.valor.toFixed(2).replace(".", ",")])];
+    const csv = linhas.map((linha) => linha.map((valor) => `"${String(valor).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `extrato-${from}-${to}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -199,6 +246,18 @@ export function LancamentosTab() {
               ))}
             </SelectContent>
           </Select>
+          <Select value={tipoFiltro} onValueChange={setTipoFiltro}>
+            <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Créditos e débitos</SelectItem>
+              <SelectItem value="entrada">Somente créditos</SelectItem>
+              <SelectItem value="saida">Somente débitos</SelectItem>
+            </SelectContent>
+          </Select>
+          <div className="relative min-w-[200px] flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar descrição, conta ou categoria…" className="pl-9" />
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
@@ -215,8 +274,14 @@ export function LancamentosTab() {
           >
             <Printer className="h-4 w-4" /> Imprimir Extrato
           </Button>
+          <Button variant="outline" className="gap-2" onClick={exportarCsv} disabled={movimentos.length === 0}>
+            <Download className="h-4 w-4" /> Exportar CSV
+          </Button>
           <Button onClick={openNew} className="gap-2" disabled={contas.length === 0}>
             <Plus className="h-4 w-4" /> Novo Lançamento
+          </Button>
+          <Button variant="outline" onClick={() => { setEditingTransferencia(null); setTransferenciaOpen(true); }} className="gap-2" disabled={contas.length < 2}>
+            <ArrowRightLeft className="h-4 w-4" /> Transferir
           </Button>
         </div>
       </div>
@@ -263,18 +328,16 @@ export function LancamentosTab() {
               <th className="px-4 py-3 text-left font-semibold">Descrição</th>
               <th className="px-4 py-3 text-left font-semibold">Conta</th>
               <th className="px-4 py-3 text-right font-semibold">Valor</th>
-              <th className="px-4 py-3 text-right font-semibold">Saldo</th>
+              {exibirSaldoCorrente ? <th className="px-4 py-3 text-right font-semibold">Saldo</th> : null}
               <th className="px-4 py-3 text-right font-semibold">Ações</th>
             </tr>
           </thead>
           <tbody>
             <tr className="border-b bg-muted/20">
-              <td colSpan={4} className="px-4 py-2 text-xs text-muted-foreground italic">
+              <td colSpan={exibirSaldoCorrente ? 4 : 5} className="px-4 py-2 text-xs text-muted-foreground italic">
                 Saldo inicial do período
               </td>
-              <td className="px-4 py-2 text-right text-xs font-semibold" colSpan={2}>
-                {extrato ? fmt(extrato.saldoInicialPeriodo) : "—"}
-              </td>
+              {exibirSaldoCorrente ? <td className="px-4 py-2 text-right text-xs font-semibold" colSpan={2}>{extrato ? fmt(extrato.saldoInicialPeriodo) : "—"}</td> : null}
             </tr>
             {isLoading ? (
               <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">Carregando…</td></tr>
@@ -294,9 +357,9 @@ export function LancamentosTab() {
                   <td className={`px-4 py-3 text-right font-medium ${m.movimento === "entrada" ? "text-emerald-600" : "text-red-500"}`}>
                     {m.movimento === "entrada" ? "+" : "−"}{fmt(m.valor)}
                   </td>
-                  <td className="px-4 py-3 text-right font-medium">{fmt(m.saldo)}</td>
+                  {exibirSaldoCorrente ? <td className="px-4 py-3 text-right font-medium">{fmt(m.saldo)}</td> : null}
                   <td className="px-4 py-3">
-                    {m.origem === "lancamento" && m.idLancamento !== null && (
+                    {m.origem === "manual" && m.idLancamento !== null && (
                       <div className="flex justify-end gap-1">
                         <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEdit(m.idLancamento!)}>
                           <Pencil className="h-4 w-4" />
@@ -311,18 +374,22 @@ export function LancamentosTab() {
                         </Button>
                       </div>
                     )}
+                    {m.origem === "transferencia" && m.idTransferencia !== null && (
+                      <div className="flex justify-end gap-1">
+                        <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => openEditTransferencia(m.idTransferencia!)}><Pencil className="h-4 w-4" /></Button>
+                        <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => setDeletingTransferenciaId(m.idTransferencia!)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))
             )}
             {extrato && movimentos.length > 0 && (
               <tr className="bg-muted/20 font-semibold">
-                <td colSpan={4} className="px-4 py-2 text-xs text-muted-foreground italic">
+                <td colSpan={exibirSaldoCorrente ? 4 : 5} className="px-4 py-2 text-xs text-muted-foreground italic">
                   Saldo final do período
                 </td>
-                <td className="px-4 py-2 text-right text-xs" colSpan={2}>
-                  {fmt(extrato.saldoFinalPeriodo)}
-                </td>
+                {exibirSaldoCorrente ? <td className="px-4 py-2 text-right text-xs" colSpan={2}>{fmt(extrato.saldoFinalPeriodo)}</td> : null}
               </tr>
             )}
           </tbody>
@@ -330,24 +397,28 @@ export function LancamentosTab() {
       </div>
 
       <LancamentoDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} />
+      <TransferenciaDialog open={transferenciaOpen} onOpenChange={setTransferenciaOpen} editing={editingTransferencia} />
 
-      <AlertDialog open={Boolean(deletingId)} onOpenChange={(o) => !o && setDeletingId(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir lançamento?</AlertDialogTitle>
-            <AlertDialogDescription>Esta ação não pode ser desfeita e vai afetar o saldo da conta.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => deletingId && deleteMutation.mutate(deletingId)}
-            >
-              Excluir
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <DestructiveConfirmationDialog
+        open={Boolean(deletingId)}
+        onOpenChange={(open) => !open && setDeletingId(null)}
+        title="Excluir lançamento manual?"
+        description={lancamentoExcluido ? `${lancamentoExcluido.descricao} · ${fmt(Number(lancamentoExcluido.valor))} · ${formatDateBR(lancamentoExcluido.data)}` : "Lançamento selecionado"}
+        consequence="O lançamento será removido permanentemente e o saldo da conta será recalculado."
+        confirmLabel="Excluir lançamento"
+        pending={deleteMutation.isPending}
+        onConfirm={() => deletingId && deleteMutation.mutate(deletingId)}
+      />
+      <DestructiveConfirmationDialog
+        open={Boolean(deletingTransferenciaId)}
+        onOpenChange={(open) => !open && setDeletingTransferenciaId(null)}
+        title="Excluir transferência?"
+        description={transferenciaExcluida ? `${transferenciaExcluida.conta_origem_apelido} → ${transferenciaExcluida.conta_destino_apelido} · ${fmt(Number(transferenciaExcluida.valor))} · ${formatDateBR(transferenciaExcluida.data)}` : "Transferência selecionada"}
+        consequence="A saída e a entrada serão removidas juntas, recalculando o saldo das duas contas."
+        confirmLabel="Excluir transferência"
+        pending={deleteTransferenciaMutation.isPending}
+        onConfirm={() => deletingTransferenciaId && deleteTransferenciaMutation.mutate(deletingTransferenciaId)}
+      />
     </div>
   );
 }

@@ -2,6 +2,35 @@ import { format, isValid, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 const BR_DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+export function toDateOnly(value: string): string | null {
+  const trimmed = value.trim();
+  if (ISO_DATE_RE.test(trimmed)) return trimmed;
+  if (BR_DATE_RE.test(trimmed)) {
+    const [d, m, y] = trimmed.split("/").map(Number);
+    const candidate = `${String(y).padStart(4, "0")}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const parsed = parseBrDate(trimmed);
+    return isValid(parsed) ? candidate : null;
+  }
+  return null;
+}
+
+export function compareDateOnly(a: string, b: string): number {
+  const left = toDateOnly(a);
+  const right = toDateOnly(b);
+  if (!left || !right) return 0;
+  return left.localeCompare(right);
+}
+
+export type VencimentoStatus = "atrasada" | "hoje" | "futura";
+
+export function classificarVencimento(vencimento: string, hoje: string): VencimentoStatus {
+  const comparacao = compareDateOnly(vencimento, hoje);
+  if (comparacao < 0) return "atrasada";
+  if (comparacao === 0) return "hoje";
+  return "futura";
+}
 
 export function isBrDate(value: string): boolean {
   return BR_DATE_RE.test(value);
@@ -39,6 +68,10 @@ export function formatDateBR(value?: string | Date | null, fallback = "—"): st
   if (!value) return fallback;
   if (typeof value === "string") {
     const trimmed = value.trim();
+    if (ISO_DATE_RE.test(trimmed)) {
+      const [y, m, d] = trimmed.split("-");
+      return `${d}/${m}/${y}`;
+    }
     if (BR_DATE_RE.test(trimmed)) {
       const parsed = parseBrDate(trimmed);
       if (isValid(parsed)) return format(parsed, "dd/MM/yyyy", { locale: ptBR });

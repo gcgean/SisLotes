@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useNavigate, Link } from "react-router-dom";
+import { useNavigate, Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
@@ -19,6 +19,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
 import { Eye, EyeOff, KeyRound, Building2 } from "lucide-react";
+import { sanitizeAuthRedirect } from "@/lib/auth-redirect";
 
 const loginSchema = z.object({
   login: z.string().min(1, "Login é obrigatório"),
@@ -38,7 +39,10 @@ interface LoginResponse {
 
 const Login = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { token, login } = useAuth();
+  const redirectParam = searchParams.get("redirect");
+  const destinoAposLogin = sanitizeAuthRedirect(redirectParam);
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [dialogEsqueciAberto, setDialogEsqueciAberto] = useState(false);
   const [loginRecuperacao, setLoginRecuperacao] = useState("");
@@ -69,7 +73,7 @@ const Login = () => {
 
   useEffect(() => {
     if (token) {
-      navigate("/", { replace: true });
+      navigate(destinoAposLogin, { replace: true });
       return;
     }
     // Se não há nenhuma empresa cadastrada (sistema virgem), redireciona para primeiro acesso
@@ -81,7 +85,7 @@ const Login = () => {
         }
       })
       .catch(() => {});
-  }, [token, navigate]);
+  }, [token, navigate, destinoAposLogin]);
 
   const loginMutation = useMutation({
     mutationFn: async (values: LoginFormValues) => {
@@ -114,7 +118,7 @@ const Login = () => {
     onSuccess: (data) => {
       login({ token: data.token, usuario: data.usuario });
       toast({ title: "Login realizado com sucesso" });
-      navigate("/", { replace: true });
+      navigate(destinoAposLogin, { replace: true });
     },
     onError: (error) => {
       toast({

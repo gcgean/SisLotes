@@ -62,6 +62,9 @@ export class Cliente {
   @Column({ type: "varchar", length: 20, nullable: true })
   fone_com?: string | null;
 
+  @Column({ type: "varchar", length: 200, nullable: true })
+  email?: string | null;
+
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 

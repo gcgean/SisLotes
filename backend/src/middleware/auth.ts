@@ -122,7 +122,10 @@ type PermissionKey =
   | "loteamentos_excluir"
   | "vendas_cadastrar"
   | "vendas_alterar"
-  | "vendas_excluir";
+  | "vendas_excluir"
+  | "financeiro_estornar"
+  | "financeiro_excluir"
+  | "financeiro_lancar_retroativo";
 
 export function requireMaster(req: AuthRequest, res: Response, next: NextFunction) {
   const user = req.user;

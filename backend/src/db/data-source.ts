@@ -24,6 +24,13 @@ import { DespesaParcela } from "../entities/DespesaParcela";
 import { LancamentoManual } from "../entities/LancamentoManual";
 import { DespesaRateio } from "../entities/DespesaRateio";
 import { LancamentoRateio } from "../entities/LancamentoRateio";
+import { TransferenciaConta } from "../entities/TransferenciaConta";
+import { CobrancaBancaria } from "../entities/CobrancaBancaria";
+import { CobrancaRegra } from "../entities/CobrancaRegra";
+import { CobrancaComunicacao } from "../entities/CobrancaComunicacao";
+import { OrcamentoLoteamento } from "../entities/OrcamentoLoteamento";
+import { FechamentoFinanceiro } from "../entities/FechamentoFinanceiro";
+import { VendaAcordo } from "../entities/VendaAcordo";
 import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateClientes";
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
@@ -59,6 +66,21 @@ import { CreatePlanoDeContas1700000000030 } from "../migrations/1700000000030-Cr
 import { AddRecorrenciaToDespesas1700000000031 } from "../migrations/1700000000031-AddRecorrenciaToDespesas";
 import { AddRateioAndFornecedorLancamento1700000000032 } from "../migrations/1700000000032-AddRateioAndFornecedorLancamento";
 import { AddChatAndAnexoToSugestoes1700000000033 } from "../migrations/1700000000033-AddChatAndAnexoToSugestoes";
+import { CreateMovimentosFinanceirosView1700000000034 } from "../migrations/1700000000034-CreateMovimentosFinanceirosView";
+import { SeedPlanoContasReceitas1700000000035 } from "../migrations/1700000000035-SeedPlanoContasReceitas";
+import { CreateTransferenciasContas1700000000036 } from "../migrations/1700000000036-CreateTransferenciasContas";
+import { CreateConciliacaoBancaria1700000000037 } from "../migrations/1700000000037-CreateConciliacaoBancaria";
+import { AddEncargosDespesaParcela1700000000038 } from "../migrations/1700000000038-AddEncargosDespesaParcela";
+import { CreateDespesaParcelaPagamentos1700000000039 } from "../migrations/1700000000039-CreateDespesaParcelaPagamentos";
+import { CreateCobrancasBancarias1700000000040 } from "../migrations/1700000000040-CreateCobrancasBancarias";
+import { CreateReguaCobranca1700000000041 } from "../migrations/1700000000041-CreateReguaCobranca";
+import { CreateOrcamentosLoteamento1700000000042 } from "../migrations/1700000000042-CreateOrcamentosLoteamento";
+import { CreateFechamentosFinanceiros1700000000043 } from "../migrations/1700000000043-CreateFechamentosFinanceiros";
+import { AddPermissoesFinanceiras1700000000044 } from "../migrations/1700000000044-AddPermissoesFinanceiras";
+import { AddComprovantesFinanceiros1700000000045 } from "../migrations/1700000000045-AddComprovantesFinanceiros";
+import { AddRetencoesServicos1700000000046 } from "../migrations/1700000000046-AddRetencoesServicos";
+import { AddComissaoVenda1700000000047 } from "../migrations/1700000000047-AddComissaoVenda";
+import { CreateVendaAcordos1700000000048 } from "../migrations/1700000000048-CreateVendaAcordos";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -67,7 +89,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, SugestaoMensagem],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, TransferenciaConta, CobrancaBancaria, CobrancaRegra, CobrancaComunicacao, OrcamentoLoteamento, FechamentoFinanceiro, VendaAcordo, SugestaoMensagem],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -104,6 +126,21 @@ export const AppDataSource = new DataSource({
     AddRecorrenciaToDespesas1700000000031,
     AddRateioAndFornecedorLancamento1700000000032,
     AddChatAndAnexoToSugestoes1700000000033,
+    CreateMovimentosFinanceirosView1700000000034,
+    SeedPlanoContasReceitas1700000000035,
+    CreateTransferenciasContas1700000000036,
+    CreateConciliacaoBancaria1700000000037,
+    AddEncargosDespesaParcela1700000000038,
+    CreateDespesaParcelaPagamentos1700000000039,
+    CreateCobrancasBancarias1700000000040,
+    CreateReguaCobranca1700000000041,
+    CreateOrcamentosLoteamento1700000000042,
+    CreateFechamentosFinanceiros1700000000043,
+    AddPermissoesFinanceiras1700000000044,
+    AddComprovantesFinanceiros1700000000045,
+    AddRetencoesServicos1700000000046,
+    AddComissaoVenda1700000000047,
+    CreateVendaAcordos1700000000048,
   ],
   synchronize: false,
   logging: false,

@@ -18,6 +18,7 @@ interface RegistroAuditoria {
   ip_address?: string;
   data_hora: string;
   valores_novos?: Record<string, any>;
+  valores_antigos?: Record<string, any>;
 }
 
 function getAuthHeaders() {
@@ -34,7 +35,7 @@ const Auditoria = () => {
   const pageSize = 50;
 
   const { data: auditoriaData, isLoading } = useQuery({
-    queryKey: ["auditoria", page, filterTabela, filterAcao],
+    queryKey: ["auditoria", page, filterTabela, filterAcao, search],
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: String(pageSize),
@@ -43,6 +44,7 @@ const Auditoria = () => {
 
       if (filterTabela !== "all") params.append("tabela", filterTabela);
       if (filterAcao !== "all") params.append("acao", filterAcao);
+      if (search.trim()) params.append("busca", search.trim());
 
       const r = await fetch(`/api/auditoria?${params}`, { headers: { ...getAuthHeaders() } });
       if (!r.ok) throw new Error("Erro ao carregar auditoria");
@@ -76,7 +78,7 @@ const Auditoria = () => {
             <Input
               placeholder="Buscar por descrição..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
               className="pl-10"
             />
           </div>
@@ -89,6 +91,20 @@ const Auditoria = () => {
             <option value="all">Todas as tabelas</option>
             <option value="vendas">Vendas</option>
             <option value="pagamentos">Pagamentos</option>
+            <option value="despesas">Despesas</option>
+            <option value="despesa_parcelas">Parcelas de despesas</option>
+            <option value="lancamentos_manuais">Lançamentos manuais</option>
+            <option value="transferencias_contas">Transferências entre contas</option>
+            <option value="conciliacao_importacoes">Importações OFX</option>
+            <option value="conciliacao_vinculos">Conciliação bancária</option>
+            <option value="cobrancas_bancarias">Cobranças bancárias</option>
+            <option value="cobranca_regras">Régua de cobrança</option>
+            <option value="orcamentos_loteamento">Orçamentos por loteamento</option>
+            <option value="fechamentos_financeiros">Fechamento financeiro</option>
+            <option value="contas">Contas financeiras</option>
+            <option value="plano_de_contas">Plano de contas</option>
+            <option value="fornecedores">Fornecedores</option>
+            <option value="configuracoes_financeiras">Juros, multa e carência</option>
             <option value="clientes">Clientes</option>
             <option value="lotes">Lotes</option>
           </select>

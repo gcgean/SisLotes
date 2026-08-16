@@ -47,6 +47,12 @@ export class LancamentoManual {
   @Column({ type: "integer", name: "id_usuario" })
   id_usuario!: number;
 
+  @Column({ type: "varchar", length: 200, name: "anexo_nome", nullable: true })
+  anexo_nome?: string | null;
+
+  @Column({ type: "text", name: "anexo_base64", nullable: true })
+  anexo_base64?: string | null;
+
   @CreateDateColumn({ type: "timestamp", name: "created_at" })
   created_at!: Date;
 

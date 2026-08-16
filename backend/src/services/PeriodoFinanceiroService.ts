@@ -1,0 +1,4 @@
+import{AppDataSource}from"../db/data-source";
+import{Usuario}from"../entities/Usuario";
+export async function verificarPeriodoFinanceiro(idEmpresa:number,data:string|null|undefined){if(!data)return null;const[r]=await AppDataSource.query(`SELECT TO_CHAR(fechado_ate,'YYYY-MM-DD') fechado_ate FROM fechamentos_financeiros WHERE id_empresa=$1`,[idEmpresa]);if(r?.fechado_ate&&data<=r.fechado_ate)return`Período financeiro fechado até ${r.fechado_ate}. Não é permitido alterar movimentos nesta data.`;return null;}
+export async function verificarPermissaoRetroativa(usuario:Usuario,data:string|null|undefined){if(!data||usuario.user_master||usuario.financeiro_lancar_retroativo)return null;const[r]=await AppDataSource.query(`SELECT TO_CHAR(CURRENT_DATE,'YYYY-MM-DD') hoje`);return data<r.hoje?"Usuário sem permissão para lançar ou alterar movimentos em data retroativa.":null;}
