@@ -23,6 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { RateioLoteamentoEditor, RateioLinha } from "@/components/financeiro/RateioLoteamentoEditor";
+import { ComprovanteInput } from "@/components/financeiro/ComprovanteInput";
 
 export interface LancamentoRateioItem {
   id_loteamento: number;
@@ -41,6 +42,8 @@ export interface Lancamento {
   valor: string;
   data: string;
   rateio?: LancamentoRateioItem[];
+  anexo_nome?: string | null;
+  anexo_base64?: string | null;
 }
 
 interface Conta {
@@ -75,6 +78,8 @@ const emptyForm = {
   descricao: "",
   valor: "",
   data: new Date().toISOString().slice(0, 10),
+  anexo_nome: "",
+  anexo_base64: "",
 };
 
 interface Props {
@@ -146,6 +151,8 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
         descricao: editing.descricao,
         valor: editing.valor,
         data: editing.data.slice(0, 10),
+        anexo_nome: editing.anexo_nome ?? "",
+        anexo_base64: editing.anexo_base64 ?? "",
       });
       const temRateio = Boolean(editing.rateio && editing.rateio.length > 0);
       setRatear(temRateio);
@@ -196,6 +203,8 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
         descricao: form.descricao.trim(),
         valor: Number(form.valor.replace(",", ".")),
         data: form.data,
+        anexo_nome: form.anexo_nome || null,
+        anexo_base64: form.anexo_base64 || null,
         ...(rateioPayload ? { rateio: rateioPayload } : {}),
       };
       const url = editing ? `/api/lancamentos/${editing.id_lancamento}` : "/api/lancamentos";
@@ -326,6 +335,12 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
               />
             </div>
           )}
+
+          <ComprovanteInput
+            value={{ anexo_nome: form.anexo_nome, anexo_base64: form.anexo_base64 }}
+            onChange={(anexo) => setForm((atual) => ({ ...atual, ...anexo }))}
+            onError={(message) => toast({ title: message, variant: "destructive" })}
+          />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>

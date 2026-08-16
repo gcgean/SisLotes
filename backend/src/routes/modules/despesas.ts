@@ -13,6 +13,7 @@ import { diferencaDiasCivis } from "../../utils/date-only";
 import { AuditoriaService } from "../../services/AuditoriaService";
 import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
 import { verificarPeriodoFinanceiro, verificarPermissaoRetroativa } from "../../services/PeriodoFinanceiroService";
+import { anexoFinanceiroSchema } from "../../utils/anexo-financeiro";
 
 export const despesasRouter = Router();
 despesasRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -655,7 +656,7 @@ const pagarSchema = z.object({
   // Obrigatório: precisa informar de qual conta saiu o pagamento para que o
   // extrato da conta reflita as contas a pagar quitadas.
   id_conta: z.number().int().positive({ message: "Informe a conta de onde saiu o pagamento." }),
-});
+}).and(anexoFinanceiroSchema);
 
 despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Response) => {
   const parse = pagarSchema.safeParse(req.body);
@@ -671,7 +672,7 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
   }
   const valoresAntigos = { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, id_conta: parcela.id_conta };
 
-  const { pago_data, id_conta, multa, juros, desconto } = parse.data;
+  const { pago_data, id_conta, multa, juros, desconto, anexo_nome, anexo_base64 } = parse.data;
   const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
   const retroativo=await verificarPermissaoRetroativa(req.user!,pago_data);if(retroativo)return res.status(403).json({error:retroativo});
   const valorBase = parse.data.valor_base ?? parse.data.valor_pago ?? Number(parcela.valor);
@@ -688,7 +689,7 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
   parcela.id_conta = id_conta ?? null;
   parcela.id_usuario = req.user!.id_usuario;
 
-  const saved = await AppDataSource.transaction(async manager=>{const atualizada=await manager.save(parcela);await manager.query(`INSERT INTO despesa_parcela_pagamentos(id_empresa,id_despesa_parcela,id_conta,pago_data,valor_principal,multa,juros,desconto,valor_pago,id_usuario) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,[atualizada.id_empresa,atualizada.id_despesa_parcela,id_conta,pago_data,valorBase,multa,juros,desconto,valorPago,req.user!.id_usuario]);return atualizada;});
+  const saved = await AppDataSource.transaction(async manager=>{const atualizada=await manager.save(parcela);await manager.query(`INSERT INTO despesa_parcela_pagamentos(id_empresa,id_despesa_parcela,id_conta,pago_data,valor_principal,multa,juros,desconto,valor_pago,id_usuario,anexo_nome,anexo_base64) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[atualizada.id_empresa,atualizada.id_despesa_parcela,id_conta,pago_data,valorBase,multa,juros,desconto,valorPago,req.user!.id_usuario,anexo_nome??null,anexo_base64??null]);return atualizada;});
 
   const logRepo = AppDataSource.getRepository(Log);
   await logRepo.save(logRepo.create({

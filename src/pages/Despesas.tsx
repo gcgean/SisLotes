@@ -51,6 +51,7 @@ import { ReguaCobrancaTab } from "@/components/financeiro/ReguaCobrancaTab";
 import { OrcadoRealizadoTab } from "@/components/financeiro/OrcadoRealizadoTab";
 import { FechamentoPeriodoTab } from "@/components/financeiro/FechamentoPeriodoTab";
 import { RateioLoteamentoEditor, RateioLinha } from "@/components/financeiro/RateioLoteamentoEditor";
+import { ComprovanteInput } from "@/components/financeiro/ComprovanteInput";
 import { imprimirContasPagar } from "@/utils/contasPagar";
 import type { ReciboEmpresa } from "@/utils/reciboParcela";
 import {
@@ -152,7 +153,7 @@ interface DespesaParcela {
   pago_data: string | null;
   valor_pago: string | null;
   multa_paga?: string; juros_pagos?: string; desconto_obtido?: string;
-  pagamentos?: Array<{id_parcela_pagamento:number;pago_data:string;valor_pago:string;conta_apelido:string}>;
+  pagamentos?: Array<{id_parcela_pagamento:number;pago_data:string;valor_pago:string;conta_apelido:string;anexo_nome?:string|null;anexo_base64?:string|null}>;
   id_conta: number | null;
 }
 interface EmpresaFinanceira extends ReciboEmpresa { multa_percentual?: string; juros_percentual_dia?: string; carencia_dias?: number }
@@ -274,7 +275,7 @@ export default function Despesas() {
   // ─── Dialog: pagar parcela ────────────────────────────────────────────────
   const [dialogPagarAberto, setDialogPagarAberto] = useState(false);
   const [parcelaSelecionada, setParcelaSelecionada] = useState<DespesaParcela | null>(null);
-  const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_base: "", multa: "0", juros: "0", desconto: "0", id_conta: "" });
+  const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_base: "", multa: "0", juros: "0", desconto: "0", id_conta: "", anexo_nome: "", anexo_base64: "" });
 
   // ─── Pagamento em lote ─────────────────────────────────────────────────────
   const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set());
@@ -612,6 +613,8 @@ export default function Despesas() {
         pago_data: formPagar.pago_data,
         valor_base: Number(formPagar.valor_base), multa: Number(formPagar.multa), juros: Number(formPagar.juros), desconto: Number(formPagar.desconto),
         id_conta: formPagar.id_conta ? Number(formPagar.id_conta) : null,
+        anexo_nome: formPagar.anexo_nome || null,
+        anexo_base64: formPagar.anexo_base64 || null,
       };
       const r = await fetch(`/api/despesas/parcelas/${parcelaSelecionada.id_despesa_parcela}/pagar`, {
         method: "POST",
@@ -823,7 +826,7 @@ export default function Despesas() {
     setParcelaSelecionada(parcela);
     const liquidado=Math.max(0,Number(parcela.valor_pago??0)-Number(parcela.multa_paga??0)-Number(parcela.juros_pagos??0)+Number(parcela.desconto_obtido??0));
     const restante=Math.max(0,Number(parcela.valor)-liquidado);const data=new Date().toISOString().slice(0,10),e=encargosSugeridos(restante,parcela.vencimento,data,empresaRelatorio);
-    setFormPagar({pago_data:data,valor_base:restante.toFixed(2),multa:String(e.multa),juros:String(e.juros),desconto:"0",id_conta:""});
+    setFormPagar({pago_data:data,valor_base:restante.toFixed(2),multa:String(e.multa),juros:String(e.juros),desconto:"0",id_conta:"",anexo_nome:"",anexo_base64:""});
     setDialogPagarAberto(true);
   }
 
@@ -1563,15 +1566,22 @@ export default function Despesas() {
                         )}
                       </td>
                       <td className="px-3 py-2">
-                        {p.situacao === "pago" ? (
-                          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setParcelaParaEstorno(p)}>
-                            <RotateCcw className="h-3.5 w-3.5" /> Estornar
-                          </Button>
-                        ) : (
-                          <div className="flex gap-1"><Button size="sm" className="gap-1.5" onClick={() => abrirPagarParcela(p)}>
-                            <CheckCircle2 className="h-3.5 w-3.5" /> Pagar
-                          </Button>{p.situacao==="parcial"?<Button size="sm" variant="outline" onClick={()=>setParcelaParaEstorno(p)}><RotateCcw className="h-3.5 w-3.5"/> Estornar baixas</Button>:null}</div>
-                        )}
+                        <div className="flex flex-col items-start gap-1">
+                          {p.situacao === "pago" ? (
+                            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setParcelaParaEstorno(p)}>
+                              <RotateCcw className="h-3.5 w-3.5" /> Estornar
+                            </Button>
+                          ) : (
+                            <div className="flex gap-1"><Button size="sm" className="gap-1.5" onClick={() => abrirPagarParcela(p)}>
+                              <CheckCircle2 className="h-3.5 w-3.5" /> Pagar
+                            </Button>{p.situacao==="parcial"?<Button size="sm" variant="outline" onClick={()=>setParcelaParaEstorno(p)}><RotateCcw className="h-3.5 w-3.5"/> Estornar baixas</Button>:null}</div>
+                          )}
+                          {p.pagamentos?.filter((pagamento) => pagamento.anexo_base64).map((pagamento) => (
+                            <a key={pagamento.id_parcela_pagamento} href={pagamento.anexo_base64!} download={pagamento.anexo_nome || "comprovante"} className="flex max-w-40 items-center gap-1 truncate text-xs text-primary hover:underline">
+                              <Paperclip className="h-3 w-3 shrink-0" /> {pagamento.anexo_nome || "Comprovante"}
+                            </a>
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1616,6 +1626,11 @@ export default function Despesas() {
                 Obrigatório — é o que faz esse pagamento aparecer no extrato da conta.
               </p>
             </div>
+            <ComprovanteInput
+              value={{ anexo_nome: formPagar.anexo_nome, anexo_base64: formPagar.anexo_base64 }}
+              onChange={(anexo) => setFormPagar((atual) => ({ ...atual, ...anexo }))}
+              onError={(message) => toast({ title: message, variant: "destructive" })}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogPagarAberto(false)}>Cancelar</Button>

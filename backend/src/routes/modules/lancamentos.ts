@@ -10,6 +10,7 @@ import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../
 import { AuditoriaService } from "../../services/AuditoriaService";
 import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
 import { verificarPeriodoFinanceiro, verificarPermissaoRetroativa } from "../../services/PeriodoFinanceiroService";
+import { anexoFinanceiroCampos, refinarAnexoFinanceiro } from "../../utils/anexo-financeiro";
 
 export const lancamentosRouter = Router();
 lancamentosRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -31,9 +32,11 @@ const lancamentoBodyObjectSchema = z.object({
   // Rateio entre loteamentos (ex: despesa que atende mais de um empreendimento).
   // Quando informado, "id_loteamento" deve ficar vazio e a soma dos percentuais = 100.
   rateio: z.array(lancamentoRateioItemSchema).optional(),
+  ...anexoFinanceiroCampos,
 });
 
 const lancamentoBodySchema = lancamentoBodyObjectSchema
+  .superRefine(refinarAnexoFinanceiro)
   .refine((d) => !d.rateio || d.rateio.length === 0 || d.id_loteamento == null, {
     message: 'Ao ratear entre loteamentos, deixe o campo "Loteamento" em branco.',
     path: ["id_loteamento"],
@@ -244,7 +247,7 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
 
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
-  const parse = lancamentoBodyObjectSchema.partial().safeParse(req.body);
+  const parse = lancamentoBodyObjectSchema.partial().superRefine(refinarAnexoFinanceiro).safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
 
   const repo = AppDataSource.getRepository(LancamentoManual);
