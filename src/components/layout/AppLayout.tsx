@@ -11,6 +11,8 @@ import { useQuery } from "@tanstack/react-query";
 import { formatLicenseRemainingTime } from "@/lib/license-time";
 import { formatDateBR } from "@/lib/date-br";
 import { TableExportMenu } from "./TableExportMenu";
+import { ScreenHelp } from "./ScreenHelp";
+import { getScreenTutorial } from "@/lib/screen-tutorials";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -150,6 +152,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     (daysLeft != null && daysLeft < 0) ||
     (expiresAtMs != null && !Number.isNaN(expiresAtMs) && expiresAtMs < nowMs);
   const isDueSoon = !isExpired && daysLeft != null && daysLeft >= 0 && daysLeft <= 5;
+  const screenTutorial = getScreenTutorial(location.pathname, location.search);
 
   useEffect(() => {
     if (!blocked) return;
@@ -230,6 +233,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
             <div className="ml-auto flex items-center gap-2">
               <TableExportMenu />
+              <ScreenHelp tutorial={screenTutorial} />
               {user && (
                 <span className="text-xs text-muted-foreground hidden sm:block">
                   Logado como <span className="font-medium text-foreground">{user.login}</span>
