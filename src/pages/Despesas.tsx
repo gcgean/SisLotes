@@ -251,6 +251,7 @@ export default function Despesas() {
   const [filtroLoteamento, setFiltroLoteamento] = useState<string>("todos");
   const [filtroCategoria, setFiltroCategoria] = useState<string>("todas");
   const [filtroSituacao, setFiltroSituacao] = useState<string>("todas");
+  const [filtroAlerta, setFiltroAlerta] = useState<"atrasadas" | "hoje" | "mes" | null>(null);
 
   // ─── Dialogs: despesa ─────────────────────────────────────────────────────
   const [dialogDespesaAberto, setDialogDespesaAberto] = useState(false);
@@ -417,7 +418,12 @@ export default function Despesas() {
   const rateioDespesaValido =
     !ratearDespesa || (rateioDespesa.length > 0 && Math.abs(totalRateioDespesa - 100) < 0.5 && rateioDespesa.every((r) => r.id_loteamento));
 
+  const hojeIsoDespesas = new Date().toISOString().slice(0, 10);
+  const idsFiltroAlerta = filtroAlerta && alertas
+    ? new Set(alertas[filtroAlerta].itens.map((item) => item.id_despesa))
+    : null;
   const despesasFiltradas = despesas.filter((d) => {
+    if (idsFiltroAlerta && !idsFiltroAlerta.has(d.id_despesa)) return false;
     if (filtroLoteamento !== "todos") {
       if (filtroLoteamento === "administrativa" ? d.id_loteamento != null : d.id_loteamento !== Number(filtroLoteamento)) return false;
     }
@@ -435,8 +441,6 @@ export default function Despesas() {
     }
     return true;
   });
-
-  const hojeIsoDespesas = new Date().toISOString().slice(0, 10);
 
   // ─── Impressão do relatório de contas a pagar ────────────────────────────
   const [usarTimbradoRelatorio, setUsarTimbradoRelatorio] = useState(true);
@@ -930,31 +934,33 @@ export default function Despesas() {
             {alertas && (alertas.atrasadas.qtd > 0 || alertas.hoje.qtd > 0 || alertas.mes.qtd > 0) && (
               <div className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 p-3 flex items-start gap-3">
+                  <button type="button" aria-pressed={filtroAlerta === "atrasadas"} onClick={() => setFiltroAlerta((atual) => atual === "atrasadas" ? null : "atrasadas")} className={cn("rounded-lg border border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-900 p-3 flex items-start gap-3 text-left transition-all hover:ring-2 hover:ring-red-300", filtroAlerta === "atrasadas" && "ring-2 ring-red-500")}>
                     <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
                     <div>
                       <p className="text-xs font-medium text-red-700 dark:text-red-400 uppercase tracking-wide">Atrasadas</p>
                       <p className="text-lg font-bold text-red-700 dark:text-red-400 leading-tight">{alertas.atrasadas.qtd}</p>
                       <p className="text-xs text-red-600/80 dark:text-red-400/70">{fmtMoeda(alertas.atrasadas.valor)}</p>
                     </div>
-                  </div>
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 p-3 flex items-start gap-3">
+                  </button>
+                  <button type="button" aria-pressed={filtroAlerta === "hoje"} onClick={() => setFiltroAlerta((atual) => atual === "hoje" ? null : "hoje")} className={cn("rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 p-3 flex items-start gap-3 text-left transition-all hover:ring-2 hover:ring-amber-300", filtroAlerta === "hoje" && "ring-2 ring-amber-500")}>
                     <Clock className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                     <div>
                       <p className="text-xs font-medium text-amber-700 dark:text-amber-400 uppercase tracking-wide">Vence hoje</p>
                       <p className="text-lg font-bold text-amber-700 dark:text-amber-400 leading-tight">{alertas.hoje.qtd}</p>
                       <p className="text-xs text-amber-600/80 dark:text-amber-400/70">{fmtMoeda(alertas.hoje.valor)}</p>
                     </div>
-                  </div>
-                  <div className="rounded-lg border border-sky-200 bg-sky-50 dark:bg-sky-950/20 dark:border-sky-900 p-3 flex items-start gap-3">
+                  </button>
+                  <button type="button" aria-pressed={filtroAlerta === "mes"} onClick={() => setFiltroAlerta((atual) => atual === "mes" ? null : "mes")} className={cn("rounded-lg border border-sky-200 bg-sky-50 dark:bg-sky-950/20 dark:border-sky-900 p-3 flex items-start gap-3 text-left transition-all hover:ring-2 hover:ring-sky-300", filtroAlerta === "mes" && "ring-2 ring-sky-500")}>
                     <CalendarClock className="h-5 w-5 text-sky-600 shrink-0 mt-0.5" />
                     <div>
                       <p className="text-xs font-medium text-sky-700 dark:text-sky-400 uppercase tracking-wide">Vence este mês</p>
                       <p className="text-lg font-bold text-sky-700 dark:text-sky-400 leading-tight">{alertas.mes.qtd}</p>
                       <p className="text-xs text-sky-600/80 dark:text-sky-400/70">{fmtMoeda(alertas.mes.valor)}</p>
                     </div>
-                  </div>
+                  </button>
                 </div>
+
+                {filtroAlerta && <div className="flex items-center gap-2 text-sm text-muted-foreground"><span>Filtro ativo: <strong>{filtroAlerta === "atrasadas" ? "Atrasadas" : filtroAlerta === "hoje" ? "Vence hoje" : "Vence este mês"}</strong></span><Button type="button" size="sm" variant="ghost" onClick={() => setFiltroAlerta(null)}>Limpar filtro</Button></div>}
 
                 {(alertas.atrasadas.itens.length > 0 || alertas.hoje.itens.length > 0) && (
                   <div className="rounded-lg border overflow-hidden">
