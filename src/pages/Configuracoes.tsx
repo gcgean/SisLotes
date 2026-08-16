@@ -94,7 +94,10 @@ type UsuarioPermissaoKey =
   | "loteamentos_excluir"
   | "vendas_cadastrar"
   | "vendas_alterar"
-  | "vendas_excluir";
+  | "vendas_excluir"
+  | "financeiro_estornar"
+  | "financeiro_excluir"
+  | "financeiro_lancar_retroativo";
 
 interface Usuario {
   id_usuario: number;
@@ -110,6 +113,9 @@ interface Usuario {
   vendas_cadastrar: boolean;
   vendas_alterar: boolean;
   vendas_excluir: boolean;
+  financeiro_estornar: boolean;
+  financeiro_excluir: boolean;
+  financeiro_lancar_retroativo: boolean;
 }
 
 const usuarioFormSchema = z.object({
@@ -125,6 +131,9 @@ const usuarioFormSchema = z.object({
   vendas_cadastrar: z.boolean().optional().default(false),
   vendas_alterar: z.boolean().optional().default(false),
   vendas_excluir: z.boolean().optional().default(false),
+  financeiro_estornar: z.boolean().optional().default(false),
+  financeiro_excluir: z.boolean().optional().default(false),
+  financeiro_lancar_retroativo: z.boolean().optional().default(false),
   id_empresa: z.number().int().positive().optional(),
 });
 
@@ -148,6 +157,9 @@ const permissaoLabels: Record<string, string> = {
   vendas_cadastrar: "Cadastrar",
   vendas_alterar: "Alterar",
   vendas_excluir: "Excluir",
+  financeiro_estornar: "Estornar",
+  financeiro_excluir: "Excluir movimentos",
+  financeiro_lancar_retroativo: "Lançar retroativo",
 };
 
 function getAuthHeaders() {
@@ -277,6 +289,9 @@ const Configuracoes = () => {
       vendas_cadastrar: false,
       vendas_alterar: false,
       vendas_excluir: false,
+      financeiro_estornar: false,
+      financeiro_excluir: false,
+      financeiro_lancar_retroativo: false,
       id_empresa: empresas && empresas.length > 0 ? empresas[0].id_empresa : undefined,
     },
   });
@@ -557,6 +572,9 @@ const Configuracoes = () => {
       vendas_cadastrar: false,
       vendas_alterar: false,
       vendas_excluir: false,
+      financeiro_estornar: false,
+      financeiro_excluir: false,
+      financeiro_lancar_retroativo: false,
       id_empresa: empresas && empresas.length > 0 ? empresas[0].id_empresa : undefined,
     });
     setDialogUsuarioAberto(true);
@@ -578,6 +596,9 @@ const Configuracoes = () => {
       vendas_cadastrar: usuario.vendas_cadastrar,
       vendas_alterar: usuario.vendas_alterar,
       vendas_excluir: usuario.vendas_excluir,
+      financeiro_estornar: usuario.financeiro_estornar,
+      financeiro_excluir: usuario.financeiro_excluir,
+      financeiro_lancar_retroativo: usuario.financeiro_lancar_retroativo,
       id_empresa: usuario.id_empresa,
     });
     setDialogUsuarioAberto(true);
@@ -1373,6 +1394,7 @@ const Configuracoes = () => {
                           })}
                         </div>
                       ))}
+                      <div className="space-y-2"><p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Financeiro</p>{(["financeiro_estornar","financeiro_excluir","financeiro_lancar_retroativo"] as const).map(key=><div key={key} className="flex items-center justify-between"><Label className="text-xs">{permissaoLabels[key]}</Label><Switch checked={user[key]} onCheckedChange={value=>alterarPermissaoInline(user,key,value)} className="scale-75"/></div>)}</div>
                     </div>
                   )}
                   {user.user_master && (
@@ -1502,6 +1524,7 @@ const Configuracoes = () => {
                             })}
                           </div>
                         ))}
+                        <div className="space-y-2"><p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Financeiro</p>{(["financeiro_estornar","financeiro_excluir","financeiro_lancar_retroativo"] as const).map(key=><FormField key={key} control={usuarioForm.control} name={key} render={({field})=><FormItem className="flex items-center justify-between"><FormLabel className="text-xs">{permissaoLabels[key]}</FormLabel><FormControl><Switch checked={!!field.value} onCheckedChange={field.onChange} className="scale-75"/></FormControl></FormItem>}/>)}</div>
                       </div>
                     )}
 

@@ -6,10 +6,10 @@ import { Pagamento } from "../../entities/Pagamento";
 import { Log } from "../../entities/Log";
 import { Empresa } from "../../entities/Empresa";
 import { Conta } from "../../entities/Conta";
-import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
 import { diferencaDiasCivis } from "../../utils/date-only";
 import { AuditoriaService } from "../../services/AuditoriaService";
-import { verificarPeriodoFinanceiro } from "../../services/PeriodoFinanceiroService";
+import { verificarPeriodoFinanceiro, verificarPermissaoRetroativa } from "../../services/PeriodoFinanceiroService";
 
 export const pagamentosRouter = Router();
 pagamentosRouter.use(requireAuth, requireFeature("module_pagamentos"));
@@ -246,6 +246,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
 
   const { pago_data, valor_pago, id_conta, multa_override, juros_override, desconto } = parseResult.data;
   const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,pago_data);if(retroativo)return res.status(403).json({error:retroativo});
 
   const pagamentoRepo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);
@@ -329,7 +330,7 @@ pagamentosRouter.post("/retorno", (_req, res) => {
 });
 
 // ─── POST /bulk-delete — Excluir múltiplos pagamentos ────────────────────────
-pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res) => {
+pagamentosRouter.post("/bulk-delete", requireAuth, requirePermission("financeiro_excluir"), async (req: AuthRequest, res) => {
   const schema = z.object({ ids: z.array(z.number().int().positive()).min(1) });
   const parse = schema.safeParse(req.body);
   if (!parse.success) {
@@ -369,7 +370,7 @@ pagamentosRouter.post("/bulk-delete", requireAuth, async (req: AuthRequest, res)
 });
 
 // ─── POST /:id/estornar — Cancelar pagamento e voltar para aberto ─────────────
-pagamentosRouter.post("/:id/estornar", requireAuth, async (req: AuthRequest, res) => {
+pagamentosRouter.post("/:id/estornar", requireAuth, requirePermission("financeiro_estornar"), async (req: AuthRequest, res) => {
   const { id } = req.params;
   const repo = AppDataSource.getRepository(Pagamento);
   const logRepo = AppDataSource.getRepository(Log);

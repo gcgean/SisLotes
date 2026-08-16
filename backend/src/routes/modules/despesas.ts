@@ -8,14 +8,15 @@ import { Despesa } from "../../entities/Despesa";
 import { DespesaParcela } from "../../entities/DespesaParcela";
 import { DespesaRateio } from "../../entities/DespesaRateio";
 import { Log } from "../../entities/Log";
-import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
 import { diferencaDiasCivis } from "../../utils/date-only";
 import { AuditoriaService } from "../../services/AuditoriaService";
 import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
-import { verificarPeriodoFinanceiro } from "../../services/PeriodoFinanceiroService";
+import { verificarPeriodoFinanceiro, verificarPermissaoRetroativa } from "../../services/PeriodoFinanceiroService";
 
 export const despesasRouter = Router();
 despesasRouter.use(requireAuth, requireFeature("module_despesas"));
+despesasRouter.post(/\/(?:parcelas|parcela-pagamentos)\/\d+\/estornar$/, requirePermission("financeiro_estornar"));
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  Plano de Contas (árvore: grupo > subgrupo > conta)
@@ -595,7 +596,7 @@ despesasRouter.put("/:id", async (req: AuthRequest, res: Response) => {
 });
 
 // ─── DELETE /:id — bloqueia se houver parcela paga ────────────────────────────
-despesasRouter.delete("/:id", async (req: AuthRequest, res: Response) => {
+despesasRouter.delete("/:id", requirePermission("financeiro_excluir"), async (req: AuthRequest, res: Response) => {
   const despesaRepo = AppDataSource.getRepository(Despesa);
   const despesa = await despesaRepo.findOne({
     where: { id_despesa: Number(req.params.id), id_empresa: req.user!.id_empresa },
@@ -672,6 +673,7 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
 
   const { pago_data, id_conta, multa, juros, desconto } = parse.data;
   const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,pago_data);if(retroativo)return res.status(403).json({error:retroativo});
   const valorBase = parse.data.valor_base ?? parse.data.valor_pago ?? Number(parcela.valor);
   const valorPago = valorBase + multa + juros - desconto;
   if (valorPago <= 0 || desconto > valorBase + multa + juros) return res.status(400).json({ error: "O total efetivamente pago deve ser maior que zero." });
@@ -723,6 +725,7 @@ despesasRouter.post("/parcelas/pagar-lote", async (req: AuthRequest, res: Respon
 
   const { pago_data, id_conta, itens } = parse.data;
   const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,pago_data);if(retroativo)return res.status(403).json({error:retroativo});
   const idEmpresa = req.user!.id_empresa;
   const repo = AppDataSource.getRepository(DespesaParcela);
   const logRepo = AppDataSource.getRepository(Log);
@@ -766,7 +769,7 @@ despesasRouter.post("/parcelas/pagar-lote", async (req: AuthRequest, res: Respon
   return res.json({ pagas, ignoradas });
 });
 
-despesasRouter.post("/parcelas/:id/estornar", async (req: AuthRequest, res: Response) => {
+despesasRouter.post("/parcelas/:id/estornar", requirePermission("financeiro_estornar"), async (req: AuthRequest, res: Response) => {
   const repo = AppDataSource.getRepository(DespesaParcela);
   const parcela = await repo.findOne({
     where: { id_despesa_parcela: Number(req.params.id), id_empresa: req.user!.id_empresa },

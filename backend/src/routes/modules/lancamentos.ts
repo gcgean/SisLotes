@@ -6,10 +6,10 @@ import { LancamentoRateio } from "../../entities/LancamentoRateio";
 import { Conta } from "../../entities/Conta";
 import { TransferenciaConta } from "../../entities/TransferenciaConta";
 import { Log } from "../../entities/Log";
-import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { AuthRequest, requireAuth, requireFeature, requirePermission } from "../../middleware/auth";
 import { AuditoriaService } from "../../services/AuditoriaService";
 import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
-import { verificarPeriodoFinanceiro } from "../../services/PeriodoFinanceiroService";
+import { verificarPeriodoFinanceiro, verificarPermissaoRetroativa } from "../../services/PeriodoFinanceiroService";
 
 export const lancamentosRouter = Router();
 lancamentosRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -96,6 +96,7 @@ lancamentosRouter.post("/transferencias", async (req: AuthRequest, res: Response
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
   const idEmpresa = req.user!.id_empresa;
   const bloqueioNovo=await verificarPeriodoFinanceiro(idEmpresa,parse.data.data);if(bloqueioNovo)return res.status(409).json({error:bloqueioNovo});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,parse.data.data);if(retroativo)return res.status(403).json({error:retroativo});
   if (!(await validarContasTransferencia(idEmpresa, [parse.data.id_conta_origem, parse.data.id_conta_destino]))) {
     return res.status(400).json({ error: "As contas de origem e destino devem pertencer à empresa." });
   }
@@ -120,6 +121,7 @@ lancamentosRouter.put("/transferencias/:id", async (req: AuthRequest, res: Respo
   if (!parse.success) return res.status(400).json({ error: "Dados inválidos", issues: parse.error.issues });
   const idEmpresa = req.user!.id_empresa;
   const bloqueio=await verificarPeriodoFinanceiro(idEmpresa,parse.data.data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,parse.data.data);if(retroativo)return res.status(403).json({error:retroativo});
   if (!(await validarContasTransferencia(idEmpresa, [parse.data.id_conta_origem, parse.data.id_conta_destino]))) {
     return res.status(400).json({ error: "As contas de origem e destino devem pertencer à empresa." });
   }
@@ -139,7 +141,7 @@ lancamentosRouter.put("/transferencias/:id", async (req: AuthRequest, res: Respo
 });
 
 // ─── DELETE /transferencias/:id ──────────────────────────────────────────────
-lancamentosRouter.delete("/transferencias/:id", async (req: AuthRequest, res: Response) => {
+lancamentosRouter.delete("/transferencias/:id", requirePermission("financeiro_excluir"), async (req: AuthRequest, res: Response) => {
   const repo = AppDataSource.getRepository(TransferenciaConta);
   const transferencia = await repo.findOne({ where: { id_transferencia: Number(req.params.id), id_empresa: req.user!.id_empresa } });
   if (!transferencia) return res.status(404).json({ error: "Transferência não encontrada" });
@@ -197,6 +199,7 @@ lancamentosRouter.post("/", async (req: AuthRequest, res: Response) => {
   const { rateio, ...data } = parse.data;
   const idEmpresa = req.user!.id_empresa;
   const bloqueio=await verificarPeriodoFinanceiro(idEmpresa,data.data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,data.data);if(retroativo)return res.status(403).json({error:retroativo});
   if (data.id_conta_contabil && !(await contaContabilAceitaLancamento(data.id_conta_contabil, idEmpresa, data.tipo))) {
     return res.status(400).json({ error: "Selecione uma conta contábil analítica e compatível com o tipo do lançamento." });
   }
@@ -250,6 +253,7 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
   });
   if (!lancamento) return res.status(404).json({ error: "Lançamento não encontrado" });
   const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,parse.data.data??lancamento.data);if(bloqueio)return res.status(409).json({error:bloqueio});
+  const retroativo=await verificarPermissaoRetroativa(req.user!,parse.data.data??lancamento.data);if(retroativo)return res.status(403).json({error:retroativo});
   const valoresAntigos = { tipo: lancamento.tipo, id_conta: lancamento.id_conta, id_loteamento: lancamento.id_loteamento, descricao: lancamento.descricao, valor: lancamento.valor, data: lancamento.data };
 
   const { valor, rateio, ...rest } = parse.data;
@@ -300,7 +304,7 @@ lancamentosRouter.put("/:id", async (req: AuthRequest, res: Response) => {
 });
 
 // ─── DELETE /:id ──────────────────────────────────────────────────────────────
-lancamentosRouter.delete("/:id", async (req: AuthRequest, res: Response) => {
+lancamentosRouter.delete("/:id", requirePermission("financeiro_excluir"), async (req: AuthRequest, res: Response) => {
   const repo = AppDataSource.getRepository(LancamentoManual);
   const lancamento = await repo.findOne({
     where: { id_lancamento: Number(req.params.id), id_empresa: req.user!.id_empresa },

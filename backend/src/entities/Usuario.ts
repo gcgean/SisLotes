@@ -46,6 +46,10 @@ export class Usuario {
   @Column({ type: "boolean", default: false })
   vendas_excluir!: boolean;
 
+  @Column({ type: "boolean", default: false }) financeiro_estornar!: boolean;
+  @Column({ type: "boolean", default: false }) financeiro_excluir!: boolean;
+  @Column({ type: "boolean", default: false }) financeiro_lancar_retroativo!: boolean;
+
   @Column({ type: "varchar", length: 200, nullable: true, unique: true })
   email?: string | null;
 

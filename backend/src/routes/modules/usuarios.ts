@@ -21,6 +21,9 @@ const usuarioBodySchema = z.object({
   vendas_cadastrar: z.boolean().optional().default(false),
   vendas_alterar: z.boolean().optional().default(false),
   vendas_excluir: z.boolean().optional().default(false),
+  financeiro_estornar: z.boolean().optional().default(false),
+  financeiro_excluir: z.boolean().optional().default(false),
+  financeiro_lancar_retroativo: z.boolean().optional().default(false),
   id_empresa: z.number().int().positive().optional(),
 });
 
