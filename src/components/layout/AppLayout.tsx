@@ -10,6 +10,7 @@ import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
 import { formatLicenseRemainingTime } from "@/lib/license-time";
 import { formatDateBR } from "@/lib/date-br";
+import { TableExportMenu } from "./TableExportMenu";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -228,6 +229,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              <TableExportMenu />
               {user && (
                 <span className="text-xs text-muted-foreground hidden sm:block">
                   Logado como <span className="font-medium text-foreground">{user.login}</span>
@@ -254,7 +256,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           </header>
 
           {/* pb-20 on mobile to clear bottom nav, pb-6 on desktop */}
-          <main className="flex-1 p-4 md:p-6 pb-20 md:pb-6">
+          <main id="app-main-content" className="flex-1 p-4 md:p-6 pb-20 md:pb-6">
             {licenseData?.banner && (
               <div className="mb-4 rounded-md border border-amber-300/50 bg-amber-50 px-3 py-2 text-sm text-amber-900">
                 {licenseData.banner}
