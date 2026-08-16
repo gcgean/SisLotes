@@ -9,6 +9,7 @@ import { DespesaParcela } from "../../entities/DespesaParcela";
 import { DespesaRateio } from "../../entities/DespesaRateio";
 import { Log } from "../../entities/Log";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { diferencaDiasCivis } from "../../utils/date-only";
 
 export const despesasRouter = Router();
 despesasRouter.use(requireAuth, requireFeature("module_despesas"));
@@ -396,7 +397,7 @@ despesasRouter.get("/alertas", async (req: AuthRequest, res: Response) => {
       loteamento_nome: r.loteamento_nome,
       vencimento: r.vencimento,
       valor: Number(r.valor),
-      diasAtraso: Math.max(0, Math.round((new Date(hojeStr).getTime() - new Date(r.vencimento).getTime()) / 86400000)),
+      diasAtraso: Math.max(0, diferencaDiasCivis(r.vencimento, hojeStr)),
     });
 
     return res.json({

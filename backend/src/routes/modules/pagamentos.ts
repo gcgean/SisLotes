@@ -7,6 +7,7 @@ import { Log } from "../../entities/Log";
 import { Empresa } from "../../entities/Empresa";
 import { Conta } from "../../entities/Conta";
 import { AuthRequest, requireAuth, requireFeature } from "../../middleware/auth";
+import { diferencaDiasCivis } from "../../utils/date-only";
 
 export const pagamentosRouter = Router();
 pagamentosRouter.use(requireAuth, requireFeature("module_pagamentos"));
@@ -75,12 +76,10 @@ pagamentosRouter.get("/", requireAuth, async (req: AuthRequest, res) => {
 
 pagamentosRouter.get("/atrasados", requireAuth, async (req: AuthRequest, res) => {
   const repo = AppDataSource.getRepository(Pagamento);
-  const hoje = new Date().toISOString().slice(0, 10);
-
   const qb = repo
     .createQueryBuilder("pagamento")
     .leftJoin("pagamento.venda", "venda")
-    .where("pagamento.vencimento < :hoje", { hoje })
+    .where("pagamento.vencimento < CURRENT_DATE")
     .andWhere("pagamento.situacao = :situacao", { situacao: "aberto" })
     .andWhere("(venda.status IS NULL OR venda.status <> :cancelada)", { cancelada: "cancelada" });
 
@@ -281,10 +280,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   const jurosPercDia = empresa ? Number(empresa.juros_percentual_dia) / 100 : 0.002;
   const carenciaDias = empresa ? empresa.carencia_dias : 0;
 
-  const vencimentoDate = new Date(pagamento.vencimento);
-  const pagoDate = new Date(pago_data);
-  const diffMs = pagoDate.getTime() - vencimentoDate.getTime();
-  const dias_atraso = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+  const dias_atraso = Math.max(0, diferencaDiasCivis(pagamento.vencimento, pago_data));
   const dias_efetivos = Math.max(0, dias_atraso - carenciaDias);
 
   const valor = Number(pagamento.valor);
