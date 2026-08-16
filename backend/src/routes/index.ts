@@ -21,6 +21,7 @@ import { despesasRouter } from "./modules/despesas";
 import { lancamentosRouter } from "./modules/lancamentos";
 import { cobrancasRouter } from "./modules/cobrancas";
 import { reguaCobrancaRouter } from "./modules/regua-cobranca";
+import { orcamentosRouter } from "./modules/orcamentos";
 
 export const router = Router();
 
@@ -46,3 +47,4 @@ router.use("/despesas", despesasRouter);
 router.use("/lancamentos", lancamentosRouter);
 router.use("/cobrancas", cobrancasRouter);
 router.use("/regua-cobranca", reguaCobrancaRouter);
+router.use("/orcamentos", orcamentosRouter);

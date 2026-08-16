@@ -23,6 +23,7 @@ import {
   HeadphonesIcon,
   ChevronDown,
   BellRing,
+  BarChart3,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useLocation } from "react-router-dom";
@@ -67,6 +68,7 @@ const financeiroGrupos = [
       { title: "Contas a Pagar", tab: "despesas", icon: ReceiptText },
       { title: "Extrato / Lançamento", tab: "lancamentos", icon: ScrollText },
       { title: "Régua de Cobrança", tab: "regua-cobranca", icon: BellRing },
+      { title: "Orçado × Realizado", tab: "orcado-realizado", icon: BarChart3 },
     ],
   },
   {
