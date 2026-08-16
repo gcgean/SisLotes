@@ -82,6 +82,7 @@ interface Conta {
   id_conta: number;
   apelido: string;
   ativo: boolean;
+  saldo_atual?: number;
 }
 
 interface PlanoConta {
@@ -253,6 +254,7 @@ export default function Despesas() {
   const [despesaSelecionadaId, setDespesaSelecionadaId] = useState<number | null>(null);
   const [dialogExcluirDespesa, setDialogExcluirDespesa] = useState<{ aberto: boolean; despesa: DespesaResumo | null }>({ aberto: false, despesa: null });
   const [parcelaParaEstorno, setParcelaParaEstorno] = useState<DespesaParcela | null>(null);
+  const [tentouSalvarDespesa, setTentouSalvarDespesa] = useState(false);
   const [cadastroDestrutivo, setCadastroDestrutivo] = useState<{
     tipo: "categoria" | "fornecedor";
     acao: "desativar" | "excluir";
@@ -390,7 +392,10 @@ export default function Despesas() {
     ...fornecedoresAtivos.map((f) => ({ value: String(f.id_fornecedor), label: f.nome })),
   ];
 
-  const contaOptions: ComboboxOption[] = contas.map((c) => ({ value: String(c.id_conta), label: c.apelido }));
+  const contaOptions: ComboboxOption[] = contas.map((c) => ({
+    value: String(c.id_conta),
+    label: `${c.apelido} · saldo ${fmtMoeda(c.saldo_atual ?? 0)}`,
+  }));
 
   const totalRateioDespesa = rateioDespesa.reduce((s, l) => s + (Number(l.percentual.replace(",", ".")) || 0), 0);
   const rateioDespesaValido =
@@ -542,6 +547,7 @@ export default function Despesas() {
       queryClient.invalidateQueries({ queryKey: ["despesas-alertas"] });
       queryClient.invalidateQueries({ queryKey: ["financeiro"] });
       setDialogDespesaAberto(false);
+      setTentouSalvarDespesa(false);
       setFormDespesa(emptyDespesaForm);
       toast({ title: modoDespesa === "novo" ? "Conta a pagar cadastrada" : "Conta a pagar atualizada" });
     },
@@ -766,6 +772,7 @@ export default function Despesas() {
     setFormDespesa(emptyDespesaForm);
     setRatearDespesa(false);
     setRateioDespesa([]);
+    setTentouSalvarDespesa(false);
     setDialogDespesaAberto(true);
   }
 
@@ -788,6 +795,7 @@ export default function Despesas() {
     });
     setRatearDespesa(false);
     setRateioDespesa([]);
+    setTentouSalvarDespesa(false);
     setDialogDespesaAberto(true);
   }
 
@@ -1036,7 +1044,7 @@ export default function Despesas() {
                     <th className="px-4 py-3 text-left font-semibold">Parcelas</th>
                     <th className="px-4 py-3 text-left font-semibold">Vencimento</th>
                     <th className="px-4 py-3 text-left font-semibold">Situação</th>
-                    <th className="px-4 py-3 text-left font-semibold">Ações</th>
+                    <th className="px-4 py-3 text-left font-semibold sticky right-0 bg-muted/95 shadow-[-4px_0_8px_rgba(0,0,0,0.04)]">Ações</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1049,7 +1057,7 @@ export default function Despesas() {
                       const situacao = d.parcelas_pagas === d.parcelas_total ? "pago" : d.parcelas_pagas === 0 ? "aberto" : "parcial";
                       return (
                         <tr key={d.id_despesa} className="border-b last:border-0 hover:bg-muted/30 cursor-pointer transition-colors" onClick={() => abrirDetalheDespesa(d.id_despesa)}>
-                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                          <td className="px-4 py-3 sticky right-0 bg-background shadow-[-4px_0_8px_rgba(0,0,0,0.04)]" onClick={(e) => e.stopPropagation()}>
                             <input
                               type="checkbox"
                               className="h-4 w-4 rounded border-gray-300 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
@@ -1252,18 +1260,19 @@ export default function Despesas() {
 
       {/* Dialog: Nova/Editar Conta a Pagar */}
       <Dialog open={dialogDespesaAberto} onOpenChange={setDialogDespesaAberto}>
-        <DialogContent className="max-w-2xl max-h-[94vh] overflow-y-auto p-4 sm:p-5">
-          <DialogHeader className="space-y-0.5">
+        <DialogContent className="max-w-2xl max-h-[94vh] overflow-hidden p-0 gap-0">
+          <DialogHeader className="space-y-0.5 p-4 sm:p-5 pb-3 border-b">
             <DialogTitle className="text-base">{modoDespesa === "novo" ? "Nova Conta a Pagar" : "Editar Conta a Pagar"}</DialogTitle>
             <DialogDescription className="text-xs leading-snug">
               Deixe "Loteamento" em branco para lançar como conta administrativa da empresa.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 overflow-y-auto p-4 sm:p-5">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="sm:col-span-2">
                 <Label>Descrição *</Label>
                 <Input value={formDespesa.descricao} onChange={(e) => setFormDespesa((f) => ({ ...f, descricao: e.target.value }))} placeholder="Ex: Terraplanagem — Quadra B" />
+                {tentouSalvarDespesa && !formDespesa.descricao.trim() ? <p className="text-xs text-destructive mt-1">Informe a descrição.</p> : null}
               </div>
               <div className={ratearDespesa && modoDespesa === "novo" ? "sm:col-span-2" : ""}>
                 <div className="flex items-center justify-between gap-2">
@@ -1317,6 +1326,7 @@ export default function Despesas() {
                   searchPlaceholder="Buscar categoria..."
                   emptyText="Nenhuma categoria encontrada."
                 />
+                {tentouSalvarDespesa && !formDespesa.id_categoria ? <p className="text-xs text-destructive mt-1">Selecione uma categoria.</p> : null}
               </div>
               <div>
                 <Label>Fornecedor (opcional)</Label>
@@ -1332,6 +1342,7 @@ export default function Despesas() {
               <div>
                 <Label>Valor Total *</Label>
                 <MoneyInput value={formDespesa.valor_total} onValueChange={(valor_total) => setFormDespesa((f) => ({ ...f, valor_total }))} />
+                {tentouSalvarDespesa && !formDespesa.valor_total ? <p className="text-xs text-destructive mt-1">Informe um valor maior que zero.</p> : null}
               </div>
               {modoDespesa === "novo" && (
                 <>
@@ -1402,11 +1413,15 @@ export default function Despesas() {
               </div>
             </div>
           </div>
-          <DialogFooter className="pt-1">
+          <DialogFooter className="sticky bottom-0 border-t bg-background p-4 sm:px-5 shadow-[0_-4px_12px_rgba(0,0,0,0.05)]">
             <Button variant="outline" onClick={() => setDialogDespesaAberto(false)}>Cancelar</Button>
             <Button
-              disabled={salvarDespesaMutation.isPending || !formDespesa.descricao.trim() || !formDespesa.id_categoria || !formDespesa.valor_total || !rateioDespesaValido}
-              onClick={() => salvarDespesaMutation.mutate()}
+              disabled={salvarDespesaMutation.isPending}
+              onClick={() => {
+                setTentouSalvarDespesa(true);
+                if (!formDespesa.descricao.trim() || !formDespesa.id_categoria || !formDespesa.valor_total || !rateioDespesaValido) return;
+                salvarDespesaMutation.mutate();
+              }}
             >
               {salvarDespesaMutation.isPending ? "Salvando…" : "Salvar"}
             </Button>
