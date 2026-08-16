@@ -153,7 +153,8 @@ interface DespesaParcela {
   pago_data: string | null;
   valor_pago: string | null;
   multa_paga?: string; juros_pagos?: string; desconto_obtido?: string;
-  pagamentos?: Array<{id_parcela_pagamento:number;pago_data:string;valor_pago:string;conta_apelido:string;anexo_nome?:string|null;anexo_base64?:string|null}>;
+  iss_retido?: string; irrf_retido?: string; inss_retido?: string;
+  pagamentos?: Array<{id_parcela_pagamento:number;pago_data:string;valor_pago:string;conta_apelido:string;iss_retido?:string;irrf_retido?:string;inss_retido?:string;anexo_nome?:string|null;anexo_base64?:string|null}>;
   id_conta: number | null;
 }
 interface EmpresaFinanceira extends ReciboEmpresa { multa_percentual?: string; juros_percentual_dia?: string; carencia_dias?: number }
@@ -275,7 +276,7 @@ export default function Despesas() {
   // ─── Dialog: pagar parcela ────────────────────────────────────────────────
   const [dialogPagarAberto, setDialogPagarAberto] = useState(false);
   const [parcelaSelecionada, setParcelaSelecionada] = useState<DespesaParcela | null>(null);
-  const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_base: "", multa: "0", juros: "0", desconto: "0", id_conta: "", anexo_nome: "", anexo_base64: "" });
+  const [formPagar, setFormPagar] = useState({ pago_data: new Date().toISOString().slice(0, 10), valor_base: "", multa: "0", juros: "0", desconto: "0", iss_retido: "0", irrf_retido: "0", inss_retido: "0", id_conta: "", anexo_nome: "", anexo_base64: "" });
 
   // ─── Pagamento em lote ─────────────────────────────────────────────────────
   const [selecionadas, setSelecionadas] = useState<Set<number>>(new Set());
@@ -612,6 +613,7 @@ export default function Despesas() {
       const body = {
         pago_data: formPagar.pago_data,
         valor_base: Number(formPagar.valor_base), multa: Number(formPagar.multa), juros: Number(formPagar.juros), desconto: Number(formPagar.desconto),
+        iss_retido: Number(formPagar.iss_retido), irrf_retido: Number(formPagar.irrf_retido), inss_retido: Number(formPagar.inss_retido),
         id_conta: formPagar.id_conta ? Number(formPagar.id_conta) : null,
         anexo_nome: formPagar.anexo_nome || null,
         anexo_base64: formPagar.anexo_base64 || null,
@@ -824,9 +826,9 @@ export default function Despesas() {
 
   function abrirPagarParcela(parcela: DespesaParcela) {
     setParcelaSelecionada(parcela);
-    const liquidado=Math.max(0,Number(parcela.valor_pago??0)-Number(parcela.multa_paga??0)-Number(parcela.juros_pagos??0)+Number(parcela.desconto_obtido??0));
+    const liquidado=Math.max(0,Number(parcela.valor_pago??0)-Number(parcela.multa_paga??0)-Number(parcela.juros_pagos??0)+Number(parcela.desconto_obtido??0)+Number(parcela.iss_retido??0)+Number(parcela.irrf_retido??0)+Number(parcela.inss_retido??0));
     const restante=Math.max(0,Number(parcela.valor)-liquidado);const data=new Date().toISOString().slice(0,10),e=encargosSugeridos(restante,parcela.vencimento,data,empresaRelatorio);
-    setFormPagar({pago_data:data,valor_base:restante.toFixed(2),multa:String(e.multa),juros:String(e.juros),desconto:"0",id_conta:"",anexo_nome:"",anexo_base64:""});
+    setFormPagar({pago_data:data,valor_base:restante.toFixed(2),multa:String(e.multa),juros:String(e.juros),desconto:"0",iss_retido:"0",irrf_retido:"0",inss_retido:"0",id_conta:"",anexo_nome:"",anexo_base64:""});
     setDialogPagarAberto(true);
   }
 
@@ -1560,10 +1562,15 @@ export default function Despesas() {
                         {p.situacao === "pago" ? (
                           <Badge className="bg-green-100 text-green-700 border-green-200">Paga em {formatDateBR(p.pago_data)}</Badge>
                         ) : p.situacao === "parcial" ? (
-                          <div><Badge variant="secondary">Parcial · {fmtMoeda(p.valor_pago)}</Badge><div className="text-xs text-muted-foreground mt-1">Saldo: {fmtMoeda(Math.max(0,Number(p.valor)-Number(p.valor_pago??0)+Number(p.multa_paga??0)+Number(p.juros_pagos??0)-Number(p.desconto_obtido??0)))}</div></div>
+                          <div><Badge variant="secondary">Parcial · {fmtMoeda(p.valor_pago)}</Badge><div className="text-xs text-muted-foreground mt-1">Saldo: {fmtMoeda(Math.max(0,Number(p.valor)-Number(p.valor_pago??0)+Number(p.multa_paga??0)+Number(p.juros_pagos??0)-Number(p.desconto_obtido??0)-Number(p.iss_retido??0)-Number(p.irrf_retido??0)-Number(p.inss_retido??0)))}</div></div>
                         ) : (
                           <Badge variant="outline">Em aberto</Badge>
                         )}
+                        {Number(p.iss_retido??0)+Number(p.irrf_retido??0)+Number(p.inss_retido??0)>0 ? (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Retido: {fmtMoeda(Number(p.iss_retido??0)+Number(p.irrf_retido??0)+Number(p.inss_retido??0))}
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2">
                         <div className="flex flex-col items-start gap-1">
@@ -1611,7 +1618,12 @@ export default function Despesas() {
               <Label>Valor original</Label><MoneyInput value={formPagar.valor_base} onValueChange={(valor_base) => setFormPagar((f) => ({ ...f, valor_base }))} />
             </div>
             <div className="grid grid-cols-3 gap-2"><div><Label>Multa</Label><MoneyInput value={formPagar.multa} onValueChange={(multa)=>setFormPagar(f=>({...f,multa}))}/></div><div><Label>Juros</Label><MoneyInput value={formPagar.juros} onValueChange={(juros)=>setFormPagar(f=>({...f,juros}))}/></div><div><Label>Desconto</Label><MoneyInput value={formPagar.desconto} onValueChange={(desconto)=>setFormPagar(f=>({...f,desconto}))}/></div></div>
-            <div className="rounded-md bg-muted p-3 flex justify-between"><span className="text-sm text-muted-foreground">Total efetivo</span><strong>{fmtMoeda(Number(formPagar.valor_base||0)+Number(formPagar.multa||0)+Number(formPagar.juros||0)-Number(formPagar.desconto||0))}</strong></div>
+            <div>
+              <Label>Retenções do serviço</Label>
+              <div className="mt-1 grid grid-cols-3 gap-2"><div><Label className="text-xs text-muted-foreground">ISS</Label><MoneyInput value={formPagar.iss_retido} onValueChange={(iss_retido)=>setFormPagar(f=>({...f,iss_retido}))}/></div><div><Label className="text-xs text-muted-foreground">IRRF</Label><MoneyInput value={formPagar.irrf_retido} onValueChange={(irrf_retido)=>setFormPagar(f=>({...f,irrf_retido}))}/></div><div><Label className="text-xs text-muted-foreground">INSS</Label><MoneyInput value={formPagar.inss_retido} onValueChange={(inss_retido)=>setFormPagar(f=>({...f,inss_retido}))}/></div></div>
+              <p className="mt-1 text-xs text-muted-foreground">As retenções reduzem a saída da conta, sem reduzir o valor bruto liquidado.</p>
+            </div>
+            <div className="rounded-md bg-muted p-3 flex justify-between"><span className="text-sm text-muted-foreground">Total líquido a pagar</span><strong>{fmtMoeda(Number(formPagar.valor_base||0)+Number(formPagar.multa||0)+Number(formPagar.juros||0)-Number(formPagar.desconto||0)-Number(formPagar.iss_retido||0)-Number(formPagar.irrf_retido||0)-Number(formPagar.inss_retido||0))}</strong></div>
             <div>
               <Label>Conta / local do pagamento *</Label>
               <Combobox

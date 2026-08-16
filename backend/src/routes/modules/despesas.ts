@@ -653,6 +653,9 @@ const pagarSchema = z.object({
   multa: z.number().min(0).default(0),
   juros: z.number().min(0).default(0),
   desconto: z.number().min(0).default(0),
+  iss_retido: z.number().min(0).default(0),
+  irrf_retido: z.number().min(0).default(0),
+  inss_retido: z.number().min(0).default(0),
   // Obrigatório: precisa informar de qual conta saiu o pagamento para que o
   // extrato da conta reflita as contas a pagar quitadas.
   id_conta: z.number().int().positive({ message: "Informe a conta de onde saiu o pagamento." }),
@@ -672,13 +675,14 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
   }
   const valoresAntigos = { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, id_conta: parcela.id_conta };
 
-  const { pago_data, id_conta, multa, juros, desconto, anexo_nome, anexo_base64 } = parse.data;
+  const { pago_data, id_conta, multa, juros, desconto, iss_retido, irrf_retido, inss_retido, anexo_nome, anexo_base64 } = parse.data;
   const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});
   const retroativo=await verificarPermissaoRetroativa(req.user!,pago_data);if(retroativo)return res.status(403).json({error:retroativo});
   const valorBase = parse.data.valor_base ?? parse.data.valor_pago ?? Number(parcela.valor);
-  const valorPago = valorBase + multa + juros - desconto;
+  const totalRetido = iss_retido + irrf_retido + inss_retido;
+  const valorPago = valorBase + multa + juros - desconto - totalRetido;
   if (valorPago <= 0 || desconto > valorBase + multa + juros) return res.status(400).json({ error: "O total efetivamente pago deve ser maior que zero." });
-  const [somaAtual] = await AppDataSource.query(`SELECT COALESCE(SUM(valor_principal+desconto),0)::numeric AS liquidado,COALESCE(SUM(valor_pago),0)::numeric AS pago,COALESCE(SUM(multa),0)::numeric AS multa,COALESCE(SUM(juros),0)::numeric AS juros,COALESCE(SUM(desconto),0)::numeric AS desconto FROM despesa_parcela_pagamentos WHERE id_despesa_parcela=$1`,[parcela.id_despesa_parcela]);
+  const [somaAtual] = await AppDataSource.query(`SELECT COALESCE(SUM(valor_principal+desconto),0)::numeric AS liquidado,COALESCE(SUM(valor_pago),0)::numeric AS pago,COALESCE(SUM(multa),0)::numeric AS multa,COALESCE(SUM(juros),0)::numeric AS juros,COALESCE(SUM(desconto),0)::numeric AS desconto,COALESCE(SUM(iss_retido),0)::numeric AS iss,COALESCE(SUM(irrf_retido),0)::numeric AS irrf,COALESCE(SUM(inss_retido),0)::numeric AS inss FROM despesa_parcela_pagamentos WHERE id_despesa_parcela=$1`,[parcela.id_despesa_parcela]);
   if(Number(somaAtual.liquidado)+valorBase+desconto>Number(parcela.valor)+0.01)return res.status(400).json({error:"O valor principal e o desconto excedem o saldo restante da parcela."});
   parcela.situacao = Number(somaAtual.liquidado)+valorBase+desconto>=Number(parcela.valor)-0.01?"pago":"parcial";
   parcela.pago_data = pago_data;
@@ -686,10 +690,13 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
   parcela.multa_paga = (Number(somaAtual.multa)+multa).toFixed(2);
   parcela.juros_pagos = (Number(somaAtual.juros)+juros).toFixed(2);
   parcela.desconto_obtido = (Number(somaAtual.desconto)+desconto).toFixed(2);
+  parcela.iss_retido = (Number(somaAtual.iss)+iss_retido).toFixed(2);
+  parcela.irrf_retido = (Number(somaAtual.irrf)+irrf_retido).toFixed(2);
+  parcela.inss_retido = (Number(somaAtual.inss)+inss_retido).toFixed(2);
   parcela.id_conta = id_conta ?? null;
   parcela.id_usuario = req.user!.id_usuario;
 
-  const saved = await AppDataSource.transaction(async manager=>{const atualizada=await manager.save(parcela);await manager.query(`INSERT INTO despesa_parcela_pagamentos(id_empresa,id_despesa_parcela,id_conta,pago_data,valor_principal,multa,juros,desconto,valor_pago,id_usuario,anexo_nome,anexo_base64) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,[atualizada.id_empresa,atualizada.id_despesa_parcela,id_conta,pago_data,valorBase,multa,juros,desconto,valorPago,req.user!.id_usuario,anexo_nome??null,anexo_base64??null]);return atualizada;});
+  const saved = await AppDataSource.transaction(async manager=>{const atualizada=await manager.save(parcela);await manager.query(`INSERT INTO despesa_parcela_pagamentos(id_empresa,id_despesa_parcela,id_conta,pago_data,valor_principal,multa,juros,desconto,iss_retido,irrf_retido,inss_retido,valor_pago,id_usuario,anexo_nome,anexo_base64) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,[atualizada.id_empresa,atualizada.id_despesa_parcela,id_conta,pago_data,valorBase,multa,juros,desconto,iss_retido,irrf_retido,inss_retido,valorPago,req.user!.id_usuario,anexo_nome??null,anexo_base64??null]);return atualizada;});
 
   const logRepo = AppDataSource.getRepository(Log);
   await logRepo.save(logRepo.create({
@@ -699,7 +706,7 @@ despesasRouter.post("/parcelas/:id/pagar", async (req: AuthRequest, res: Respons
     log: `Parcela de despesa ${saved.id_despesa_parcela} (despesa ${saved.id_despesa}) paga — valor_pago=${saved.valor_pago}`,
     query: JSON.stringify(parse.data),
   }));
-  await AuditoriaService.registrar(req, "despesa_parcelas", "UPDATE", saved.id_despesa_parcela, valoresAntigos, { situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, multa_paga: saved.multa_paga, juros_pagos: saved.juros_pagos, desconto_obtido: saved.desconto_obtido, id_conta: saved.id_conta }, `Pagamento confirmado — despesa ${saved.id_despesa}, parcela ${saved.numero_parcela}, valor ${saved.valor_pago}`);
+  await AuditoriaService.registrar(req, "despesa_parcelas", "UPDATE", saved.id_despesa_parcela, valoresAntigos, { situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, multa_paga: saved.multa_paga, juros_pagos: saved.juros_pagos, desconto_obtido: saved.desconto_obtido, iss_retido: saved.iss_retido, irrf_retido: saved.irrf_retido, inss_retido: saved.inss_retido, id_conta: saved.id_conta }, `Pagamento confirmado — despesa ${saved.id_despesa}, parcela ${saved.numero_parcela}, valor líquido ${saved.valor_pago}`);
 
   return res.json(saved);
 });
@@ -780,7 +787,7 @@ despesasRouter.post("/parcelas/:id/estornar", requirePermission("financeiro_esto
   if (parcela.situacao === "aberto") {
     return res.status(400).json({ error: "Esta parcela não está paga e não pode ser estornada." });
   }
-  const valoresAntigos = { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, multa_paga: parcela.multa_paga, juros_pagos: parcela.juros_pagos, desconto_obtido: parcela.desconto_obtido, id_conta: parcela.id_conta };
+  const valoresAntigos = { situacao: parcela.situacao, pago_data: parcela.pago_data, valor_pago: parcela.valor_pago, multa_paga: parcela.multa_paga, juros_pagos: parcela.juros_pagos, desconto_obtido: parcela.desconto_obtido, iss_retido: parcela.iss_retido, irrf_retido: parcela.irrf_retido, inss_retido: parcela.inss_retido, id_conta: parcela.id_conta };
 
   parcela.situacao = "aberto";
   parcela.pago_data = null;
@@ -788,6 +795,9 @@ despesasRouter.post("/parcelas/:id/estornar", requirePermission("financeiro_esto
   parcela.multa_paga = "0.00";
   parcela.juros_pagos = "0.00";
   parcela.desconto_obtido = "0.00";
+  parcela.iss_retido = "0.00";
+  parcela.irrf_retido = "0.00";
+  parcela.inss_retido = "0.00";
   parcela.id_conta = null;
 
   const saved = await AppDataSource.transaction(async manager=>{const atualizada=await manager.save(parcela);await manager.query(`DELETE FROM despesa_parcela_pagamentos WHERE id_despesa_parcela=$1 AND id_empresa=$2`,[atualizada.id_despesa_parcela,atualizada.id_empresa]);return atualizada;});
@@ -804,4 +814,4 @@ despesasRouter.post("/parcelas/:id/estornar", requirePermission("financeiro_esto
   return res.json(saved);
 });
 
-despesasRouter.post("/parcela-pagamentos/:id/estornar",async(req:AuthRequest,res:Response)=>{const id=Number(req.params.id),empresa=req.user!.id_empresa;const [existente]=await AppDataSource.query(`SELECT * FROM despesa_parcela_pagamentos WHERE id_parcela_pagamento=$1 AND id_empresa=$2`,[id,empresa]);if(!existente)return res.status(404).json({error:"Baixa não encontrada"});const bloqueio=await verificarPeriodoFinanceiro(empresa,existente.pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});const [baixa]=await AppDataSource.query(`DELETE FROM despesa_parcela_pagamentos WHERE id_parcela_pagamento=$1 AND id_empresa=$2 RETURNING *`,[id,empresa]);const [s]=await AppDataSource.query(`SELECT COALESCE(SUM(valor_principal+desconto),0)::numeric liquidado,COALESCE(SUM(valor_pago),0)::numeric pago,COALESCE(SUM(multa),0)::numeric multa,COALESCE(SUM(juros),0)::numeric juros,COALESCE(SUM(desconto),0)::numeric desconto,MAX(pago_data) data FROM despesa_parcela_pagamentos WHERE id_despesa_parcela=$1`,[baixa.id_despesa_parcela]);await AppDataSource.query(`UPDATE despesa_parcelas SET situacao=CASE WHEN $2=0 THEN 'aberto' WHEN $2>=valor THEN 'pago' ELSE 'parcial' END,valor_pago=CASE WHEN $2=0 THEN NULL ELSE $3 END,multa_paga=$4,juros_pagos=$5,desconto_obtido=$6,pago_data=$7,id_conta=CASE WHEN $2=0 THEN NULL ELSE id_conta END WHERE id_despesa_parcela=$1`,[baixa.id_despesa_parcela,Number(s.liquidado),Number(s.pago),Number(s.multa),Number(s.juros),Number(s.desconto),s.data]);await AuditoriaService.registrar(req,"despesa_parcela_pagamentos","DELETE",id,baixa,undefined,"Baixa parcial estornada");return res.status(204).send();});
+despesasRouter.post("/parcela-pagamentos/:id/estornar",async(req:AuthRequest,res:Response)=>{const id=Number(req.params.id),empresa=req.user!.id_empresa;const [existente]=await AppDataSource.query(`SELECT * FROM despesa_parcela_pagamentos WHERE id_parcela_pagamento=$1 AND id_empresa=$2`,[id,empresa]);if(!existente)return res.status(404).json({error:"Baixa não encontrada"});const bloqueio=await verificarPeriodoFinanceiro(empresa,existente.pago_data);if(bloqueio)return res.status(409).json({error:bloqueio});const [baixa]=await AppDataSource.query(`DELETE FROM despesa_parcela_pagamentos WHERE id_parcela_pagamento=$1 AND id_empresa=$2 RETURNING *`,[id,empresa]);const [s]=await AppDataSource.query(`SELECT COALESCE(SUM(valor_principal+desconto),0)::numeric liquidado,COALESCE(SUM(valor_pago),0)::numeric pago,COALESCE(SUM(multa),0)::numeric multa,COALESCE(SUM(juros),0)::numeric juros,COALESCE(SUM(desconto),0)::numeric desconto,COALESCE(SUM(iss_retido),0)::numeric iss,COALESCE(SUM(irrf_retido),0)::numeric irrf,COALESCE(SUM(inss_retido),0)::numeric inss,MAX(pago_data) data FROM despesa_parcela_pagamentos WHERE id_despesa_parcela=$1`,[baixa.id_despesa_parcela]);await AppDataSource.query(`UPDATE despesa_parcelas SET situacao=CASE WHEN $2=0 THEN 'aberto' WHEN $2>=valor THEN 'pago' ELSE 'parcial' END,valor_pago=CASE WHEN $2=0 THEN NULL ELSE $3 END,multa_paga=$4,juros_pagos=$5,desconto_obtido=$6,iss_retido=$7,irrf_retido=$8,inss_retido=$9,pago_data=$10,id_conta=CASE WHEN $2=0 THEN NULL ELSE id_conta END WHERE id_despesa_parcela=$1`,[baixa.id_despesa_parcela,Number(s.liquidado),Number(s.pago),Number(s.multa),Number(s.juros),Number(s.desconto),Number(s.iss),Number(s.irrf),Number(s.inss),s.data]);await AuditoriaService.registrar(req,"despesa_parcela_pagamentos","DELETE",id,baixa,undefined,"Baixa parcial estornada");return res.status(204).send();});

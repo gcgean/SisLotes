@@ -54,6 +54,12 @@ export class DespesaParcela {
   juros_pagos!: string;
   @Column({ type: "decimal", precision: 12, scale: 2, name: "desconto_obtido", default: 0 })
   desconto_obtido!: string;
+  @Column({ type: "decimal", precision: 12, scale: 2, name: "iss_retido", default: 0 })
+  iss_retido!: string;
+  @Column({ type: "decimal", precision: 12, scale: 2, name: "irrf_retido", default: 0 })
+  irrf_retido!: string;
+  @Column({ type: "decimal", precision: 12, scale: 2, name: "inss_retido", default: 0 })
+  inss_retido!: string;
 
   @Column({ type: "integer", name: "id_conta", nullable: true })
   id_conta?: number | null;
