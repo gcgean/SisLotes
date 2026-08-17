@@ -530,13 +530,13 @@ export function VisaoGeralTab() {
         </CardContent>
       </Card>
 
-      {/* Comparativo lado a lado: mesma leitura visual, fontes separadas e explícitas. */}
+      {/* Comparativo em linhas completas: mesma leitura visual, fontes separadas e explícitas. */}
       <div className="space-y-3">
         <div>
           <h2 className="text-base font-semibold">Fluxo de caixa: realizado × projetado</h2>
           <p className="text-sm text-muted-foreground">Compare o histórico confirmado com os compromissos e recebíveis futuros já cadastrados.</p>
         </div>
-        <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4">
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-semibold">Realizado — últimos 12 meses</CardTitle>

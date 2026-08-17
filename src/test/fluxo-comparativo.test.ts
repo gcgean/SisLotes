@@ -10,10 +10,11 @@ describe("fluxo de caixa realizado versus projetado", () => {
     expect(fonte).toContain('/api/relatorios/fluxo-de-caixa-previsto"');
   });
 
-  it("apresenta os dois períodos lado a lado em telas grandes", () => {
+  it("apresenta cada período em uma linha completa", () => {
     expect(fonte).toContain("Fluxo de caixa: realizado × projetado");
     expect(fonte).toContain("Realizado — últimos 12 meses");
     expect(fonte).toContain("Projetado — próximos 12 meses");
-    expect(fonte).toContain("xl:grid-cols-2");
+    expect(fonte).toContain('className="grid grid-cols-1 gap-4"');
+    expect(fonte).not.toContain("xl:grid-cols-2");
   });
 });
