@@ -246,7 +246,6 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
-              <AssistenteBotao />
               <TableExportMenu />
               <ScreenHelp tutorial={screenTutorial} />
               {user && (
@@ -307,6 +306,9 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Bottom navigation bar — only on mobile */}
       <BottomNav />
+
+      {/* Assistente de IA: botão flutuante, disponível em qualquer tela */}
+      <AssistenteBotao />
 
       <FirstAccessTutorial open={tutorialOpen} onOpenChange={setTutorialOpen} onComplete={completeTutorial} />
 

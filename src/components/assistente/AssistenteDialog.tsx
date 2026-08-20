@@ -5,7 +5,6 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/loading-state";
 import { Sparkles, Send, AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
@@ -327,15 +326,13 @@ export function AssistenteBotao() {
   return (
     <>
       <Button
-        size="sm"
-        className="gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-sm shadow-violet-500/30 border-0"
+        size="icon"
+        aria-label="Abrir assistente de IA"
+        title="Assistente"
         onClick={() => setAberto(true)}
+        className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-40 h-14 w-14 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-lg shadow-violet-500/40 border-0 hover:scale-105 transition-transform"
       >
-        <Sparkles className="h-4 w-4 animate-pulse" />
-        <span className="hidden sm:inline">Assistente</span>
-        <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-white/20 text-white border-0">
-          beta
-        </Badge>
+        <Sparkles className="h-6 w-6 animate-pulse" />
       </Button>
       <AssistenteDialog open={aberto} onOpenChange={setAberto} />
     </>
