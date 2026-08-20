@@ -326,10 +326,14 @@ export function AssistenteBotao() {
 
   return (
     <>
-      <Button variant="outline" size="sm" className="gap-2" onClick={() => setAberto(true)}>
-        <Sparkles className="h-4 w-4 text-primary" />
+      <Button
+        size="sm"
+        className="gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white shadow-sm shadow-violet-500/30 border-0"
+        onClick={() => setAberto(true)}
+      >
+        <Sparkles className="h-4 w-4 animate-pulse" />
         <span className="hidden sm:inline">Assistente</span>
-        <Badge variant="secondary" className="text-[10px] px-1 py-0">
+        <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-white/20 text-white border-0">
           beta
         </Badge>
       </Button>
