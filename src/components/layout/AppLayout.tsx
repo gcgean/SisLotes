@@ -12,6 +12,7 @@ import { formatLicenseRemainingTime } from "@/lib/license-time";
 import { formatDateBR } from "@/lib/date-br";
 import { TableExportMenu } from "./TableExportMenu";
 import { ScreenHelp } from "./ScreenHelp";
+import { AssistenteBotao } from "@/components/assistente/AssistenteDialog";
 import { getScreenTutorial } from "@/lib/screen-tutorials";
 import { FirstAccessTutorial } from "@/components/onboarding/FirstAccessTutorial";
 
@@ -245,6 +246,7 @@ export function AppLayout({ children }: AppLayoutProps) {
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              <AssistenteBotao />
               <TableExportMenu />
               <ScreenHelp tutorial={screenTutorial} />
               {user && (

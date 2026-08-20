@@ -23,6 +23,7 @@ import { cobrancasRouter } from "./modules/cobrancas";
 import { reguaCobrancaRouter } from "./modules/regua-cobranca";
 import { orcamentosRouter } from "./modules/orcamentos";
 import { fechamentoFinanceiroRouter } from "./modules/fechamento-financeiro";
+import { assistenteRouter } from "./modules/assistente";
 
 export const router = Router();
 
@@ -50,3 +51,4 @@ router.use("/cobrancas", cobrancasRouter);
 router.use("/regua-cobranca", reguaCobrancaRouter);
 router.use("/orcamentos", orcamentosRouter);
 router.use("/fechamento-financeiro", fechamentoFinanceiroRouter);
+router.use("/assistente", assistenteRouter);
