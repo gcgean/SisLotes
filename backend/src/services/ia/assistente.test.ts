@@ -47,13 +47,14 @@ describe("permissões das ferramentas", () => {
   const semPermissao: Ferramenta = {
     nome: "acao_restrita",
     descricao: "x",
+    risco: "escrita",
     schema: z.object({}),
     permissao: "financeiro_estornar",
     executar: async () => ({ ok: true }),
   };
 
   it("libera ferramenta sem permissão exigida", () => {
-    const livre: Ferramenta = { nome: "livre", descricao: "x", schema: z.object({}), executar: async () => ({}) };
+    const livre: Ferramenta = { nome: "livre", descricao: "x", risco: "consulta", schema: z.object({}), executar: async () => ({}) };
     assert.equal(podeUsar(livre, usuario() as never), true);
   });
 
@@ -137,11 +138,10 @@ describe("laço do assistente", () => {
     assert.ok(p.chamadasRecebidas.length <= 6, `foi ao modelo ${p.chamadasRecebidas.length}x`);
   });
 
-  it("não expõe ferramenta de escrita a quem não pode usá-la", async () => {
-    const decl = declararFerramentas(usuario() as never);
-    const propor = decl.find((f) => f.nome === "propor_conta_a_pagar");
-    // A ferramenta de proposta não exige permissão (não grava nada), então está disponível.
-    assert.ok(propor, "propor_conta_a_pagar deve estar disponível");
+  it("declara as ferramentas de escrita ao modelo", async () => {
+    const nomes = declararFerramentas(usuario() as never).map((f) => f.nome);
+    assert.ok(nomes.includes("criar_conta_a_pagar"));
+    assert.ok(nomes.includes("criar_lancamento"));
   });
 });
 
@@ -151,6 +151,7 @@ describe("isolamento por empresa", () => {
     const espia: Ferramenta = {
       nome: "espia",
       descricao: "x",
+      risco: "consulta",
       schema: z.object({ id_empresa: z.number().optional() }),
       executar: async (_a, c) => {
         capturado.ctx = c;

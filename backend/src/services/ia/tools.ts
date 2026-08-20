@@ -3,19 +3,26 @@
 //
 // 1. Isolamento por empresa: o id_empresa vem sempre do usuário autenticado
 //    (contexto), nunca de um argumento que o modelo escreveu. O modelo pede
-//    "buscar contas a receber"; o código decide de qual empresa.
+//    "buscar contas a receber"; o código decide de qual empresa. Consultas são
+//    conferidas por exigirEscopoDeEmpresa().
 // 2. Permissão: cada ferramenta declara a permissão exigida, checada com a
 //    mesma regra do requirePermission — a IA nunca pode mais que o usuário.
-// 3. Escrita nunca executa direto: ferramentas de escrita apenas *propõem* a
-//    ação; quem confirma é o usuário na tela.
-// 4. Dado do banco é informação, não instrução. O texto que volta de uma
-//    ferramenta é conteúdo digitado por usuários (nome de cliente, descrição de
-//    despesa) e pode conter tentativa de injeção — o prompt do sistema instrui
-//    a tratá-lo como dado.
+// 3. Nível de risco: "consulta" e "escrita" executam direto; "critica"
+//    (irreversível ou que mexe em dinheiro já movimentado) exige confirmação.
+// 4. Dado do banco é informação, não instrução. O prompt do sistema instrui a
+//    tratar o retorno das ferramentas como dado — nomes de cliente e descrições
+//    são texto digitado por usuários e podem conter tentativa de injeção.
+// 5. Nada sensível sai: o resultado passa por sanitizar() no orquestrador.
 
 import { z } from "zod";
 import { AppDataSource } from "../../db/data-source";
+import { Despesa } from "../../entities/Despesa";
+import { DespesaParcela } from "../../entities/DespesaParcela";
+import { LancamentoManual } from "../../entities/LancamentoManual";
 import { Usuario } from "../../entities/Usuario";
+import { addMonths, gerarValoresParcelas } from "../../routes/modules/despesas";
+import { contaContabilAceitaLancamento } from "../../utils/plano-contas";
+import { exigirEscopoDeEmpresa, NivelDeRisco } from "./seguranca";
 
 type PermissaoIA =
   | "clientes_cadastrar"
@@ -34,8 +41,7 @@ export interface Ferramenta<S extends z.ZodTypeAny = z.ZodTypeAny> {
   /** Descrição prescritiva: diz QUANDO chamar, não só o que faz. */
   descricao: string;
   schema: S;
-  /** Ferramenta de escrita só devolve proposta; execução exige confirmação. */
-  escrita?: boolean;
+  risco: NivelDeRisco;
   permissao?: PermissaoIA;
   executar: (args: z.infer<S>, ctx: ContextoIA) => Promise<unknown>;
 }
@@ -51,6 +57,12 @@ const moeda = (v: unknown) =>
 
 type Linha = Record<string, unknown>;
 
+/** Consulta com a trava de escopo por empresa aplicada antes de rodar. */
+async function consultar(origem: string, sql: string, params: unknown[]): Promise<Linha[]> {
+  exigirEscopoDeEmpresa(sql, origem);
+  return AppDataSource.query(sql, params);
+}
+
 // ─── Consulta ────────────────────────────────────────────────────────────────
 
 const listarLoteamentos: Ferramenta = {
@@ -58,9 +70,11 @@ const listarLoteamentos: Ferramenta = {
   descricao:
     "Lista os loteamentos da empresa com cidade e quantidade de lotes. Chame antes de qualquer outra " +
     "ferramenta que precise de um id de loteamento, ou quando o usuário citar um loteamento pelo nome.",
+  risco: "consulta",
   schema: z.object({}),
   async executar(_args, ctx) {
-    const linhas: Linha[] = await AppDataSource.query(
+    const linhas = await consultar(
+      "listar_loteamentos",
       `SELECT lo.id_loteamento, lo.nome, lo.cidade, lo.estado,
               COUNT(l.id_lote) AS total_lotes
        FROM loteamentos lo
@@ -84,6 +98,7 @@ const dividaPorLoteamento: Ferramenta = {
   descricao:
     "Quanto cada loteamento tem vendido, já recebido, em atraso e a vencer. Chame quando o usuário " +
     "perguntar sobre inadimplência, quanto tem a receber, ou a situação financeira de um loteamento.",
+  risco: "consulta",
   schema: z.object({
     id_loteamento: z
       .number()
@@ -99,7 +114,8 @@ const dividaPorLoteamento: Ferramenta = {
       params.push(args.id_loteamento);
       filtro = `AND lo.id_loteamento = $${params.length}`;
     }
-    const linhas: Linha[] = await AppDataSource.query(
+    const linhas = await consultar(
+      "divida_por_loteamento",
       `SELECT lo.nome,
               COALESCE(SUM(p.valor), 0) AS vendido,
               COALESCE(SUM(CASE WHEN p.situacao = 'pago' THEN COALESCE(p.valor_pago, p.valor) ELSE 0 END), 0) AS pago,
@@ -129,10 +145,12 @@ const saldoDasContas: Ferramenta = {
   descricao:
     "Saldo atual de cada conta bancária/caixa da empresa e o total geral. Chame quando o usuário " +
     "perguntar quanto tem em caixa, saldo disponível, ou quanto tem no banco.",
+  risco: "consulta",
   schema: z.object({}),
   async executar(_args, ctx) {
-    const linhas: Linha[] = await AppDataSource.query(
-      `SELECT c.apelido, c.tipo,
+    const linhas = await consultar(
+      "saldo_das_contas",
+      `SELECT c.id_conta, c.apelido, c.tipo,
               c.saldo_inicial
               + COALESCE((SELECT SUM(COALESCE(p.valor_pago, p.valor)) FROM pagamentos p
                           JOIN vendas v ON v.id_venda = p.id_venda
@@ -150,7 +168,12 @@ const saldoDasContas: Ferramenta = {
     );
     const total = linhas.reduce((a, r) => a + Number(r.saldo ?? 0), 0);
     return {
-      contas: linhas.map((r) => ({ conta: r.apelido, tipo: r.tipo, saldo: moeda(r.saldo) })),
+      contas: linhas.map((r) => ({
+        id: Number(r.id_conta),
+        conta: r.apelido,
+        tipo: r.tipo,
+        saldo: moeda(r.saldo),
+      })),
       totalGeral: moeda(total),
     };
   },
@@ -161,6 +184,7 @@ const contasAPagar: Ferramenta = {
   descricao:
     "Contas a pagar em aberto, com vencimento, fornecedor e se está atrasada. Chame quando o usuário " +
     "perguntar o que tem para pagar, quais contas estão atrasadas, ou o que vence num período.",
+  risco: "consulta",
   schema: z.object({
     somente_atrasadas: z.boolean().optional().describe("true para trazer só o que já venceu."),
     ate_dias: z
@@ -179,7 +203,8 @@ const contasAPagar: Ferramenta = {
       params.push(args.ate_dias);
       condicoes.push(`dp.vencimento <= CURRENT_DATE + make_interval(days => $${params.length})`);
     }
-    const linhas: Linha[] = await AppDataSource.query(
+    const linhas = await consultar(
+      "contas_a_pagar",
       `SELECT d.descricao, f.nome AS fornecedor, dp.valor,
               TO_CHAR(dp.vencimento, 'DD/MM/YYYY') AS vencimento,
               (dp.vencimento < CURRENT_DATE) AS atrasada
@@ -211,11 +236,13 @@ const buscarCliente: Ferramenta = {
   descricao:
     "Procura clientes por parte do nome ou CPF/CNPJ e devolve a situação das parcelas de cada um. " +
     "Chame quando o usuário citar uma pessoa pelo nome e quiser saber a situação dela.",
+  risco: "consulta",
   schema: z.object({
     termo: z.string().min(2).describe("Parte do nome ou do CPF/CNPJ."),
   }),
   async executar(args, ctx) {
-    const linhas: Linha[] = await AppDataSource.query(
+    const linhas = await consultar(
+      "buscar_cliente",
       `SELECT c.id_cliente, c.nome, c.cpf,
               COUNT(p.id_pagamento) FILTER (WHERE p.situacao = 'aberto' AND p.vencimento < CURRENT_DATE) AS parcelas_atrasadas,
               COALESCE(SUM(p.valor) FILTER (WHERE p.situacao = 'aberto'), 0) AS em_aberto
@@ -238,20 +265,53 @@ const buscarCliente: Ferramenta = {
   },
 };
 
-// ─── Escrita (apenas propõe; quem grava é a confirmação do usuário) ──────────
-
-const proporContaAPagar: Ferramenta = {
-  nome: "propor_conta_a_pagar",
+const listarPlanoDeContas: Ferramenta = {
+  nome: "listar_plano_de_contas",
   descricao:
-    "Prepara o cadastro de uma nova conta a pagar para o usuário revisar e confirmar. Use quando o " +
-    "usuário pedir para lançar/cadastrar uma despesa. NÃO grava nada: devolve a proposta para confirmação.",
-  escrita: true,
+    "Lista as contas contábeis (categorias) que aceitam lançamento, separadas em receita e despesa. " +
+    "Chame antes de criar uma conta a pagar ou um lançamento, para escolher a categoria correta.",
+  risco: "consulta",
+  schema: z.object({
+    tipo: z.enum(["receita", "despesa"]).optional().describe("Filtra por tipo."),
+  }),
+  async executar(args, ctx) {
+    const params: unknown[] = [ctx.idEmpresa];
+    let filtro = "";
+    if (args.tipo) {
+      params.push(args.tipo);
+      filtro = `AND pc.tipo = $${params.length}`;
+    }
+    const linhas = await consultar(
+      "listar_plano_de_contas",
+      `SELECT pc.id_conta_contabil, pc.nome, pc.tipo
+       FROM plano_de_contas pc
+       WHERE pc.id_empresa = $1 ${filtro}
+         AND NOT EXISTS (SELECT 1 FROM plano_de_contas f WHERE f.id_pai = pc.id_conta_contabil)
+       ORDER BY pc.tipo, pc.nome`,
+      params,
+    );
+    return linhas.map((r) => ({
+      id: Number(r.id_conta_contabil),
+      nome: r.nome,
+      tipo: r.tipo,
+    }));
+  },
+};
+
+// ─── Escrita: executa de verdade ─────────────────────────────────────────────
+
+const criarContaAPagar: Ferramenta = {
+  nome: "criar_conta_a_pagar",
+  descricao:
+    "Cadastra uma nova conta a pagar (despesa) e gera as parcelas. Use quando o usuário pedir para " +
+    "lançar, cadastrar ou registrar uma despesa. Antes de chamar, use listar_plano_de_contas para " +
+    "escolher a categoria e listar_loteamentos se o usuário citar um loteamento. GRAVA no sistema.",
+  risco: "escrita",
   schema: z.object({
     descricao: z.string().min(1).max(200),
-    valor_total: z.number().positive(),
-    data_primeiro_vencimento: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, "Use o formato AAAA-MM-DD"),
+    valor_total: z.number().positive().max(99_999_999),
+    id_categoria: z.number().int().positive().describe("Id da conta contábil (listar_plano_de_contas)."),
+    data_primeiro_vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use o formato AAAA-MM-DD"),
     numero_parcelas: z.number().int().min(1).max(360).optional(),
     id_loteamento: z
       .number()
@@ -259,29 +319,138 @@ const proporContaAPagar: Ferramenta = {
       .positive()
       .optional()
       .describe("Omita para lançar como despesa administrativa da empresa."),
+    id_fornecedor: z.number().int().positive().optional(),
   }),
   async executar(args, ctx) {
-    // Confere que o loteamento citado é mesmo da empresa do usuário.
+    // Todo id que veio do modelo é conferido contra a empresa do usuário antes de usar.
     if (args.id_loteamento) {
-      const [lote] = await AppDataSource.query(
+      const [lote] = await consultar(
+        "criar_conta_a_pagar/loteamento",
         `SELECT nome FROM loteamentos WHERE id_loteamento = $1 AND id_empresa = $2`,
         [args.id_loteamento, ctx.idEmpresa],
       );
-      if (!lote) {
-        return { erro: "Loteamento não encontrado nesta empresa. Liste os loteamentos antes." };
-      }
+      if (!lote) return { erro: "Loteamento não encontrado nesta empresa." };
     }
-    return {
-      tipoProposta: "conta_a_pagar",
-      // O frontend usa isto para abrir o formulário já preenchido.
-      dados: {
-        descricao: args.descricao,
-        valor_total: args.valor_total,
-        data_primeiro_vencimento: args.data_primeiro_vencimento,
-        numero_parcelas: args.numero_parcelas ?? 1,
+    if (args.id_fornecedor) {
+      const [f] = await consultar(
+        "criar_conta_a_pagar/fornecedor",
+        `SELECT nome FROM fornecedores WHERE id_fornecedor = $1 AND id_empresa = $2`,
+        [args.id_fornecedor, ctx.idEmpresa],
+      );
+      if (!f) return { erro: "Fornecedor não encontrado nesta empresa." };
+    }
+    if (!(await contaContabilAceitaLancamento(args.id_categoria, ctx.idEmpresa, "despesa"))) {
+      return {
+        erro:
+          "Categoria inválida: use uma conta contábil analítica de despesa (contas com subcontas não aceitam lançamento).",
+      };
+    }
+
+    const numeroParcelas = args.numero_parcelas ?? 1;
+    const despesaRepo = AppDataSource.getRepository(Despesa);
+    const parcelaRepo = AppDataSource.getRepository(DespesaParcela);
+
+    const despesa = await despesaRepo.save(
+      despesaRepo.create({
+        id_empresa: ctx.idEmpresa,
         id_loteamento: args.id_loteamento ?? null,
-      },
-      aviso: "Proposta montada. Nada foi gravado — o usuário precisa confirmar na tela.",
+        id_categoria: args.id_categoria,
+        id_fornecedor: args.id_fornecedor ?? null,
+        descricao: args.descricao,
+        valor_total: args.valor_total.toFixed(2),
+        numero_parcelas: numeroParcelas,
+        recorrente: false,
+        recorrencia_ativa: true,
+      }),
+    );
+
+    // Mesma função de rateio de centavos usada pela tela, para não divergir.
+    const valores = gerarValoresParcelas(args.valor_total, numeroParcelas);
+    await parcelaRepo.save(
+      valores.map((valor, i) =>
+        parcelaRepo.create({
+          id_empresa: ctx.idEmpresa,
+          id_despesa: despesa.id_despesa,
+          numero_parcela: i + 1,
+          vencimento: addMonths(args.data_primeiro_vencimento, i),
+          valor: valor.toFixed(2),
+          situacao: "aberto",
+        }),
+      ),
+    );
+
+    return {
+      criado: true,
+      id_despesa: despesa.id_despesa,
+      descricao: despesa.descricao,
+      valorTotal: moeda(args.valor_total),
+      parcelas: numeroParcelas,
+      primeiroVencimento: args.data_primeiro_vencimento,
+    };
+  },
+};
+
+const criarLancamento: Ferramenta = {
+  nome: "criar_lancamento",
+  descricao:
+    "Registra um lançamento manual de entrada (receita) ou saída (despesa) numa conta. Use quando o " +
+    "usuário pedir para lançar uma entrada/saída avulsa no caixa ou banco. Antes, use saldo_das_contas " +
+    "para pegar o id da conta e listar_plano_de_contas para a categoria. GRAVA no sistema.",
+  risco: "escrita",
+  schema: z.object({
+    tipo: z.enum(["receita", "despesa"]),
+    descricao: z.string().min(1).max(200),
+    valor: z.number().positive().max(99_999_999),
+    data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use o formato AAAA-MM-DD"),
+    id_conta: z.number().int().positive().describe("Id da conta (saldo_das_contas)."),
+    id_conta_contabil: z.number().int().positive().optional(),
+    id_loteamento: z.number().int().positive().optional(),
+  }),
+  async executar(args, ctx) {
+    const [conta] = await consultar(
+      "criar_lancamento/conta",
+      `SELECT apelido FROM contas WHERE id_conta = $1 AND id_empresa = $2 AND ativo = true`,
+      [args.id_conta, ctx.idEmpresa],
+    );
+    if (!conta) return { erro: "Conta não encontrada nesta empresa ou inativa." };
+
+    if (args.id_loteamento) {
+      const [lote] = await consultar(
+        "criar_lancamento/loteamento",
+        `SELECT nome FROM loteamentos WHERE id_loteamento = $1 AND id_empresa = $2`,
+        [args.id_loteamento, ctx.idEmpresa],
+      );
+      if (!lote) return { erro: "Loteamento não encontrado nesta empresa." };
+    }
+    if (
+      args.id_conta_contabil &&
+      !(await contaContabilAceitaLancamento(args.id_conta_contabil, ctx.idEmpresa, args.tipo))
+    ) {
+      return { erro: "Categoria inválida para este tipo de lançamento." };
+    }
+
+    const repo = AppDataSource.getRepository(LancamentoManual);
+    const lancamento = await repo.save(
+      repo.create({
+        id_empresa: ctx.idEmpresa,
+        id_conta: args.id_conta,
+        id_conta_contabil: args.id_conta_contabil ?? null,
+        id_loteamento: args.id_loteamento ?? null,
+        tipo: args.tipo,
+        descricao: args.descricao,
+        valor: args.valor.toFixed(2),
+        data: args.data,
+      }),
+    );
+
+    return {
+      criado: true,
+      id_lancamento: lancamento.id_lancamento,
+      tipo: args.tipo,
+      descricao: args.descricao,
+      valor: moeda(args.valor),
+      conta: conta.apelido,
+      data: args.data,
     };
   },
 };
@@ -292,7 +461,9 @@ export const FERRAMENTAS: Ferramenta[] = [
   saldoDasContas,
   contasAPagar,
   buscarCliente,
-  proporContaAPagar,
+  listarPlanoDeContas,
+  criarContaAPagar,
+  criarLancamento,
 ];
 
 export function ferramentasPara(usuario: Usuario): Ferramenta[] {

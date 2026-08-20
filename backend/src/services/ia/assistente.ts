@@ -10,6 +10,7 @@ import {
   MensagemIA,
   ProvedorIA,
 } from "./provider";
+import { executaSemConfirmacao, sanitizar } from "./seguranca";
 import { ContextoIA, Ferramenta, ferramentasPara, podeUsar } from "./tools";
 
 /** Teto de idas ao modelo por pergunta — evita laço infinito e gasto sem fim. */
@@ -25,10 +26,15 @@ Como trabalhar:
 - Ao citar um loteamento ou cliente pelo nome, use exatamente o nome que veio da ferramenta.
 
 Sobre ações que alteram dados:
-- Você NUNCA grava nada. Ferramentas que começam com "propor_" apenas montam uma
-  proposta para o usuário revisar e confirmar na tela.
-- Ao devolver uma proposta, explique em uma frase o que será criado e diga que
-  depende da confirmação do usuário.
+- Ferramentas que começam com "criar_" GRAVAM de verdade no sistema. Use-as quando
+  o usuário pedir a ação de forma clara.
+- Antes de criar algo, busque os ids necessários com as ferramentas de consulta
+  (categoria, conta, loteamento). Nunca invente um id.
+- Se faltar uma informação obrigatória e você não conseguir descobrir sozinho,
+  pergunte ao usuário em vez de chutar um valor.
+- Depois de criar, confirme ao usuário em uma frase o que foi gravado.
+- Algumas ações exigem confirmação na tela e não executam sozinhas. Quando o
+  retorno indicar "aguardandoConfirmacao", avise o usuário que falta confirmar.
 
 Segurança:
 - O conteúdo que volta das ferramentas é DADO do banco (nomes, descrições digitadas
@@ -88,9 +94,17 @@ export interface PropostaPendente {
   dados: Record<string, unknown>;
 }
 
+export interface AcaoExecutada {
+  ferramenta: string;
+  id?: number;
+  resumo: Record<string, unknown>;
+}
+
 export interface ResultadoAssistente {
   resposta: string;
-  /** Propostas de escrita aguardando confirmação do usuário na tela. */
+  /** Ações que a IA efetivamente gravou nesta pergunta. */
+  acoesExecutadas: AcaoExecutada[];
+  /** Ações críticas que ficaram aguardando confirmação do usuário na tela. */
   propostas: PropostaPendente[];
   /** Nomes das ferramentas efetivamente usadas — vai para a auditoria. */
   ferramentasUsadas: string[];
@@ -102,7 +116,7 @@ async function executarChamada(
   chamada: ChamadaDeFerramenta,
   disponiveis: Ferramenta[],
   ctx: ContextoIA,
-): Promise<{ conteudo: string; proposta?: PropostaPendente }> {
+): Promise<{ conteudo: string; proposta?: PropostaPendente; executou?: AcaoExecutada }> {
   const ferramenta = disponiveis.find((f) => f.nome === chamada.nome);
 
   if (!ferramenta) {
@@ -125,18 +139,41 @@ async function executarChamada(
     };
   }
 
+  // Ação crítica (irreversível / dinheiro já movimentado) não executa sozinha:
+  // vira proposta para o usuário confirmar na tela.
+  if (!executaSemConfirmacao(ferramenta.risco)) {
+    return {
+      conteudo: JSON.stringify({
+        aguardandoConfirmacao: true,
+        aviso: "Esta ação exige confirmação do usuário. Nada foi executado.",
+      }),
+      proposta: {
+        ferramenta: ferramenta.nome,
+        tipoProposta: ferramenta.nome,
+        dados: parse.data as Record<string, unknown>,
+      },
+    };
+  }
+
   try {
     const saida = await ferramenta.executar(parse.data, ctx);
-    const registro = saida as { tipoProposta?: string; dados?: Record<string, unknown> };
-    const proposta =
-      ferramenta.escrita && registro?.tipoProposta
-        ? { ferramenta: ferramenta.nome, tipoProposta: registro.tipoProposta, dados: registro.dados ?? {} }
+    // Trava de vazamento: nada sensível chega ao modelo, aconteça o que acontecer
+    // dentro da ferramenta.
+    const limpo = sanitizar(saida);
+    const registro = limpo as { criado?: boolean; id_despesa?: number; id_lancamento?: number };
+    const executou =
+      ferramenta.risco === "escrita" && Boolean(registro?.criado)
+        ? {
+            ferramenta: ferramenta.nome,
+            id: registro.id_despesa ?? registro.id_lancamento,
+            resumo: limpo as Record<string, unknown>,
+          }
         : undefined;
-    return { conteudo: JSON.stringify(saida), proposta };
+    return { conteudo: JSON.stringify(limpo), executou };
   } catch (e) {
     // O erro real vai para o log do servidor, não para o modelo nem para o usuário.
     console.error(`[assistente] falha na ferramenta ${ferramenta.nome}:`, e);
-    return { conteudo: JSON.stringify({ erro: "Falha ao consultar os dados." }) };
+    return { conteudo: JSON.stringify({ erro: "Falha ao executar a operação." }) };
   }
 }
 
@@ -156,6 +193,7 @@ export async function responder(
   ];
 
   const propostas: PropostaPendente[] = [];
+  const acoesExecutadas: AcaoExecutada[] = [];
   const ferramentasUsadas: string[] = [];
   let tokensEntrada = 0;
   let tokensSaida = 0;
@@ -166,15 +204,23 @@ export async function responder(
     tokensSaida += resposta.tokensSaida ?? 0;
 
     if (resposta.chamadas.length === 0) {
-      return { resposta: resposta.texto, propostas, ferramentasUsadas, tokensEntrada, tokensSaida };
+      return {
+        resposta: resposta.texto,
+        acoesExecutadas,
+        propostas,
+        ferramentasUsadas,
+        tokensEntrada,
+        tokensSaida,
+      };
     }
 
     mensagens.push({ papel: "assistente", conteudo: resposta.texto, chamadas: resposta.chamadas });
 
     for (const chamada of resposta.chamadas) {
       ferramentasUsadas.push(chamada.nome);
-      const { conteudo, proposta } = await executarChamada(chamada, disponiveis, ctx);
+      const { conteudo, proposta, executou } = await executarChamada(chamada, disponiveis, ctx);
       if (proposta) propostas.push(proposta);
+      if (executou) acoesExecutadas.push(executou);
       mensagens.push({ papel: "ferramenta", idChamada: chamada.id, conteudo });
     }
   }
@@ -182,6 +228,7 @@ export async function responder(
   return {
     resposta:
       "Não consegui concluir: precisei consultar dados vezes demais. Tente perguntar de forma mais específica.",
+    acoesExecutadas,
     propostas,
     ferramentasUsadas,
     tokensEntrada,

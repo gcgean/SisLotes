@@ -1,6 +1,7 @@
 import { Response, Router } from "express";
 import { z } from "zod";
 import { AuthRequest, requireAuth } from "../../middleware/auth";
+import { AuditoriaService } from "../../services/AuditoriaService";
 import { responder } from "../../services/ia/assistente";
 import { ProvedorDeepSeek } from "../../services/ia/deepseek";
 import { ErroProvedorIA, MensagemIA, ProvedorIA } from "../../services/ia/provider";
@@ -94,15 +95,31 @@ assistenteRouter.post("/", async (req: AuthRequest, res: Response) => {
   try {
     const resultado = await responder(obterProvedor(), parse.data.pergunta, { usuario, idEmpresa }, historico);
 
-    // Rastro de uso: fica no log do servidor (a auditoria é para alterações de registro).
     console.log(
       `[assistente] empresa=${idEmpresa} usuario=${usuario.login} ` +
         `ferramentas=[${resultado.ferramentasUsadas.join(",")}] ` +
+        `executou=${resultado.acoesExecutadas.length} ` +
         `tokens=${resultado.tokensEntrada}/${resultado.tokensSaida}`,
     );
 
+    // Toda gravação feita pela IA entra na auditoria marcada como tal, para o
+    // gestor conseguir separar depois o que foi a IA do que foi a pessoa.
+    for (const acao of resultado.acoesExecutadas) {
+      const tabela = acao.ferramenta === "criar_conta_a_pagar" ? "despesas" : "lancamentos_manuais";
+      await AuditoriaService.registrar(
+        req,
+        tabela,
+        "CREATE",
+        acao.id,
+        undefined,
+        acao.resumo,
+        `Criado pelo assistente de IA a pedido de ${usuario.login}: "${parse.data.pergunta.slice(0, 120)}"`,
+      );
+    }
+
     return res.json({
       resposta: resultado.resposta,
+      acoesExecutadas: resultado.acoesExecutadas,
       propostas: resultado.propostas,
       ferramentasUsadas: resultado.ferramentasUsadas,
     });

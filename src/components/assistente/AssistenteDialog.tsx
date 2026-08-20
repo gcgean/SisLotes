@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "@/hooks/use-toast";
@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { LoadingState } from "@/components/ui/loading-state";
-import { Sparkles, Send, AlertTriangle, ArrowRight } from "lucide-react";
+import { Sparkles, Send, AlertTriangle, ArrowRight, CheckCircle2 } from "lucide-react";
 
 interface PropostaPendente {
   ferramenta: string;
@@ -16,8 +16,15 @@ interface PropostaPendente {
   dados: Record<string, unknown>;
 }
 
+interface AcaoExecutada {
+  ferramenta: string;
+  id?: number;
+  resumo: Record<string, unknown>;
+}
+
 interface RespostaAssistente {
   resposta: string;
+  acoesExecutadas: AcaoExecutada[];
   propostas: PropostaPendente[];
   ferramentasUsadas: string[];
 }
@@ -25,6 +32,7 @@ interface RespostaAssistente {
 interface Mensagem {
   papel: "usuario" | "assistente";
   conteudo: string;
+  acoes?: AcaoExecutada[];
   propostas?: PropostaPendente[];
 }
 
@@ -32,6 +40,7 @@ const SUGESTOES = [
   "Quanto tenho a receber por loteamento?",
   "Qual o saldo das minhas contas?",
   "Quais contas estão atrasadas?",
+  "Lance uma despesa de energia de R$ 300 vencendo dia 10",
 ];
 
 const moeda = (v: unknown) =>
@@ -63,9 +72,40 @@ function ResumoProposta({ proposta }: { proposta: PropostaPendente }) {
   return <pre className="text-[11px] overflow-x-auto">{JSON.stringify(d, null, 2)}</pre>;
 }
 
+/** Resumo do que foi efetivamente gravado. */
+function ResumoAcao({ acao }: { acao: AcaoExecutada }) {
+  const r = acao.resumo;
+  const linhas: [string, string][] = [];
+  if (r.descricao) linhas.push(["Descrição", String(r.descricao)]);
+  if (r.valorTotal) linhas.push(["Valor", String(r.valorTotal)]);
+  if (r.valor) linhas.push(["Valor", String(r.valor)]);
+  if (r.parcelas) linhas.push(["Parcelas", String(r.parcelas)]);
+  if (r.conta) linhas.push(["Conta", String(r.conta)]);
+  if (r.primeiroVencimento) linhas.push(["1º vencimento", fmtData(r.primeiroVencimento)]);
+  if (r.data) linhas.push(["Data", fmtData(r.data)]);
+
+  return (
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+      {linhas.map(([rot, val]) => (
+        <FragmentoLinha key={rot} rotulo={rot} valor={val} />
+      ))}
+    </dl>
+  );
+}
+
+function FragmentoLinha({ rotulo, valor }: { rotulo: string; valor: string }) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{rotulo}</dt>
+      <dd className="font-medium">{valor}</dd>
+    </>
+  );
+}
+
 export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const { token } = useAuth();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
@@ -102,8 +142,18 @@ export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpen
     onSuccess: (data) => {
       setMensagens((m) => [
         ...m,
-        { papel: "assistente", conteudo: data.resposta, propostas: data.propostas },
+        {
+          papel: "assistente",
+          conteudo: data.resposta,
+          acoes: data.acoesExecutadas,
+          propostas: data.propostas,
+        },
       ]);
+      // Dados mudaram: força as telas abertas a recarregar.
+      if (data.acoesExecutadas?.length) {
+        qc.invalidateQueries({ queryKey: ["despesas"] });
+        qc.invalidateQueries({ queryKey: ["financeiro"] });
+      }
     },
     onError: (e) => {
       toast({
@@ -122,7 +172,13 @@ export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpen
     perguntar.mutate(p);
   }
 
-  /** A confirmação sai do chat e vai para a tela real, com o formulário preenchido. */
+  /** Leva o usuário para a tela onde o registro criado aparece. */
+  function abrirTelaDaAcao(acao: AcaoExecutada) {
+    onOpenChange(false);
+    navigate(acao.ferramenta === "criar_conta_a_pagar" ? "/despesas?tab=despesas" : "/despesas?tab=lancamentos");
+  }
+
+  /** Ação crítica: sai do chat e vai para a tela real, com o formulário preenchido. */
   function revisarProposta(proposta: PropostaPendente) {
     if (proposta.tipoProposta === "conta_a_pagar") {
       const params = new URLSearchParams({ tab: "despesas", nova: "1" });
@@ -143,8 +199,8 @@ export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpen
             Assistente
           </DialogTitle>
           <DialogDescription>
-            Pergunte sobre seus dados. O assistente consulta o sistema e responde — e nunca grava nada sem
-            você confirmar.
+            Consulta seus dados e executa cadastros por você. Ações irreversíveis (estorno, exclusão,
+            fechamento) continuam exigindo sua confirmação.
           </DialogDescription>
         </DialogHeader>
 
@@ -177,6 +233,27 @@ export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpen
                     }`}
                   >
                     <div className="whitespace-pre-wrap">{m.conteudo}</div>
+
+                    {m.acoes?.map((a, j) => (
+                      <div
+                        key={`acao-${j}`}
+                        className="mt-2 rounded-md border border-emerald-300 bg-background p-2.5 space-y-1.5"
+                      >
+                        <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                          Gravado no sistema
+                        </div>
+                        <ResumoAcao acao={a} />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full gap-1.5 h-8"
+                          onClick={() => abrirTelaDaAcao(a)}
+                        >
+                          Ver na tela <ArrowRight className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
 
                     {m.propostas?.map((p, j) => (
                       <div key={j} className="mt-2 rounded-md border border-amber-300 bg-background p-2.5 space-y-2">
@@ -214,7 +291,7 @@ export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpen
               />
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] text-muted-foreground">
-                  A IA pode errar. Confira valores antes de decidir.
+                  A IA executa cadastros por você e pode errar — confira o que ela gravar.
                 </span>
                 <Button size="sm" onClick={() => enviar(texto)} disabled={!texto.trim() || perguntar.isPending}>
                   <Send className="h-3.5 w-3.5 mr-1.5" />
