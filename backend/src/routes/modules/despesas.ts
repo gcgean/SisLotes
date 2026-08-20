@@ -210,7 +210,7 @@ export function addMonths(dateStr: string, months: number): string {
 }
 
 // Divide valor_total em N parcelas de 2 casas decimais, ajustando o arredondamento na última.
-function gerarValoresParcelas(valorTotal: number, numeroParcelas: number): number[] {
+export function gerarValoresParcelas(valorTotal: number, numeroParcelas: number): number[] {
   const base = Math.floor((valorTotal / numeroParcelas) * 100) / 100;
   const valores = Array(numeroParcelas).fill(base);
   const somaBase = base * numeroParcelas;

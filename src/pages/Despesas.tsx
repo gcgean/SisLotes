@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppLayout } from "@/components/layout/AppLayout";
@@ -799,6 +799,43 @@ export default function Despesas() {
     setTentouSalvarDespesa(false);
     setDialogDespesaAberto(true);
   }
+
+  // Proposta vinda do assistente de IA: abre o formulário já preenchido para o
+  // usuário conferir e confirmar. A IA nunca grava — a gravação é este submit.
+  const propostaAplicadaRef = useRef(false);
+  useEffect(() => {
+    if (propostaAplicadaRef.current) return;
+    if (searchParams.get("nova") !== "1") return;
+    propostaAplicadaRef.current = true;
+
+    const num = (v: string | null) => (v && !Number.isNaN(Number(v)) ? String(Number(v)) : "");
+    setModoDespesa("novo");
+    setDespesaEditandoId(null);
+    setFormDespesa({
+      ...emptyDespesaForm,
+      descricao: searchParams.get("descricao") ?? "",
+      valor_total: num(searchParams.get("valor_total")),
+      numero_parcelas: num(searchParams.get("numero_parcelas")) || "1",
+      data_primeiro_vencimento:
+        searchParams.get("data_primeiro_vencimento") ?? emptyDespesaForm.data_primeiro_vencimento,
+      id_loteamento: num(searchParams.get("id_loteamento")),
+    });
+    setRatearDespesa(false);
+    setRateioDespesa([]);
+    setTentouSalvarDespesa(false);
+    setDialogDespesaAberto(true);
+
+    // Limpa os parâmetros para o formulário não reabrir a cada re-render.
+    const limpos = new URLSearchParams(searchParams);
+    ["nova", "descricao", "valor_total", "numero_parcelas", "data_primeiro_vencimento", "id_loteamento"].forEach(
+      (k) => limpos.delete(k),
+    );
+    setSearchParams(limpos, { replace: true });
+    toast({
+      title: "Proposta do assistente",
+      description: "Confira os dados e clique em salvar para efetivar.",
+    });
+  }, [searchParams, setSearchParams]);
 
   function abrirEditarDespesa(d: DespesaResumo) {
     setModoDespesa("editar");
