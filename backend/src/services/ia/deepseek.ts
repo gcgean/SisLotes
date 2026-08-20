@@ -12,7 +12,7 @@ import {
 } from "./provider";
 
 const URL_PADRAO = "https://api.deepseek.com/chat/completions";
-const MODELO_PADRAO = "deepseek-chat";
+const MODELO_PADRAO = "deepseek-v4-pro";
 const TIMEOUT_MS = 60_000;
 
 type MensagemWire = {
