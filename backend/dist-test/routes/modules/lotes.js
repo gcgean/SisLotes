@@ -1,0 +1,431 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.lotesRouter = void 0;
+const express_1 = require("express");
+const zod_1 = require("zod");
+const data_source_1 = require("../../db/data-source");
+const Lote_1 = require("../../entities/Lote");
+const Venda_1 = require("../../entities/Venda");
+const Cliente_1 = require("../../entities/Cliente");
+const Loteamento_1 = require("../../entities/Loteamento");
+const Empresa_1 = require("../../entities/Empresa");
+const auth_1 = require("../../middleware/auth");
+const HubBillingService_1 = require("../../services/HubBillingService");
+exports.lotesRouter = (0, express_1.Router)();
+const loteBodySchema = zod_1.z.object({
+    id_loteamento: zod_1.z.number().int().positive(),
+    lote: zod_1.z.string().min(1).max(20),
+    quadra: zod_1.z.string().min(1).max(20),
+    area: zod_1.z.string().max(20).optional(),
+    frente: zod_1.z.string().max(20).optional(),
+    fundo: zod_1.z.string().max(20).optional(),
+    esquerdo: zod_1.z.string().max(20).optional(),
+    direito: zod_1.z.string().max(20).optional(),
+});
+function getDbErrorMessage(error) {
+    if (!error || typeof error !== "object")
+        return null;
+    const err = error;
+    if (err.code === "23505") {
+        if (String(err.constraint || "").includes("lotes_id_loteamento_quadra_lote")) {
+            return {
+                status: 409,
+                error: "Já existe um lote com esta combinação de loteamento, quadra e lote.",
+            };
+        }
+        return { status: 409, error: "Registro duplicado." };
+    }
+    if (err.code === "23503") {
+        return { status: 400, error: "Loteamento inválido para este lote." };
+    }
+    return null;
+}
+exports.lotesRouter.get("/", auth_1.requireAuth, async (req, res) => {
+    const loteRepo = data_source_1.AppDataSource.getRepository(Lote_1.Lote);
+    const vendaRepo = data_source_1.AppDataSource.getRepository(Venda_1.Venda);
+    const whereLote = {};
+    const whereVenda = {};
+    if (req.user?.id_empresa) {
+        whereLote.id_empresa = req.user.id_empresa;
+        whereVenda.id_empresa = req.user.id_empresa;
+    }
+    const [lotes, vendas] = await Promise.all([
+        loteRepo.find({
+            where: whereLote,
+            order: { quadra: "ASC", lote: "ASC" },
+        }),
+        vendaRepo.find({ where: whereVenda }),
+    ]);
+    const vendidos = new Set(vendas.filter((venda) => venda.status !== "cancelada").map((venda) => venda.id_lote));
+    const result = lotes.map((lote) => ({
+        id_lote: lote.id_lote,
+        id_loteamento: lote.id_loteamento,
+        lote: lote.lote,
+        quadra: lote.quadra,
+        area: lote.area,
+        frente: lote.frente,
+        fundo: lote.fundo,
+        esquerdo: lote.esquerdo,
+        direito: lote.direito,
+        status: vendidos.has(lote.id_lote) ? "vendido" : "disponivel",
+    }));
+    return res.json(result);
+});
+exports.lotesRouter.get("/limit-status", auth_1.requireAuth, async (req, res) => {
+    const idEmpresa = req.user?.id_empresa ?? 1;
+    const empresa = await data_source_1.AppDataSource.getRepository(Empresa_1.Empresa).findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+        return res.status(400).json({ error: "Empresa inválida" });
+    }
+    const planControlDisabled = HubBillingService_1.HubBillingService.isPlanControlDisabled(empresa);
+    const hubConfigured = HubBillingService_1.HubBillingService.isConfigured();
+    if (!planControlDisabled && hubConfigured) {
+        try {
+            await HubBillingService_1.HubBillingService.syncEmpresaLicense(empresa);
+        }
+        catch {
+            const cachedQuantity = HubBillingService_1.HubBillingService.getStoredQuantity(empresa);
+            if (cachedQuantity === null) {
+                return res.status(503).json({
+                    error: "Não foi possível validar o limite de lotes do seu plano no momento. Tente novamente.",
+                });
+            }
+        }
+    }
+    if (!planControlDisabled && HubBillingService_1.HubBillingService.isLicenseDenied(empresa)) {
+        return res.status(403).json({
+            error: HubBillingService_1.HubBillingService.getLicenseMessage(empresa),
+            reason: empresa.hub_license_reason || empresa.hub_license_status,
+            limiteAtingido: true,
+            necessitaUpgrade: true,
+        });
+    }
+    const quantidadePermitida = !planControlDisabled && hubConfigured ? HubBillingService_1.HubBillingService.getStoredQuantity(empresa) : null;
+    const quantidadeUsada = await data_source_1.AppDataSource.getRepository(Lote_1.Lote).count({ where: { id_empresa: idEmpresa } });
+    const quantityMissing = !planControlDisabled && hubConfigured && (quantidadePermitida == null || !Number.isFinite(quantidadePermitida));
+    const limiteAtingido = quantityMissing
+        ? true
+        : quantidadePermitida != null && Number.isFinite(quantidadePermitida)
+            ? quantidadeUsada >= quantidadePermitida
+            : false;
+    let nextPlan = null;
+    if (limiteAtingido && hubConfigured) {
+        const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+        if (productId && quantidadePermitida != null) {
+            try {
+                const plans = await HubBillingService_1.HubBillingService.getProductPlans(productId);
+                const current = quantidadePermitida;
+                const candidates = plans
+                    .map((p) => {
+                    const q = p.quantity;
+                    const qNum = typeof q === "number" && Number.isFinite(q) ? q : null;
+                    return { p, qNum };
+                })
+                    .filter((x) => x.qNum !== null && x.qNum > current)
+                    .sort((a, b) => a.qNum - b.qNum);
+                const best = candidates[0]?.p;
+                if (best) {
+                    nextPlan = {
+                        planId: typeof best.id === "string" ? best.id : null,
+                        code: typeof best.code === "string" ? best.code : null,
+                        name: typeof best.name === "string" ? best.name : null,
+                        amount: typeof best.amount === "number" ? best.amount : null,
+                        quantity: typeof best.quantity === "number" ? best.quantity : null,
+                    };
+                }
+            }
+            catch {
+                nextPlan = null;
+            }
+        }
+    }
+    const meta = (empresa.hub_features && typeof empresa.hub_features === "object" && !Array.isArray(empresa.hub_features))
+        ? empresa.hub_features.__hubMeta
+        : null;
+    const planName = meta && typeof meta === "object" && !Array.isArray(meta) && typeof meta.planName === "string"
+        ? String(meta.planName)
+        : null;
+    return res.json({
+        plano: planName,
+        quantidadePermitida,
+        quantidadeUsada,
+        limiteAtingido,
+        necessitaUpgrade: limiteAtingido,
+        code: quantityMissing ? "lotes_quantity_missing" : null,
+        error: quantityMissing
+            ? "Não foi possível validar o limite de lotes do seu plano. Verifique se o campo quantity está configurado no plano da plataforma de pagamentos."
+            : null,
+        planControlDisabled,
+        hubConfigured,
+        nextPlan,
+    });
+});
+exports.lotesRouter.get("/:id", auth_1.requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const repo = data_source_1.AppDataSource.getRepository(Lote_1.Lote);
+    const where = { id_lote: Number(id) };
+    if (req.user?.id_empresa) {
+        where.id_empresa = req.user.id_empresa;
+    }
+    const lote = await repo.findOne({ where });
+    if (!lote) {
+        return res.status(404).json({ error: "Lote não encontrado" });
+    }
+    return res.json(lote);
+});
+exports.lotesRouter.get("/:id/status", auth_1.requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const vendaRepo = data_source_1.AppDataSource.getRepository(Venda_1.Venda);
+    const where = { id_lote: Number(id) };
+    if (req.user?.id_empresa) {
+        where.id_empresa = req.user.id_empresa;
+    }
+    const venda = await vendaRepo.findOne({
+        where,
+    });
+    const status = venda && venda.status !== "cancelada" ? "vendido" : "disponivel";
+    return res.json({
+        id_lote: Number(id),
+        status,
+    });
+});
+exports.lotesRouter.get("/:id/cliente", auth_1.requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const idEmpresa = req.user?.id_empresa;
+    const loteRepo = data_source_1.AppDataSource.getRepository(Lote_1.Lote);
+    const vendaRepo = data_source_1.AppDataSource.getRepository(Venda_1.Venda);
+    const clienteRepo = data_source_1.AppDataSource.getRepository(Cliente_1.Cliente);
+    const loteamentoRepo = data_source_1.AppDataSource.getRepository(Loteamento_1.Loteamento);
+    const whereLote = { id_lote: Number(id) };
+    if (idEmpresa)
+        whereLote.id_empresa = idEmpresa;
+    const lote = await loteRepo.findOne({ where: whereLote });
+    if (!lote) {
+        return res.status(404).json({ error: "Lote não encontrado" });
+    }
+    const whereLoteamento = { id_loteamento: lote.id_loteamento };
+    if (idEmpresa)
+        whereLoteamento.id_empresa = idEmpresa;
+    const loteamento = await loteamentoRepo.findOne({ where: whereLoteamento });
+    const whereVenda = { id_lote: Number(id) };
+    if (idEmpresa)
+        whereVenda.id_empresa = idEmpresa;
+    const venda = await vendaRepo.findOne({ where: whereVenda });
+    if (!venda || venda.status === "cancelada") {
+        return res.json({
+            lote: {
+                id_lote: lote.id_lote,
+                lote: lote.lote,
+                quadra: lote.quadra,
+                area: lote.area ?? null,
+                frente: lote.frente ?? null,
+                fundo: lote.fundo ?? null,
+                esquerdo: lote.esquerdo ?? null,
+                direito: lote.direito ?? null,
+                loteamento: loteamento?.nome ?? null,
+                cidade: loteamento?.cidade ?? null,
+                estado: loteamento?.estado ?? null,
+            },
+            status: "disponivel",
+            venda: null,
+            cliente: null,
+        });
+    }
+    const whereCliente = { id_cliente: venda.id_cliente };
+    if (idEmpresa)
+        whereCliente.id_empresa = idEmpresa;
+    const cliente = await clienteRepo.findOne({ where: whereCliente });
+    return res.json({
+        lote: {
+            id_lote: lote.id_lote,
+            lote: lote.lote,
+            quadra: lote.quadra,
+            area: lote.area ?? null,
+            frente: lote.frente ?? null,
+            fundo: lote.fundo ?? null,
+            esquerdo: lote.esquerdo ?? null,
+            direito: lote.direito ?? null,
+            loteamento: loteamento?.nome ?? null,
+            cidade: loteamento?.cidade ?? null,
+            estado: loteamento?.estado ?? null,
+        },
+        status: "vendido",
+        venda: {
+            id_venda: venda.id_venda,
+            data_venda: venda.data_venda,
+            valor_entrada: Number(venda.valor_entrada ?? 0),
+            parcelas: venda.parcelas,
+            porcentagem: Number(venda.porcentagem ?? 0),
+            status: venda.status,
+        },
+        cliente: cliente
+            ? {
+                id_cliente: cliente.id_cliente,
+                nome: cliente.nome,
+                cpf: cliente.cpf ?? null,
+                cnpj: cliente.cnpj ?? null,
+                tipo: cliente.tipo,
+                fone_res: cliente.fone_res ?? null,
+                fone_com: cliente.fone_com ?? null,
+                cidade: cliente.cidade ?? null,
+                estado: cliente.estado ?? null,
+            }
+            : null,
+    });
+});
+exports.lotesRouter.post("/", auth_1.requireAuth, async (req, res) => {
+    const parseResult = loteBodySchema.safeParse(req.body);
+    if (!parseResult.success) {
+        return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
+    }
+    try {
+        const idEmpresa = req.user?.id_empresa ?? 1;
+        const empresaRepo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+        const empresa = await empresaRepo.findOne({ where: { id_empresa: idEmpresa } });
+        if (!empresa) {
+            return res.status(400).json({ error: "Empresa inválida" });
+        }
+        if (!HubBillingService_1.HubBillingService.isPlanControlDisabled(empresa) && HubBillingService_1.HubBillingService.isConfigured()) {
+            try {
+                await HubBillingService_1.HubBillingService.syncEmpresaLicense(empresa);
+            }
+            catch (err) {
+                const cachedQuantity = HubBillingService_1.HubBillingService.getStoredQuantity(empresa);
+                if (cachedQuantity === null) {
+                    return res.status(503).json({
+                        error: "Não foi possível validar o limite de lotes do seu plano no momento. Tente novamente.",
+                    });
+                }
+            }
+            if (HubBillingService_1.HubBillingService.isLicenseDenied(empresa)) {
+                return res.status(403).json({
+                    error: HubBillingService_1.HubBillingService.getLicenseMessage(empresa),
+                    reason: empresa.hub_license_reason || empresa.hub_license_status,
+                });
+            }
+            const quantity = HubBillingService_1.HubBillingService.getStoredQuantity(empresa);
+            if (quantity === null || !Number.isFinite(quantity)) {
+                const meta = empresa.hub_features && typeof empresa.hub_features === "object" && !Array.isArray(empresa.hub_features)
+                    ? empresa.hub_features.__hubMeta
+                    : null;
+                const planName = meta && typeof meta === "object" && !Array.isArray(meta) && typeof meta.planName === "string"
+                    ? String(meta.planName)
+                    : null;
+                const planCode = meta && typeof meta === "object" && !Array.isArray(meta) && typeof meta.planCode === "string"
+                    ? String(meta.planCode)
+                    : null;
+                return res.status(403).json({
+                    error: "Não foi possível validar o limite de lotes do seu plano. Verifique se o campo quantity está configurado no plano da plataforma de pagamentos.",
+                    code: "lotes_quantity_missing",
+                    planName,
+                    planCode,
+                });
+            }
+            if (quantity <= 0) {
+                return res.status(403).json({
+                    error: "Seu plano atual não permite cadastro de lotes. Para cadastrar novos lotes, escolha um plano superior.",
+                    code: "lotes_limit_zero",
+                    quantidadePermitida: quantity,
+                });
+            }
+            const loteRepo = data_source_1.AppDataSource.getRepository(Lote_1.Lote);
+            const quantidadeUsada = await loteRepo.count({ where: { id_empresa: idEmpresa } });
+            if (quantidadeUsada >= quantity) {
+                let nextPlan = null;
+                const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+                if (productId) {
+                    try {
+                        const plans = await HubBillingService_1.HubBillingService.getProductPlans(productId);
+                        const current = quantity;
+                        const candidates = plans
+                            .map((p) => {
+                            const q = p.quantity;
+                            const qNum = typeof q === "number" && Number.isFinite(q) ? q : null;
+                            return { p, qNum };
+                        })
+                            .filter((x) => x.qNum !== null && x.qNum > current)
+                            .sort((a, b) => a.qNum - b.qNum);
+                        const best = candidates[0]?.p;
+                        if (best) {
+                            nextPlan = {
+                                planId: typeof best.id === "string" ? best.id : null,
+                                code: typeof best.code === "string" ? best.code : null,
+                                name: typeof best.name === "string" ? best.name : null,
+                                amount: typeof best.amount === "number" ? best.amount : null,
+                                quantity: typeof best.quantity === "number" ? best.quantity : null,
+                            };
+                        }
+                    }
+                    catch {
+                        nextPlan = null;
+                    }
+                }
+                return res.status(403).json({
+                    error: "Você atingiu o limite de lotes do seu plano atual. Para cadastrar novos lotes, escolha um plano superior.",
+                    code: "lotes_limit_reached",
+                    quantidadePermitida: quantity,
+                    quantidadeUsada,
+                    limiteAtingido: true,
+                    necessitaUpgrade: true,
+                    nextPlan,
+                });
+            }
+        }
+        const repo = data_source_1.AppDataSource.getRepository(Lote_1.Lote);
+        const lote = repo.create({
+            ...parseResult.data,
+            id_empresa: req.user?.id_empresa ?? 1,
+        });
+        const saved = await repo.save(lote);
+        return res.status(201).json(saved);
+    }
+    catch (error) {
+        const mapped = getDbErrorMessage(error);
+        if (mapped)
+            return res.status(mapped.status).json({ error: mapped.error });
+        console.error("[POST /api/lotes] erro:", error);
+        return res.status(500).json({ error: "Erro ao criar lote" });
+    }
+});
+exports.lotesRouter.put("/:id", auth_1.requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const parseResult = loteBodySchema.partial().safeParse(req.body);
+    if (!parseResult.success) {
+        return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
+    }
+    try {
+        const repo = data_source_1.AppDataSource.getRepository(Lote_1.Lote);
+        const where = { id_lote: Number(id) };
+        if (req.user?.id_empresa) {
+            where.id_empresa = req.user.id_empresa;
+        }
+        const lote = await repo.findOne({ where });
+        if (!lote) {
+            return res.status(404).json({ error: "Lote não encontrado" });
+        }
+        Object.assign(lote, parseResult.data);
+        const saved = await repo.save(lote);
+        return res.json(saved);
+    }
+    catch (error) {
+        const mapped = getDbErrorMessage(error);
+        if (mapped)
+            return res.status(mapped.status).json({ error: mapped.error });
+        console.error("[PUT /api/lotes/:id] erro:", error);
+        return res.status(500).json({ error: "Erro ao editar lote" });
+    }
+});
+exports.lotesRouter.delete("/:id", auth_1.requireAuth, async (req, res) => {
+    const { id } = req.params;
+    const repo = data_source_1.AppDataSource.getRepository(Lote_1.Lote);
+    const where = { id_lote: Number(id) };
+    if (req.user?.id_empresa) {
+        where.id_empresa = req.user.id_empresa;
+    }
+    const lote = await repo.findOne({ where });
+    if (!lote) {
+        return res.status(404).json({ error: "Lote não encontrado" });
+    }
+    await repo.remove(lote);
+    return res.status(204).send();
+});

@@ -1,0 +1,706 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.setupRouter = void 0;
+const express_1 = require("express");
+const zod_1 = require("zod");
+const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const data_source_1 = require("../../db/data-source");
+const Empresa_1 = require("../../entities/Empresa");
+const Usuario_1 = require("../../entities/Usuario");
+const HubBillingService_1 = require("../../services/HubBillingService");
+const TelegramService_1 = require("../../services/TelegramService");
+const PlanoDeContas_1 = require("../../entities/PlanoDeContas");
+const categorias_despesa_padrao_1 = require("../../config/categorias-despesa-padrao");
+const contas_receita_padrao_1 = require("../../config/contas-receita-padrao");
+exports.setupRouter = (0, express_1.Router)();
+function allDigitsEqual(digits) {
+    return /^(\d)\1+$/.test(digits);
+}
+function isValidCpf(digits) {
+    if (digits.length !== 11)
+        return false;
+    if (allDigitsEqual(digits))
+        return false;
+    const nums = digits.split("").map((n) => Number(n));
+    let sum = 0;
+    for (let i = 0; i < 9; i++)
+        sum += nums[i] * (10 - i);
+    let mod = sum % 11;
+    const d1 = mod < 2 ? 0 : 11 - mod;
+    if (nums[9] !== d1)
+        return false;
+    sum = 0;
+    for (let i = 0; i < 10; i++)
+        sum += nums[i] * (11 - i);
+    mod = sum % 11;
+    const d2 = mod < 2 ? 0 : 11 - mod;
+    if (nums[10] !== d2)
+        return false;
+    return true;
+}
+function isValidCnpj(digits) {
+    if (digits.length !== 14)
+        return false;
+    if (allDigitsEqual(digits))
+        return false;
+    const nums = digits.split("").map((n) => Number(n));
+    const w1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    const w2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    let sum = 0;
+    for (let i = 0; i < 12; i++)
+        sum += nums[i] * w1[i];
+    let mod = sum % 11;
+    const d1 = mod < 2 ? 0 : 11 - mod;
+    if (nums[12] !== d1)
+        return false;
+    sum = 0;
+    for (let i = 0; i < 13; i++)
+        sum += nums[i] * w2[i];
+    mod = sum % 11;
+    const d2 = mod < 2 ? 0 : 11 - mod;
+    if (nums[13] !== d2)
+        return false;
+    return true;
+}
+function isValidCpfCnpj(value) {
+    const digits = (value || "").replace(/\D/g, "");
+    if (digits.length === 11)
+        return isValidCpf(digits);
+    if (digits.length === 14)
+        return isValidCnpj(digits);
+    return false;
+}
+// ─── Planos disponíveis (rota pública) ────────────────────────────────────────
+const PLANOS_DISPONIVEIS = [
+    {
+        code: "TESTE",
+        title: "Plano Teste",
+        amount: 1.0,
+        description: "Experimente gratuitamente por 14 dias. Todos os recursos disponíveis.",
+        isTrial: true,
+    },
+    {
+        code: "BASICO",
+        title: "Básico",
+        amount: 49.9,
+        description: "Ideal para pequenas imobiliárias. Recursos essenciais para gestão de lotes.",
+    },
+    {
+        code: "INTERMEDIARIO",
+        title: "Intermediário",
+        amount: 99.9,
+        description: "Para operações de médio porte. Recursos avançados e suporte prioritário.",
+    },
+];
+function getTrialDaysConfigured() {
+    const raw = Number(process.env.HUB_BILLING_TRIAL_DAYS ?? "");
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 14;
+}
+async function getTrialDaysFromHub(productId) {
+    const fallback = getTrialDaysConfigured();
+    if (!productId)
+        return fallback;
+    try {
+        const product = await HubBillingService_1.HubBillingService.getProduct(productId);
+        const trialRaw = product.trial_days
+            ?? product.trialDays;
+        const parsed = typeof trialRaw === "number"
+            ? trialRaw
+            : typeof trialRaw === "string" && trialRaw.trim() && !Number.isNaN(Number(trialRaw))
+                ? Number(trialRaw)
+                : null;
+        if (parsed != null && Number.isFinite(parsed) && parsed >= 0) {
+            return Math.floor(parsed);
+        }
+    }
+    catch (err) {
+        console.warn("[Setup] Falha ao obter trial_days do produto no Hub:", err instanceof Error ? err.message : err);
+    }
+    return fallback;
+}
+function isHubPlanActive(plan) {
+    const status = typeof plan.status === "string" ? plan.status.toLowerCase() : "";
+    if (typeof plan.isActive === "boolean")
+        return plan.isActive;
+    if (status)
+        return status === "active";
+    return false;
+}
+function toReaisFromHubAmount(amountRaw) {
+    const parsed = typeof amountRaw === "number"
+        ? amountRaw
+        : typeof amountRaw === "string" && amountRaw.trim() && !Number.isNaN(Number(amountRaw))
+            ? Number(amountRaw)
+            : null;
+    if (parsed == null || !Number.isFinite(parsed))
+        return null;
+    if (Number.isInteger(parsed) && Math.abs(parsed) >= 100) {
+        return parsed / 100;
+    }
+    return parsed;
+}
+function toCentsFromHubAmount(amountRaw) {
+    const parsed = typeof amountRaw === "number"
+        ? amountRaw
+        : typeof amountRaw === "string" && amountRaw.trim() && !Number.isNaN(Number(amountRaw))
+            ? Number(amountRaw)
+            : null;
+    if (parsed == null || !Number.isFinite(parsed))
+        return null;
+    if (Number.isInteger(parsed) && Math.abs(parsed) >= 100) {
+        return Math.round(parsed);
+    }
+    return Math.round(parsed * 100);
+}
+function isTrialCandidate(plan) {
+    const code = typeof plan.code === "string" ? plan.code.toUpperCase() : "";
+    const name = typeof plan.name === "string" ? plan.name.toUpperCase() : "";
+    const explicitTrialId = (process.env.HUB_BILLING_PLAN_TESTE || "").trim();
+    const byEnv = explicitTrialId && typeof plan.id === "string" ? plan.id === explicitTrialId : false;
+    return byEnv || code.includes("TESTE") || code.includes("TRIAL") || name.includes("TESTE") || name.includes("TRIAL");
+}
+function normalizeHubPlans(plansFromHub, trialDays) {
+    const activePlans = plansFromHub.filter((plan) => isHubPlanActive(plan));
+    if (activePlans.length === 0)
+        return [];
+    const normalized = activePlans
+        .map((plan) => {
+        const id = typeof plan.id === "string" && plan.id.trim() ? plan.id.trim() : null;
+        const code = typeof plan.code === "string" && plan.code.trim()
+            ? plan.code.trim()
+            : id;
+        if (!code)
+            return null;
+        const title = typeof plan.name === "string" && plan.name.trim()
+            ? plan.name.trim()
+            : code;
+        const amount = toReaisFromHubAmount(plan.amount);
+        const description = typeof plan.description === "string" && plan.description.trim()
+            ? plan.description.trim()
+            : null;
+        return {
+            code,
+            title,
+            amount: Number.isFinite(amount ?? NaN) ? Number(amount) : 0,
+            description,
+            isTrial: trialDays > 0 && isTrialCandidate(plan),
+            planId: id ?? undefined,
+        };
+    })
+        .filter((plan) => Boolean(plan));
+    const hasTrialPlan = normalized.some((plan) => plan.isTrial);
+    if (!hasTrialPlan && trialDays > 0 && normalized.length > 0) {
+        normalized.sort((a, b) => a.amount - b.amount);
+        normalized[0] = { ...normalized[0], isTrial: true };
+    }
+    return normalized.sort((a, b) => {
+        if (Boolean(b.isTrial) !== Boolean(a.isTrial))
+            return (b.isTrial ? 1 : 0) - (a.isTrial ? 1 : 0);
+        return a.amount - b.amount;
+    });
+}
+exports.setupRouter.get("/planos-disponiveis", async (_req, res) => {
+    const isProduction = (process.env.NODE_ENV || "development").toLowerCase() === "production";
+    const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+    const fallbackPlanos = PLANOS_DISPONIVEIS;
+    const trialDays = await getTrialDaysFromHub(productId);
+    const responseWithFallback = () => res.json({ planos: fallbackPlanos, trialDays });
+    if (!productId) {
+        if (isProduction) {
+            return res.status(500).json({
+                error: "Integração Hub incompleta em produção: HUB_BILLING_PRODUCT_ID não configurado.",
+            });
+        }
+        return responseWithFallback();
+    }
+    try {
+        const plansFromHub = (await HubBillingService_1.HubBillingService.getProductPlans(productId));
+        const planos = normalizeHubPlans(plansFromHub, trialDays);
+        if (planos.length > 0) {
+            return res.json({ planos, trialDays });
+        }
+        if (isProduction) {
+            return res.status(502).json({
+                error: "Hub Billing não retornou planos ativos para o produto configurado.",
+            });
+        }
+        // Hub não retornou planos ativos — usa fallback (ou todos os planos se fallback vazio)
+        return res.json({ planos: fallbackPlanos.length > 0 ? fallbackPlanos : PLANOS_DISPONIVEIS, trialDays });
+    }
+    catch (err) {
+        console.warn("[Setup] Falha ao buscar planos no Hub:", err instanceof Error ? err.message : err);
+        if (isProduction) {
+            return res.status(502).json({
+                error: "Falha ao consultar planos no Hub Billing.",
+            });
+        }
+        // Em caso de falha na API do Hub, usa fallback (ou todos os planos se fallback vazio)
+        return res.json({ planos: fallbackPlanos.length > 0 ? fallbackPlanos : PLANOS_DISPONIVEIS, trialDays });
+    }
+});
+// ─── Status: sistema já tem empresas? (rota pública) ─────────────────────────
+exports.setupRouter.get("/status", async (_req, res) => {
+    try {
+        const empresaRepo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+        const totalEmpresas = await empresaRepo.count();
+        return res.json({ totalEmpresas });
+    }
+    catch (error) {
+        console.error("Erro ao verificar status do setup:", error);
+        return res.status(500).json({ error: "Erro ao verificar status" });
+    }
+});
+// ─── Schema de validação ──────────────────────────────────────────────────────
+const primeiroAcessoSchema = zod_1.z.object({
+    empresa: zod_1.z.object({
+        nome_fantasia: zod_1.z.string().min(1, "Nome da empresa é obrigatório").max(200),
+        razao_social: zod_1.z.string().max(200).optional(),
+        cnpj: zod_1.z
+            .string()
+            .min(1, "CPF/CNPJ é obrigatório")
+            .refine((v) => isValidCpfCnpj(v), "Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido"),
+        ie: zod_1.z.string().max(20).optional(),
+        endereco: zod_1.z.string().max(300).optional(),
+        bairro: zod_1.z.string().max(100).optional(),
+        cidade: zod_1.z.string().max(100).optional(),
+        estado: zod_1.z.string().max(2).optional(),
+        cep: zod_1.z.string().max(9).optional(),
+        telefone: zod_1.z.string().max(20).optional(),
+        email: zod_1.z.string().max(200).optional(),
+    }),
+    usuario: zod_1.z.object({
+        login: zod_1.z
+            .string()
+            .min(3, "Login deve ter pelo menos 3 caracteres")
+            .max(100)
+            .regex(/^[a-zA-Z0-9._@-]+$/, "Login deve conter apenas letras, números e . _ @ -"),
+        senha: zod_1.z.string().min(6, "Senha deve ter pelo menos 6 caracteres"),
+        email: zod_1.z
+            .string()
+            .email("E-mail inválido")
+            .max(200)
+            .optional()
+            .or(zod_1.z.literal("")),
+        telefone: zod_1.z.string().max(20).optional(),
+    }),
+    planCode: zod_1.z.string().optional(),
+});
+function normalizeDocument(document) {
+    return (document || "").replace(/\D/g, "");
+}
+// ─── Cadastro de novo tenant (rota pública) ───────────────────────────────────
+exports.setupRouter.post("/primeiro-acesso", async (req, res) => {
+    const parseResult = primeiroAcessoSchema.safeParse(req.body);
+    if (!parseResult.success) {
+        return res.status(400).json({
+            error: parseResult.error.issues[0]?.message ?? "Dados inválidos",
+            issues: parseResult.error.issues,
+        });
+    }
+    const { empresa: empresaData, usuario: usuarioData } = parseResult.data;
+    const empresaRepo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+    const usuarioRepo = data_source_1.AppDataSource.getRepository(Usuario_1.Usuario);
+    const documentClean = normalizeDocument(empresaData.cnpj);
+    // ── 1. Documento já cadastrado?
+    const cnpjExistente = await empresaRepo
+        .createQueryBuilder("e")
+        .where("regexp_replace(COALESCE(e.cnpj, ''), '\\D', '', 'g') = :doc", { doc: documentClean })
+        .getOne();
+    if (cnpjExistente) {
+        return res.status(409).json({
+            error: "Já existe uma empresa cadastrada com este CPF/CNPJ.",
+            field: "cnpj",
+        });
+    }
+    // ── 2. Login já existe?
+    const loginExistente = await usuarioRepo
+        .createQueryBuilder("u")
+        .where("LOWER(u.login) = LOWER(:login)", { login: usuarioData.login.trim() })
+        .getOne();
+    if (loginExistente) {
+        return res.status(409).json({
+            error: "Este login já está em uso. Escolha outro nome de usuário.",
+            field: "login",
+        });
+    }
+    // ── 3. E-mail do admin já existe?
+    const emailAdmin = usuarioData.email?.trim() || null;
+    if (emailAdmin) {
+        const emailExistente = await usuarioRepo
+            .createQueryBuilder("u")
+            .where("LOWER(u.email) = LOWER(:email)", { email: emailAdmin })
+            .getOne();
+        if (emailExistente) {
+            return res.status(409).json({
+                error: "Este e-mail já está vinculado a outro usuário.",
+                field: "email",
+            });
+        }
+    }
+    // ── 4. Telefone + CNPJ — mesma combinação já existe?
+    const telefoneAdmin = usuarioData.telefone?.trim() || null;
+    if (telefoneAdmin) {
+        const telefoneExistente = await usuarioRepo
+            .createQueryBuilder("u")
+            .innerJoin(Empresa_1.Empresa, "e", "e.id_empresa = u.id_empresa")
+            .where("u.telefone = :telefone", { telefone: telefoneAdmin })
+            .andWhere("regexp_replace(COALESCE(e.cnpj, ''), '\\D', '', 'g') = :doc", { doc: documentClean })
+            .getOne();
+        if (telefoneExistente) {
+            return res.status(409).json({
+                error: "Este telefone já está cadastrado para uma conta com este CPF/CNPJ.",
+                field: "telefone",
+            });
+        }
+    }
+    // ── 5. Cria a empresa
+    const empresa = empresaRepo.create({ ...empresaData, ativo: true });
+    const empresaSalva = await empresaRepo.save(empresa);
+    // ── 6. Cria o usuário master vinculado à empresa
+    const usuario = usuarioRepo.create({
+        id_empresa: empresaSalva.id_empresa,
+        login: usuarioData.login.trim(),
+        senha: usuarioData.senha,
+        email: emailAdmin,
+        telefone: telefoneAdmin,
+        user_master: true,
+        clientes_cadastrar: true,
+        clientes_alterar: true,
+        clientes_excluir: true,
+        loteamentos_cadastrar: true,
+        loteamentos_alterar: true,
+        loteamentos_excluir: true,
+        vendas_cadastrar: true,
+        vendas_alterar: true,
+        vendas_excluir: true,
+    });
+    await usuarioRepo.save(usuario);
+    // Semeia o plano de contas padrão (grupos + contas) para a empresa recém-criada (não bloqueia o cadastro se falhar)
+    try {
+        const planoRepo = data_source_1.AppDataSource.getRepository(PlanoDeContas_1.PlanoDeContas);
+        const grupos = Array.from(new Set(categorias_despesa_padrao_1.CATEGORIAS_DESPESA_PADRAO.map((c) => c.grupo)));
+        const gruposSalvos = await planoRepo.save(grupos.map((grupo, i) => planoRepo.create({
+            id_empresa: empresaSalva.id_empresa,
+            id_pai: null,
+            tipo: "despesa",
+            codigo: String(i + 1),
+            nome: grupo,
+        })));
+        const idPorGrupo = new Map(gruposSalvos.map((g) => [g.nome, g]));
+        const contasPorGrupo = new Map();
+        await planoRepo.save(categorias_despesa_padrao_1.CATEGORIAS_DESPESA_PADRAO.map((c) => {
+            const pai = idPorGrupo.get(c.grupo);
+            const n = (contasPorGrupo.get(c.grupo) ?? 0) + 1;
+            contasPorGrupo.set(c.grupo, n);
+            return planoRepo.create({
+                id_empresa: empresaSalva.id_empresa,
+                id_pai: pai.id_conta_contabil,
+                tipo: "despesa",
+                codigo: `${pai.codigo}.${n}`,
+                nome: c.nome,
+            });
+        }));
+        const maiorCodigoRaiz = gruposSalvos.reduce((maior, grupo) => {
+            const codigo = Number(grupo.codigo);
+            return Number.isInteger(codigo) ? Math.max(maior, codigo) : maior;
+        }, 0);
+        const grupoReceitas = await planoRepo.save(planoRepo.create({
+            id_empresa: empresaSalva.id_empresa,
+            id_pai: null,
+            tipo: "receita",
+            codigo: String(maiorCodigoRaiz + 1),
+            nome: contas_receita_padrao_1.GRUPO_RECEITA_PADRAO,
+        }));
+        await planoRepo.save(contas_receita_padrao_1.CONTAS_RECEITA_PADRAO.map((nome, indice) => planoRepo.create({
+            id_empresa: empresaSalva.id_empresa,
+            id_pai: grupoReceitas.id_conta_contabil,
+            tipo: "receita",
+            codigo: `${grupoReceitas.codigo}.${indice + 1}`,
+            nome,
+        })));
+    }
+    catch (err) {
+        console.warn("[Setup] Falha ao semear plano de contas padrão:", err instanceof Error ? err.message : err);
+    }
+    // Cadastro já conta como primeiro acesso (o usuário sai daqui logado)
+    const agoraCadastro = new Date();
+    usuario.last_login_at = agoraCadastro;
+    await usuarioRepo.update({ id_usuario: usuario.id_usuario }, { last_login_at: agoraCadastro });
+    empresaSalva.ultimo_acesso = agoraCadastro;
+    await empresaRepo.update({ id_empresa: empresaSalva.id_empresa }, { ultimo_acesso: agoraCadastro });
+    // ── Notifica novos leads via Telegram (fire-and-forget, não bloqueia o cadastro)
+    void TelegramService_1.TelegramService.notifyNovoLead({
+        empresa: empresaData.nome_fantasia,
+        cnpj: empresaData.cnpj || null,
+        responsavel: usuarioData.login,
+        telefone: telefoneAdmin || empresaData.telefone || null,
+        email: emailAdmin || empresaData.email || null,
+        cidade: empresaData.cidade || null,
+        estado: empresaData.estado || null,
+        plano: parseResult.data.planCode || null,
+    });
+    // ── 7. Hub Billing: onboarding centralizado via /access/resolve
+    // Quando o Hub está configurado e há plano selecionado, o mapeamento é obrigatório.
+    let hubInfo = {};
+    // ── 7b. Sem Hub: atribui plano e trial localmente
+    if (!HubBillingService_1.HubBillingService.isConfigured() && parseResult.data.planCode) {
+        const planCode = parseResult.data.planCode.toUpperCase();
+        const trialDays = getTrialDaysConfigured();
+        const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000);
+        empresaSalva.plano = planCode;
+        empresaSalva.hub_expires_at = expiresAt;
+        empresaSalva.data_vencimento = expiresAt.toISOString().slice(0, 10);
+        await data_source_1.AppDataSource.getRepository(Empresa_1.Empresa).save(empresaSalva);
+        hubInfo = {
+            planCode,
+            expiresAt: expiresAt.toISOString(),
+            trialDays,
+            canAccess: true,
+            accessStatus: "trial",
+            daysLeft: trialDays,
+        };
+    }
+    if (HubBillingService_1.HubBillingService.isConfigured() && parseResult.data.planCode) {
+        const planCode = parseResult.data.planCode.trim();
+        const planCodeUpper = planCode.toUpperCase();
+        const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || "";
+        const hubTrialDays = await getTrialDaysFromHub(hubProductId);
+        try {
+            if (!hubProductId) {
+                return res.status(500).json({
+                    error: "Integração Hub incompleta: HUB_BILLING_PRODUCT_ID não configurado.",
+                });
+            }
+            const personType = documentClean.length === 11 ? "PF" : "PJ";
+            const resolved = await HubBillingService_1.HubBillingService.resolveAccess({
+                document: documentClean,
+                personType,
+                productId: hubProductId,
+                name: empresaData.razao_social || empresaData.nome_fantasia,
+                email: usuarioData.email?.trim() || empresaData.email?.trim() || `${usuarioData.login.trim()}@local.invalid`,
+            });
+            const customerId = typeof resolved.customerId === "string" ? resolved.customerId : null;
+            let accessStatus = typeof resolved.accessStatus === "string" ? resolved.accessStatus : null;
+            let canAccess = Boolean(resolved.canAccess);
+            let trialEndAt = typeof resolved.trialEndAt === "string" ? resolved.trialEndAt : null;
+            let licenseEndAt = typeof resolved.licenseEndAt === "string" ? resolved.licenseEndAt : null;
+            let daysLeft = typeof resolved.daysLeft === "number" ? resolved.daysLeft : null;
+            const banner = typeof resolved.banner === "string" ? resolved.banner : null;
+            const quantityRaw = resolved.quantity;
+            const quantityParsed = typeof quantityRaw === "number" && Number.isFinite(quantityRaw)
+                ? quantityRaw
+                : typeof quantityRaw === "string" && quantityRaw.trim() && !Number.isNaN(Number(quantityRaw))
+                    ? Number(quantityRaw)
+                    : null;
+            let quantity = quantityParsed != null && Number.isFinite(quantityParsed) ? quantityParsed : null;
+            const planNameRaw = resolved.planName;
+            let planName = typeof planNameRaw === "string" ? planNameRaw : null;
+            const planCodeRaw = resolved.planCode;
+            let planCode = typeof planCodeRaw === "string" ? planCodeRaw : null;
+            const features = resolved.features && typeof resolved.features === "object" && !Array.isArray(resolved.features)
+                ? resolved.features
+                : null;
+            if (!customerId) {
+                return res.status(502).json({
+                    error: "Não foi possível mapear o cliente no Hub Billing durante o cadastro.",
+                });
+            }
+            // ── Criar subscription no Hub para ativar trial/plano escolhido dinamicamente
+            const hubPlans = (await HubBillingService_1.HubBillingService.getProductPlans(hubProductId));
+            const activePlans = hubPlans.filter((plan) => isHubPlanActive(plan));
+            const selectedPlan = activePlans.find((plan) => typeof plan.id === "string" && plan.id === planCode) ||
+                activePlans.find((plan) => typeof plan.code === "string" && plan.code.toUpperCase() === planCodeUpper) ||
+                null;
+            if (selectedPlan && typeof selectedPlan.id === "string" && selectedPlan.id.trim()) {
+                const amountCents = toCentsFromHubAmount(selectedPlan.amount) ?? 0;
+                try {
+                    await HubBillingService_1.HubBillingService.createSubscription({
+                        customerId,
+                        productId: hubProductId,
+                        planId: selectedPlan.id,
+                        contractedAmount: amountCents,
+                    });
+                    // Buscar status atualizado com datas de trial após criar a subscription
+                    const updatedStatus = await HubBillingService_1.HubBillingService.getAccessStatus(customerId, hubProductId);
+                    const newTrialEndAt = typeof updatedStatus.trialEndAt === "string" ? updatedStatus.trialEndAt : null;
+                    const newLicenseEndAt = typeof updatedStatus.licenseEndAt === "string" ? updatedStatus.licenseEndAt : null;
+                    const newDaysLeft = typeof updatedStatus.daysLeft === "number" ? updatedStatus.daysLeft : null;
+                    const newAccessStatus = typeof updatedStatus.accessStatus === "string" ? updatedStatus.accessStatus : null;
+                    const newCanAccess = typeof updatedStatus.canAccess === "boolean" ? updatedStatus.canAccess : canAccess;
+                    const newQuantityRaw = updatedStatus.quantity;
+                    const newQuantityParsed = typeof newQuantityRaw === "number" && Number.isFinite(newQuantityRaw)
+                        ? newQuantityRaw
+                        : typeof newQuantityRaw === "string" && newQuantityRaw.trim() && !Number.isNaN(Number(newQuantityRaw))
+                            ? Number(newQuantityRaw)
+                            : null;
+                    quantity = newQuantityParsed != null && Number.isFinite(newQuantityParsed) ? newQuantityParsed : quantity;
+                    const newPlanNameRaw = updatedStatus.planName;
+                    planName = typeof newPlanNameRaw === "string" ? newPlanNameRaw : planName;
+                    const newPlanCodeRaw = updatedStatus.planCode;
+                    planCode = typeof newPlanCodeRaw === "string" ? newPlanCodeRaw : planCode;
+                    if (newTrialEndAt || newLicenseEndAt || newAccessStatus) {
+                        trialEndAt = newTrialEndAt ?? trialEndAt;
+                        licenseEndAt = newLicenseEndAt ?? licenseEndAt;
+                        daysLeft = newDaysLeft ?? daysLeft;
+                        accessStatus = newAccessStatus ?? accessStatus;
+                        canAccess = newCanAccess;
+                        console.log(`[Setup] Subscription Hub criada para ${planCode}: status=${accessStatus}, expiresAt=${trialEndAt || licenseEndAt}, daysLeft=${daysLeft}`);
+                    }
+                }
+                catch (subErr) {
+                    // Non-fatal: o fallback local de trial será usado
+                    console.warn("[Setup] Falha ao criar subscription no Hub (non-fatal):", subErr instanceof Error ? subErr.message : subErr);
+                }
+            }
+            else {
+                console.warn(`[Setup] Plano selecionado não encontrado entre planos ativos do Hub: ${planCode}`);
+            }
+            const hubExpiresAt = trialEndAt || licenseEndAt || null;
+            empresaSalva.hub_customer_id = customerId;
+            empresaSalva.hub_product_code = hubProductId;
+            empresaSalva.hub_license_status = accessStatus;
+            empresaSalva.hub_license_reason = canAccess ? null : accessStatus;
+            empresaSalva.hub_features = HubBillingService_1.HubBillingService.withHubMeta(features, {
+                daysLeft,
+                expiresAt: trialEndAt || licenseEndAt || null,
+                accessStatus,
+                quantity,
+                planCode,
+                planName,
+                syncedAt: new Date().toISOString(),
+            });
+            // Sempre preservar o código local (TESTE/BASICO/INTERMEDIARIO) — não usar o nome do Hub
+            empresaSalva.plano = planCodeUpper;
+            empresaSalva.hub_last_sync = new Date();
+            empresaSalva.hub_cache_until = new Date(Date.now() + (canAccess ? 60000 : 10000));
+            if (hubExpiresAt) {
+                const parsed = new Date(hubExpiresAt);
+                if (!Number.isNaN(parsed.getTime())) {
+                    empresaSalva.hub_expires_at = parsed;
+                    empresaSalva.data_vencimento = parsed.toISOString().slice(0, 10);
+                }
+            }
+            // Fallback: Hub não retornou data de trial — definir trial localmente
+            if (!empresaSalva.hub_expires_at) {
+                const trialExpiresAt = new Date(Date.now() + hubTrialDays * 24 * 60 * 60 * 1000);
+                empresaSalva.hub_expires_at = trialExpiresAt;
+                empresaSalva.data_vencimento = trialExpiresAt.toISOString().slice(0, 10);
+                if (!hubInfo.expiresAt) {
+                    hubInfo.expiresAt = trialExpiresAt.toISOString();
+                    hubInfo.daysLeft = hubTrialDays;
+                }
+            }
+            await data_source_1.AppDataSource.getRepository(Empresa_1.Empresa).save(empresaSalva);
+            hubInfo = {
+                planCode: empresaSalva.plano ?? planCode,
+                expiresAt: empresaSalva.hub_expires_at?.toISOString() ?? hubExpiresAt,
+                trialDays: hubTrialDays,
+                customerId,
+                accessStatus,
+                canAccess,
+                quantity,
+                planName,
+                daysLeft: daysLeft ?? (empresaSalva.hub_expires_at
+                    ? Math.ceil((empresaSalva.hub_expires_at.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                    : hubTrialDays),
+                banner,
+            };
+        }
+        catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            return res.status(502).json({
+                error: `Falha ao mapear cliente no Hub Billing: ${msg}`,
+            });
+        }
+    }
+    const secret = process.env.JWT_SECRET || "development-secret";
+    const token = jsonwebtoken_1.default.sign({
+        sub: usuario.id_usuario,
+        login: usuario.login,
+        user_master: usuario.user_master,
+        id_empresa: usuario.id_empresa,
+    }, secret, { expiresIn: "8h" });
+    return res.status(201).json({
+        success: true,
+        message: "Empresa e usuário administrador criados com sucesso.",
+        empresa: {
+            id_empresa: empresaSalva.id_empresa,
+            nome_fantasia: empresaSalva.nome_fantasia,
+        },
+        hub: Object.keys(hubInfo).length > 0 ? hubInfo : undefined,
+        auth: {
+            token,
+            usuario: {
+                id_usuario: usuario.id_usuario,
+                login: usuario.login,
+                user_master: usuario.user_master,
+                id_empresa: usuario.id_empresa,
+            },
+        },
+    });
+});
+// ─── Recuperar acesso por e-mail ou telefone (rota pública) ──────────────────
+exports.setupRouter.post("/recuperar-acesso", async (req, res) => {
+    try {
+        const { cnpj, email, telefone } = req.body;
+        if (!cnpj?.trim()) {
+            return res.status(400).json({ error: "CPF/CNPJ é obrigatório" });
+        }
+        if (!email?.trim() && !telefone?.trim()) {
+            return res.status(400).json({ error: "Informe o e-mail ou telefone do administrador" });
+        }
+        const empresaRepo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+        const usuarioRepo = data_source_1.AppDataSource.getRepository(Usuario_1.Usuario);
+        const docClean = normalizeDocument(cnpj);
+        const empresa = await empresaRepo
+            .createQueryBuilder("e")
+            .where("regexp_replace(COALESCE(e.cnpj, ''), '\\D', '', 'g') = :doc", { doc: docClean })
+            .getOne();
+        if (!empresa) {
+            return res.status(404).json({ error: "Nenhuma empresa encontrada com este CPF/CNPJ" });
+        }
+        // Busca o usuário master da empresa pelo e-mail ou telefone
+        let usuario = null;
+        if (email?.trim()) {
+            usuario = await usuarioRepo
+                .createQueryBuilder("u")
+                .where("u.id_empresa = :id", { id: empresa.id_empresa })
+                .andWhere("LOWER(u.email) = LOWER(:email)", { email: email.trim() })
+                .andWhere("u.user_master = true")
+                .getOne();
+        }
+        if (!usuario && telefone?.trim()) {
+            usuario = await usuarioRepo
+                .createQueryBuilder("u")
+                .where("u.id_empresa = :id", { id: empresa.id_empresa })
+                .andWhere("u.telefone = :telefone", { telefone: telefone.trim() })
+                .andWhere("u.user_master = true")
+                .getOne();
+        }
+        if (!usuario) {
+            return res.status(404).json({
+                error: "Nenhum administrador encontrado com os dados informados",
+            });
+        }
+        // Gera senha temporária de 8 caracteres
+        const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+        let senhaTmp = "";
+        for (let i = 0; i < 8; i++) {
+            senhaTmp += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        usuario.senha = senhaTmp;
+        await usuarioRepo.save(usuario);
+        return res.json({
+            success: true,
+            login: usuario.login,
+            senha_temporaria: senhaTmp,
+        });
+    }
+    catch (error) {
+        console.error("Erro ao recuperar acesso:", error);
+        return res.status(500).json({ error: "Erro ao processar recuperação de acesso" });
+    }
+});

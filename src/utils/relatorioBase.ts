@@ -59,6 +59,11 @@ export const CSS_RELATORIO = `
   .cabecalho { border-bottom: 1.5px solid #111; padding-bottom: 8px; margin-bottom: 12px; }
 
   .resumo { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  /* Totais no fim: espaço acima e sem margem embaixo (o rodapé vem logo após). */
+  .resumo-fim { margin-top: 14px; }
+  .resumo-fim .resumo { margin-bottom: 0; }
+  .resumo-titulo { font-size: 8.5pt; font-weight: bold; text-transform: uppercase;
+                   letter-spacing: .04em; color: #444; margin-bottom: 6px; }
   .card { flex: 1 1 120px; min-width: 0; border: 1px solid #d4d4d8; border-radius: 4px; padding: 7px 9px; }
   .card .rot { font-size: 7.5pt; color: #555; text-transform: uppercase; letter-spacing: .04em; }
   .card .val { font-size: 11pt; font-weight: bold; margin-top: 2px; white-space: nowrap; }
@@ -107,6 +112,11 @@ export interface RelatorioOpcoes {
   subtitulo: string;
   /** HTML dos cards de resumo (opcional). */
   resumoHtml?: string;
+  /**
+   * Onde os totalizadores aparecem em relação à tabela. "fim" fecha o
+   * relatório com os totais, que é como se espera ler um documento contábil.
+   */
+  resumoPosicao?: "inicio" | "fim";
   /** HTML da tabela principal. */
   tabelaHtml: string;
   /** Texto à direita no rodapé (ex.: "12 lançamento(s)"). */
@@ -120,8 +130,13 @@ export interface RelatorioOpcoes {
  * Devolve false quando o pop-up foi bloqueado pelo navegador.
  */
 export function abrirRelatorio(opcoes: RelatorioOpcoes): boolean {
-  const { titulo, subtitulo, resumoHtml, tabelaHtml, rodapeInfo, empresa, comTimbrado } = opcoes;
+  const { titulo, subtitulo, resumoHtml, resumoPosicao = "inicio", tabelaHtml, rodapeInfo, empresa, comTimbrado } = opcoes;
   const timbrado = comTimbrado ? buildTimbrado(empresa) : "";
+  const resumo = resumoHtml ?? "";
+  const corpo =
+    resumoPosicao === "fim"
+      ? `${tabelaHtml}\n    <div class="resumo-fim">${resumo}</div>`
+      : `${resumo}\n    ${tabelaHtml}`;
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -144,8 +159,7 @@ export function abrirRelatorio(opcoes: RelatorioOpcoes): boolean {
       <div class="doc-sub">${subtitulo}</div>
     </div>
 
-    ${resumoHtml ?? ""}
-    ${tabelaHtml}
+    ${corpo}
 
     <div class="rodape">
       <!-- Sem timbrado o papel já é o da empresa: não repetir o nome dela aqui. -->
