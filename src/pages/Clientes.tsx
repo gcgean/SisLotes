@@ -1,4 +1,4 @@
-import { useEffect, useState, Component, ReactNode, ErrorInfo } from "react";
+import { useEffect, useRef, useState, Component, ReactNode, ErrorInfo } from "react";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: Error | null }> {
   constructor(props: { children: ReactNode }) {
@@ -34,7 +34,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boole
   }
 }
 
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ContratoDialog } from "@/components/contratos/ContratoDialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -241,6 +241,7 @@ async function fetchCliente(id: number): Promise<Cliente> {
 
 const Clientes = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [contratoDialogAberto, setContratoDialogAberto] = useState(false);
   const [search, setSearch] = useState("");
   const [filterTipo, setFilterTipo] = useState<"all" | "f" | "j">("all");
@@ -249,6 +250,7 @@ const Clientes = () => {
   const [modo, setModo] = useState<"create" | "edit" | "view">("create");
   const [dialogAberto, setDialogAberto] = useState(false);
   const [novoClienteCompartilhadoAberto, setNovoClienteCompartilhadoAberto] = useState(false);
+  const [previewIaCliente, setPreviewIaCliente] = useState<Partial<NovoClienteDialogValues> | undefined>();
   const [dialogTab, setDialogTab] = useState("dados");
   const [viewOuterTab, setViewOuterTab] = useState<"dados" | "lotes" | "documentos">("dados");
   const [usarTimbrado, setUsarTimbrado] = useState(true);
@@ -267,6 +269,35 @@ const Clientes = () => {
   const isView = modo === "view";
 
   useEffect(() => { setPage(1); }, [search, filterTipo]);
+
+  // ── Proposta vinda do assistente de IA: abre o cadastro já preenchido para o
+  // usuário conferir e confirmar. A IA nunca grava — a gravação é este submit.
+  const propostaClienteAplicadaRef = useRef(false);
+  useEffect(() => {
+    if (propostaClienteAplicadaRef.current) return;
+    if (searchParams.get("novo_cliente") !== "1") return;
+    propostaClienteAplicadaRef.current = true;
+
+    const tipoParam = searchParams.get("tipo");
+    setPreviewIaCliente({
+      tipo: tipoParam === "j" ? "j" : "f",
+      nome: searchParams.get("nome") ?? "",
+      cpf: searchParams.get("cpf") ?? "",
+      cnpj: searchParams.get("cnpj") ?? "",
+      razao_social: searchParams.get("razao_social") ?? "",
+      cidade: searchParams.get("cidade") ?? "",
+      estado: searchParams.get("estado") ?? "",
+      fone_res: searchParams.get("telefone") ?? "",
+    });
+    setNovoClienteCompartilhadoAberto(true);
+
+    const limpos = new URLSearchParams(searchParams);
+    ["novo_cliente", "tipo", "nome", "cpf", "cnpj", "razao_social", "cidade", "estado", "telefone"].forEach((k) =>
+      limpos.delete(k),
+    );
+    setSearchParams(limpos, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   // ── Queries ────────────────────────────────────────────────────────────────
 
@@ -401,6 +432,7 @@ const Clientes = () => {
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   function abrirNovoCliente() {
+    setPreviewIaCliente(undefined);
     setNovoClienteCompartilhadoAberto(true);
   }
 
@@ -634,6 +666,7 @@ const Clientes = () => {
           onOpenChange={setNovoClienteCompartilhadoAberto}
           isSubmitting={criarClienteMutation.isPending}
           submitLabel="Cadastrar cliente"
+          initialValues={previewIaCliente}
           onSubmit={async (values) => {
             await criarClienteMutation.mutateAsync(values);
           }}

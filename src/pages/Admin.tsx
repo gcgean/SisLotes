@@ -9,6 +9,7 @@ import { OverviewTab } from "@/components/admin/dashboard/OverviewTab";
 import { JornadaTab } from "@/components/admin/dashboard/JornadaTab";
 import { UsoTab } from "@/components/admin/dashboard/UsoTab";
 import { GeografiaTab } from "@/components/admin/dashboard/GeografiaTab";
+import { AcessosTab } from "@/components/admin/dashboard/AcessosTab";
 import { TelegramConfigDialog } from "@/components/admin/TelegramConfigDialog";
 import { LpAnalyticsDialog } from "@/components/admin/LpAnalyticsDialog";
 
@@ -51,6 +52,7 @@ export default function Admin() {
             <TabsTrigger value="jornada">Jornada &amp; Funil</TabsTrigger>
             <TabsTrigger value="uso">Uso &amp; Engajamento</TabsTrigger>
             <TabsTrigger value="geografia">Geografia</TabsTrigger>
+            <TabsTrigger value="acessos">Acessos</TabsTrigger>
           </TabsList>
 
           <TabsContent value="visao-geral" className="mt-4">
@@ -64,6 +66,9 @@ export default function Admin() {
           </TabsContent>
           <TabsContent value="geografia" className="mt-4">
             <GeografiaTab />
+          </TabsContent>
+          <TabsContent value="acessos" className="mt-4">
+            <AcessosTab />
           </TabsContent>
         </Tabs>
       </div>
