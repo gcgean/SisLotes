@@ -31,6 +31,7 @@ import { CobrancaComunicacao } from "../entities/CobrancaComunicacao";
 import { OrcamentoLoteamento } from "../entities/OrcamentoLoteamento";
 import { FechamentoFinanceiro } from "../entities/FechamentoFinanceiro";
 import { VendaAcordo } from "../entities/VendaAcordo";
+import { UsuarioLoginHistorico } from "../entities/UsuarioLoginHistorico";
 import { CreateClientes1700000000000 } from "../migrations/1700000000000-CreateClientes";
 import { CreateCoreTables1700000000001 } from "../migrations/1700000000001-CreateCoreTables";
 import { CreateEmpresasAndMultiTenant1700000000002 } from "../migrations/1700000000002-CreateEmpresasAndMultiTenant";
@@ -83,6 +84,7 @@ import { AddComissaoVenda1700000000047 } from "../migrations/1700000000047-AddCo
 import { CreateVendaAcordos1700000000048 } from "../migrations/1700000000048-CreateVendaAcordos";
 import { CreateRelatoriosFechamento1700000000049 } from "../migrations/1700000000049-CreateRelatoriosFechamento";
 import { AddContaFechamentoFinanceiro1700000000050 } from "../migrations/1700000000050-AddContaFechamentoFinanceiro";
+import { CreateUsuarioLoginHistorico1700000000051 } from "../migrations/1700000000051-CreateUsuarioLoginHistorico";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -91,7 +93,7 @@ export const AppDataSource = new DataSource({
   username: process.env.DB_USER || "sislote",
   password: process.env.DB_PASSWORD || "sislote",
   database: process.env.DB_NAME || "sislote",
-  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, TransferenciaConta, CobrancaBancaria, CobrancaRegra, CobrancaComunicacao, OrcamentoLoteamento, FechamentoFinanceiro, VendaAcordo, SugestaoMensagem],
+  entities: [Cliente, Loteamento, Lote, Conta, Usuario, Venda, Pagamento, Log, Empresa, Auditoria, HubBillingCharge, HubBillingEvent, Sugestao, TelegramConfig, TelegramNotificacao, LpEvento, PlanoDeContas, Fornecedor, Despesa, DespesaParcela, LancamentoManual, DespesaRateio, LancamentoRateio, TransferenciaConta, CobrancaBancaria, CobrancaRegra, CobrancaComunicacao, OrcamentoLoteamento, FechamentoFinanceiro, VendaAcordo, SugestaoMensagem, UsuarioLoginHistorico],
   migrations: [
     CreateClientes1700000000000,
     CreateCoreTables1700000000001,
@@ -145,6 +147,7 @@ export const AppDataSource = new DataSource({
     CreateVendaAcordos1700000000048,
     CreateRelatoriosFechamento1700000000049,
     AddContaFechamentoFinanceiro1700000000050,
+    CreateUsuarioLoginHistorico1700000000051,
   ],
   synchronize: false,
   logging: false,

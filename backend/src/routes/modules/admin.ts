@@ -429,6 +429,28 @@ adminRouter.get("/dashboard/geografia", async (_req, res) => {
   }
 });
 
+// ─── GET /admin/dashboard/acessos ────────────────────────────────────────────
+// De onde e com qual dispositivo cada usuário está acessando o sistema.
+adminRouter.get("/dashboard/acessos", async (req, res) => {
+  try {
+    const limite = Math.min(Number(req.query.limite) || 100, 500);
+    const acessos = await AppDataSource.query(
+      `SELECT h.id, h.data_hora, h.ip_address, h.dispositivo, h.navegador, h.sistema_operacional,
+              u.login, e.nome_fantasia AS empresa
+       FROM usuario_login_historico h
+       JOIN usuarios u ON u.id_usuario = h.id_usuario
+       JOIN empresas e ON e.id_empresa = h.id_empresa
+       ORDER BY h.data_hora DESC
+       LIMIT $1`,
+      [limite],
+    );
+    return res.json(acessos);
+  } catch (error) {
+    console.error("Erro ao buscar histórico de acessos:", error);
+    return res.status(500).json({ error: "Erro ao buscar histórico de acessos" });
+  }
+});
+
 // ─── GET /admin/dashboard/empresas/:id/timeline ──────────────────────────────
 // Timeline de billing (Hub) por empresa: trial → checkout → pago.
 adminRouter.get("/dashboard/empresas/:id/timeline", async (req, res) => {

@@ -6,6 +6,8 @@ import { Usuario } from "../../entities/Usuario";
 import { Empresa } from "../../entities/Empresa";
 import { requireAuth, AuthRequest } from "../../middleware/auth";
 import { HubBillingService } from "../../services/HubBillingService";
+import { UsuarioLoginHistorico } from "../../entities/UsuarioLoginHistorico";
+import { analisarUserAgent } from "../../utils/user-agent";
 
 export const authRouter = Router();
 
@@ -154,6 +156,27 @@ authRouter.post("/login", async (req, res) => {
       await empresaRepo.update({ id_empresa: user.id_empresa }, { ultimo_acesso: agora });
     } catch (e) {
       // não bloqueia o login se falhar
+    }
+
+    // Histórico de acesso: de onde e com qual dispositivo — visível para o
+    // admin da plataforma. Nunca bloqueia o login se falhar.
+    try {
+      const userAgentHeader = req.headers["user-agent"];
+      const { dispositivo, navegador, sistemaOperacional } = analisarUserAgent(userAgentHeader);
+      const forwardedFor = req.headers["x-forwarded-for"];
+      const ip = req.ip || (typeof forwardedFor === "string" ? forwardedFor.split(",")[0].trim() : null);
+
+      await AppDataSource.getRepository(UsuarioLoginHistorico).insert({
+        id_usuario: user.id_usuario,
+        id_empresa: user.id_empresa,
+        ip_address: ip ? ip.slice(0, 50) : null,
+        user_agent: userAgentHeader ?? null,
+        dispositivo,
+        navegador,
+        sistema_operacional: sistemaOperacional,
+      });
+    } catch (e) {
+      console.error("Erro ao registrar histórico de acesso:", e);
     }
 
     const secret = process.env.JWT_SECRET || "development-secret";
