@@ -37,12 +37,12 @@ const navItems: NavItem[] = [
   { title: "Loteamentos", url: "/loteamentos", icon: MapPin },
   { title: "Lotes", url: "/lotes", icon: Grid3X3 },
   { title: "Vendas", url: "/vendas", icon: ShoppingCart },
-  { title: "Recebimentos", url: "/pagamentos", icon: CreditCard },
   {
     title: "Financeiro",
     icon: Wallet,
     submenu: [
       { title: "Fluxo de Caixa", url: "/despesas?tab=visao-geral", icon: LayoutDashboard },
+      { title: "Contas a Receber", url: "/pagamentos", icon: CreditCard },
       { title: "Contas a Pagar", url: "/despesas?tab=despesas", icon: ReceiptText },
       { title: "Extrato / Lançamento", url: "/despesas?tab=lancamentos", icon: ScrollText },
     ],
@@ -55,7 +55,7 @@ export function BottomNav() {
   const navigate = useNavigate();
   const [aberto, setAberto] = useState<string | null>(null);
 
-  const financeiroAtivo = location.pathname === "/despesas";
+  const financeiroAtivo = location.pathname === "/despesas" || location.pathname === "/pagamentos";
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-background border-t border-border safe-bottom">
