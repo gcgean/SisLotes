@@ -1,0 +1,31 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.CATEGORIAS_DESPESA_PADRAO = void 0;
+// Categorias padrão semeadas para toda empresa — na migration (empresas existentes)
+// e em setup.ts (empresas novas, cadastradas via /setup/primeiro-acesso).
+exports.CATEGORIAS_DESPESA_PADRAO = [
+    { nome: "Terraplanagem", grupo: "Infraestrutura" },
+    { nome: "Pavimentação/Asfalto", grupo: "Infraestrutura" },
+    { nome: "Drenagem", grupo: "Infraestrutura" },
+    { nome: "Rede de Água", grupo: "Infraestrutura" },
+    { nome: "Rede de Esgoto", grupo: "Infraestrutura" },
+    { nome: "Rede Elétrica", grupo: "Infraestrutura" },
+    { nome: "Meio-fio/Calçada", grupo: "Infraestrutura" },
+    { nome: "Muro/Portaria", grupo: "Infraestrutura" },
+    { nome: "Topografia", grupo: "Técnico" },
+    { nome: "Projeto Urbanístico", grupo: "Técnico" },
+    { nome: "Projeto de Engenharia", grupo: "Técnico" },
+    { nome: "ART/RRT", grupo: "Técnico" },
+    { nome: "Registro de Imóveis", grupo: "Legal" },
+    { nome: "Licença Ambiental", grupo: "Legal" },
+    { nome: "Prefeitura/Aprovação", grupo: "Legal" },
+    { nome: "Impostos e Taxas", grupo: "Legal" },
+    { nome: "Material", grupo: "Operacional" },
+    { nome: "Mão de Obra", grupo: "Operacional" },
+    { nome: "Aluguel de Máquinas", grupo: "Operacional" },
+    { nome: "Combustível", grupo: "Operacional" },
+    { nome: "Depósito", grupo: "Operacional" },
+    { nome: "Comissão de Corretor", grupo: "Comercial" },
+    { nome: "Marketing", grupo: "Comercial" },
+    { nome: "Stand de Vendas", grupo: "Comercial" },
+];

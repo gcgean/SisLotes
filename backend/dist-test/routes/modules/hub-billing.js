@@ -1,0 +1,1473 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.hubBillingRouter = void 0;
+const express_1 = require("express");
+const zod_1 = require("zod");
+const data_source_1 = require("../../db/data-source");
+const Empresa_1 = require("../../entities/Empresa");
+const Usuario_1 = require("../../entities/Usuario");
+const HubBillingCharge_1 = require("../../entities/HubBillingCharge");
+const HubBillingEvent_1 = require("../../entities/HubBillingEvent");
+const auth_1 = require("../../middleware/auth");
+const HubBillingService_1 = require("../../services/HubBillingService");
+const TelegramService_1 = require("../../services/TelegramService");
+const license_features_1 = require("../../config/license-features");
+exports.hubBillingRouter = (0, express_1.Router)();
+const createOrderSchema = zod_1.z.object({
+    payload: zod_1.z.record(zod_1.z.unknown()),
+});
+const createCheckoutSchema = zod_1.z.object({
+    payload: zod_1.z.record(zod_1.z.unknown()),
+});
+const chargesQuerySchema = zod_1.z.object({
+    originType: zod_1.z.enum(["order", "subscription"]),
+    originId: zod_1.z.string().min(1),
+});
+const planoCheckoutSchema = zod_1.z.object({
+    planCode: zod_1.z.string().min(1),
+    amount: zod_1.z.number().positive(),
+    paymentMethod: zod_1.z.enum(["pix", "boleto", "cartao"]),
+    currency: zod_1.z.string().default("BRL"),
+    orderPayload: zod_1.z.record(zod_1.z.unknown()).optional(),
+    checkoutPayload: zod_1.z.record(zod_1.z.unknown()).optional(),
+});
+const changePlanSchema = zod_1.z.object({
+    targetPlanCode: zod_1.z.string().min(1),
+    paymentMethod: zod_1.z.enum(["pix", "boleto", "cartao"]).default("pix"),
+    currency: zod_1.z.string().default("BRL"),
+    cycleDays: zod_1.z.number().int().positive().default(30),
+});
+const PLAN_PRICES = {
+    TESTE: 1,
+    BASICO: 49.9,
+    INTERMEDIARIO: 99.9,
+    "PLANO PRO": 99.9,
+};
+const PLAN_CATALOG = [
+    { code: "TESTE", title: "Plano Teste", amount: 1, description: "Experimente gratuitamente por 14 dias." },
+    { code: "BASICO", title: "Básico", amount: 49.9, description: "Recursos essenciais para sua operação." },
+    { code: "INTERMEDIARIO", title: "Intermediário", amount: 99.9, description: "Recursos avançados e suporte prioritário." },
+    { code: "PLANO PRO", title: "Plano Pro", amount: 99.9, description: "Plano completo com todos os recursos." },
+];
+function selectHubPlanForCode(args) {
+    const byCodePlan = args.byCode[args.expectedCode] ?? null;
+    if (byCodePlan)
+        return byCodePlan;
+    if (!args.mappedId)
+        return null;
+    const mapped = args.byId[args.mappedId] ?? null;
+    if (!mapped)
+        return null;
+    const mappedCode = typeof mapped.code === "string" ? mapped.code.toUpperCase() : "";
+    return mappedCode === args.expectedCode ? mapped : null;
+}
+// Mapeamento para os UUIDs de plano no Hub Billing (em centavos)
+function getHubPlanMap() {
+    return {
+        TESTE: {
+            planId: process.env.HUB_BILLING_PLAN_TESTE || "",
+            amountCents: 100,
+        },
+        BASICO: {
+            planId: process.env.HUB_BILLING_PLAN_BASICO || "",
+            amountCents: 4990,
+        },
+        INTERMEDIARIO: {
+            planId: process.env.HUB_BILLING_PLAN_INTERMEDIARIO || "",
+            amountCents: 9990,
+        },
+        "PLANO PRO": {
+            planId: process.env.HUB_BILLING_PLAN_PRO || "",
+            amountCents: 9990,
+        },
+    };
+}
+function isTrialLicenseStatus(empresa) {
+    const status = (empresa.hub_license_status || "").toLowerCase();
+    const reason = (empresa.hub_license_reason || "").toLowerCase();
+    return status === "trial" || status === "trialing" || reason === "trial_active";
+}
+async function resolveHubPlanDynamicByCode(planCode, productId) {
+    if (!productId)
+        return null;
+    try {
+        const plans = await HubBillingService_1.HubBillingService.getProductPlans(productId);
+        const normalizedCode = planCode.toUpperCase();
+        const found = plans.find((item) => {
+            const code = pickString(item, ["code"]);
+            if (!code)
+                return false;
+            return code.toUpperCase() === normalizedCode;
+        });
+        if (!found)
+            return null;
+        const planId = pickString(found, ["id", "planId"]);
+        const amountRaw = pickNumber(found, ["amount", "value", "amountCents"]);
+        const amount = amountRaw == null
+            ? null
+            : Number.isInteger(amountRaw) && Math.abs(amountRaw) >= 100
+                ? amountRaw / 100
+                : amountRaw;
+        return {
+            planId: planId || null,
+            amount: amount != null && Number.isFinite(amount) ? Number(amount) : null,
+        };
+    }
+    catch (err) {
+        console.warn("[Hub] Falha ao resolver plano dinâmico por código:", err instanceof Error ? err.message : err);
+        return null;
+    }
+}
+exports.hubBillingRouter.get("/planos-disponiveis", auth_1.requireAuth, async (_req, res) => {
+    const productId = process.env.HUB_BILLING_PRODUCT_ID || "";
+    if (productId) {
+        try {
+            const plansFromHub = await HubBillingService_1.HubBillingService.getProductPlans(productId);
+            const planos = plansFromHub
+                .filter((item) => item.isActive === true || String(item.status ?? "").toLowerCase() === "active")
+                .map((item) => {
+                const amountRaw = pickNumber(item, ["amount", "value", "amountCents"]);
+                const amount = amountRaw == null
+                    ? 0
+                    : Number.isInteger(amountRaw) && Math.abs(amountRaw) >= 100
+                        ? amountRaw / 100
+                        : amountRaw;
+                return {
+                    code: pickString(item, ["code"]) || "",
+                    title: pickString(item, ["name"]) || pickString(item, ["code"]) || "",
+                    amount,
+                    quantity: pickNumber(item, ["quantity"]) ?? null,
+                    description: pickString(item, ["description"]) ?? null,
+                    active: true,
+                    planId: pickString(item, ["id", "planId"]) || null,
+                    source: "hub",
+                    hubStatus: String(item.status ?? "").toLowerCase() || null,
+                };
+            });
+            return res.json({ planos });
+        }
+        catch (err) {
+            console.warn("[Hub] Falha ao buscar planos em /products/:id/plans:", err instanceof Error ? err.message : err);
+        }
+    }
+    // Fallback local quando hub não está disponível
+    const planos = PLAN_CATALOG.map((basePlan) => ({
+        code: basePlan.code,
+        title: basePlan.title,
+        amount: basePlan.amount,
+        quantity: null,
+        description: basePlan.description,
+        active: true,
+        planId: null,
+        source: "local_fallback",
+        hubStatus: null,
+    }));
+    return res.json({ planos });
+});
+const subscriptionCheckoutSchema = zod_1.z.object({
+    planCode: zod_1.z.string().min(1),
+    paymentMethod: zod_1.z.enum(["pix", "boleto", "cartao"]).default("pix"),
+    currency: zod_1.z.string().default("BRL"),
+    cycle: zod_1.z.string().default("monthly"),
+    subscriptionPayload: zod_1.z.record(zod_1.z.unknown()).optional(),
+    checkoutPayload: zod_1.z.record(zod_1.z.unknown()).optional(),
+});
+function pickString(obj, keys) {
+    for (const key of keys) {
+        const value = obj[key];
+        if (typeof value === "string" && value.trim())
+            return value;
+    }
+    return null;
+}
+function pickNumber(obj, keys) {
+    for (const key of keys) {
+        const value = obj[key];
+        if (typeof value === "number" && Number.isFinite(value))
+            return value;
+        if (typeof value === "string" && value.trim() && !Number.isNaN(Number(value)))
+            return Number(value);
+    }
+    return null;
+}
+function asRecord(value) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+        return value;
+    }
+    return null;
+}
+function extractCheckoutArtifacts(checkoutObj) {
+    const nestedCandidates = [
+        checkoutObj,
+        asRecord(checkoutObj.data),
+        asRecord(checkoutObj.charge),
+        asRecord(checkoutObj.payment),
+        asRecord(checkoutObj.checkout),
+        asRecord(checkoutObj.result),
+    ].filter(Boolean);
+    const pickAnyString = (keys) => {
+        for (const candidate of nestedCandidates) {
+            const found = pickString(candidate, keys);
+            if (found)
+                return found;
+        }
+        return null;
+    };
+    const pickAnyNumber = (keys) => {
+        for (const candidate of nestedCandidates) {
+            const found = pickNumber(candidate, keys);
+            if (found != null)
+                return found;
+        }
+        return null;
+    };
+    return {
+        chargeId: pickAnyString(["chargeId", "id", "charge_id"]),
+        status: pickAnyString(["status"]),
+        amountRaw: pickAnyNumber(["amount", "value", "amountCents"]),
+        checkoutUrl: pickAnyString([
+            "checkoutUrl",
+            "checkout_url",
+            "paymentUrl",
+            "payment_url",
+            "url",
+            "invoiceUrl",
+            "invoice_url",
+            "paymentLink",
+            "payment_link",
+            "link",
+        ]),
+        pixCode: pickAnyString([
+            "pixCode",
+            "pix_code",
+            "pixCopyPaste",
+            "pixCopiaECola",
+            "copyPaste",
+            "copy_paste",
+            "qrCodeText",
+            "qrcode_text",
+            "pixPayload",
+            "pix_payload",
+        ]),
+        pixQrCode: pickAnyString([
+            "pixQrCode",
+            "pix_qr_code",
+            "qrCodeImage",
+            "qr_code_image",
+        ]),
+    };
+}
+function toHubBillingType(method) {
+    if (method === "cartao")
+        return "CREDIT_CARD";
+    if (method === "boleto")
+        return "BOLETO";
+    return "PIX";
+}
+function normalizeCheckoutPayload(payload, extra) {
+    const billingType = toHubBillingType(payload.paymentMethod);
+    const sanitizedExtra = { ...(extra ?? {}) };
+    // A API nova rejeita esses campos no checkout.
+    delete sanitizedExtra.paymentMethod;
+    delete sanitizedExtra.paymentMethodId;
+    return {
+        billingType,
+        ...sanitizedExtra,
+    };
+}
+/**
+ * Para onde o cliente volta após pagar num checkout hospedado (cartão/boleto).
+ * Sem isso o Hub usa o endereço dele e o cliente cai na tela de login do painel
+ * administrativo. Deriva da origem da própria requisição para não depender de
+ * env por ambiente.
+ */
+function resolveReturnUrl(req, path = "/planos") {
+    const candidates = [String(req.headers.origin ?? ""), String(req.headers.referer ?? "")];
+    for (const candidate of candidates) {
+        const trimmed = candidate.trim();
+        if (!/^https?:\/\//i.test(trimmed))
+            continue;
+        try {
+            return `${new URL(trimmed).origin}${path}`;
+        }
+        catch {
+            // segue para o próximo candidato
+        }
+    }
+    const envUrl = String(process.env.SISLOTE_APP_URL ?? "").trim();
+    if (/^https?:\/\//i.test(envUrl))
+        return `${envUrl.replace(/\/+$/, "")}${path}`;
+    return null;
+}
+/**
+ * Cartão usa a recorrência nativa do gateway (Stripe Subscriptions): a empresa
+ * cadastra o cartão uma vez e passa a ser cobrada automaticamente todo ciclo.
+ * PIX e boleto seguem no checkout avulso, que gera uma cobrança por vez.
+ */
+async function createSubscriptionCharge(params) {
+    if (params.paymentMethod === "cartao") {
+        return HubBillingService_1.HubBillingService.createRecurringCheckout(params.subscriptionId, params.returnUrl ? { returnUrl: params.returnUrl } : {});
+    }
+    return HubBillingService_1.HubBillingService.createSubscriptionCheckout(params.subscriptionId, normalizeCheckoutPayload({ paymentMethod: params.paymentMethod }, { ...(params.checkoutPayload ?? {}), ...(params.returnUrl ? { returnUrl: params.returnUrl } : {}) }));
+}
+async function findActiveSubscriptionIdForEmpresa(empresa) {
+    if (!empresa.hub_customer_id)
+        return null;
+    const licenses = await HubBillingService_1.HubBillingService.getCustomerLicenses(empresa.hub_customer_id);
+    const productId = (process.env.HUB_BILLING_PRODUCT_ID || empresa.hub_product_code || "").toLowerCase();
+    const activeStatuses = new Set(["active", "trialing", "overdue"]);
+    for (const raw of licenses) {
+        const item = raw;
+        const originType = String(item.origin_type ?? item.originType ?? "").toLowerCase();
+        const status = String(item.status ?? "").toLowerCase();
+        const itemProductId = String(item.product_id ?? item.productId ?? "").toLowerCase();
+        const originId = String(item.origin_id ?? item.originId ?? "");
+        if (originType !== "subscription")
+            continue;
+        if (!originId)
+            continue;
+        if (productId && itemProductId && itemProductId !== productId)
+            continue;
+        if (activeStatuses.has(status))
+            return originId;
+    }
+    return null;
+}
+function calculateProration(args) {
+    const currentPrice = PLAN_PRICES[args.currentPlan.toUpperCase()] ?? 0;
+    const targetPrice = PLAN_PRICES[args.targetPlan.toUpperCase()] ?? 0;
+    const diff = targetPrice - currentPrice;
+    const now = Date.now();
+    const cycleDays = args.cycleDays ?? 30;
+    const cycleMs = cycleDays * 24 * 60 * 60 * 1000;
+    const endMs = args.currentEndDate?.getTime() ?? now + cycleMs;
+    const remainingMs = Math.max(0, endMs - now);
+    const ratio = Math.min(1, Math.max(0, remainingMs / cycleMs));
+    const amount = Number((Math.max(0, diff) * ratio).toFixed(2));
+    const credit = Number((Math.max(0, -diff) * ratio).toFixed(2));
+    return {
+        currentPrice,
+        targetPrice,
+        diff,
+        ratio: Number(ratio.toFixed(4)),
+        amountToCharge: amount,
+        credit,
+    };
+}
+async function createPlanCheckoutForEmpresa(params) {
+    const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || params.empresa.hub_product_code || "";
+    const hubPlan = getHubPlanMap()[params.planCode.toUpperCase()];
+    const dynamicHubPlan = !hubPlan?.planId
+        ? await resolveHubPlanDynamicByCode(params.planCode, hubProductId)
+        : null;
+    const amountCents = Math.round(params.amount * 100);
+    const orderPayload = {
+        customerId: params.empresa.hub_customer_id,
+        // Payload mínimo aceito no /orders pela API nova
+        productId: hubProductId || undefined,
+        planId: hubPlan?.planId || dynamicHubPlan?.planId || undefined,
+        amount: amountCents,
+        ...(params.orderPayload ?? {}),
+    };
+    const order = await HubBillingService_1.HubBillingService.createOrder(orderPayload);
+    const orderObj = order;
+    const orderId = pickString(orderObj, ["id", "orderId"]);
+    if (!orderId) {
+        throw new Error("Hub Billing não retornou orderId");
+    }
+    const checkout = await HubBillingService_1.HubBillingService.createCheckout(orderId, normalizeCheckoutPayload({ paymentMethod: params.paymentMethod }, { ...(params.checkoutPayload ?? {}), ...(params.returnUrl ? { returnUrl: params.returnUrl } : {}) }));
+    const checkoutObj = checkout;
+    const artifacts = extractCheckoutArtifacts(checkoutObj);
+    const chargeId = artifacts.chargeId;
+    const status = artifacts.status;
+    const amountRaw = artifacts.amountRaw;
+    const amount = normalizeHubAmount(amountRaw, params.amount);
+    const checkoutUrl = artifacts.checkoutUrl;
+    const pixCode = artifacts.pixCode;
+    const pixQrCode = artifacts.pixQrCode;
+    const localCharge = params.chargeRepo.create({
+        id_empresa: params.empresa.id_empresa,
+        origin_type: params.originType ?? "order",
+        origin_id: orderId,
+        order_id: orderId,
+        subscription_id: params.originType === "subscription" ? orderId : null,
+        charge_id: chargeId,
+        status,
+        amount: amount.toFixed(2),
+        payload: {
+            planCode: params.planCode,
+            paymentMethod: params.paymentMethod,
+            order: orderObj,
+            checkout: checkoutObj,
+            metadata: params.metadata ?? {},
+        },
+    });
+    const saved = await params.chargeRepo.save(localCharge);
+    return {
+        orderId,
+        chargeId,
+        status,
+        amount,
+        checkoutUrl,
+        pixCode,
+        pixQrCode,
+        localChargeId: saved.id_hub_charge,
+    };
+}
+function toAmountString(value) {
+    return value != null ? value.toFixed(2) : null;
+}
+function toAmountNumber(value) {
+    if (!value)
+        return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+function normalizeHubAmount(amountRaw, fallback) {
+    if (amountRaw == null || !Number.isFinite(amountRaw))
+        return fallback;
+    if (Number.isInteger(amountRaw)) {
+        const asReais = amountRaw;
+        const asCentavos = amountRaw / 100;
+        if (fallback > 0) {
+            const diffReais = Math.abs(asReais - fallback);
+            const diffCentavos = Math.abs(asCentavos - fallback);
+            if (diffCentavos < diffReais)
+                return asCentavos;
+            if (diffReais < diffCentavos)
+                return asReais;
+        }
+        if (Math.abs(amountRaw) >= 100)
+            return asCentavos;
+    }
+    return amountRaw;
+}
+function parsePlanCodeFromChargePayload(payload) {
+    if (!payload)
+        return null;
+    const directPlan = typeof payload.planCode === "string" ? payload.planCode : null;
+    if (directPlan)
+        return directPlan.toUpperCase();
+    const metadata = asRecord(payload.metadata);
+    const targetPlan = metadata && typeof metadata.targetPlan === "string" ? metadata.targetPlan : null;
+    if (targetPlan)
+        return targetPlan.toUpperCase();
+    const order = asRecord(payload.order);
+    const plan = order ? asRecord(order.plan) : null;
+    const orderPlanCode = plan && typeof plan.code === "string" ? plan.code : null;
+    if (orderPlanCode)
+        return orderPlanCode.toUpperCase();
+    return null;
+}
+/**
+ * Garante que a empresa possui um hub_customer_id.
+ * Se não tiver, cria o cliente no Hub Billing (ou recupera se já existir via 409)
+ * e salva o ID na empresa antes de retornar.
+ */
+async function ensureHubCustomer(empresa, empresaRepo) {
+    if (empresa.hub_customer_id) {
+        return empresa.hub_customer_id;
+    }
+    const docClean = (empresa.cnpj || "").replace(/\D/g, "");
+    if (!docClean) {
+        throw new Error("CNPJ/CPF da empresa não informado — impossível criar cliente no Hub Billing");
+    }
+    const personType = docClean.length === 11 ? "PF" : "PJ";
+    const productCode = process.env.HUB_BILLING_PRODUCT_CODE || "SISLOTE_NOVO_OFICIAL_2";
+    // Se a empresa não tem email, busca do usuário master
+    let emailParaHub = empresa.email?.trim() || null;
+    if (!emailParaHub) {
+        const master = await data_source_1.AppDataSource.getRepository(Usuario_1.Usuario).findOne({
+            where: { id_empresa: empresa.id_empresa, user_master: true },
+        });
+        emailParaHub = master?.email?.trim() || null;
+    }
+    if (!emailParaHub) {
+        throw new Error("E-mail não configurado para a empresa — informe um e-mail para continuar");
+    }
+    let customerId = null;
+    const normalizeCustomerId = (obj) => {
+        if (typeof obj.customerId === "string")
+            return obj.customerId;
+        if (typeof obj.id === "string")
+            return obj.id;
+        if (obj.data && typeof obj.data === "object" && !Array.isArray(obj.data)) {
+            const nested = obj.data;
+            if (typeof nested.id === "string")
+                return nested.id;
+            if (typeof nested.customerId === "string")
+                return nested.customerId;
+        }
+        return null;
+    };
+    try {
+        if (!customerId) {
+            const customer = await HubBillingService_1.HubBillingService.resolveExternalCustomer(docClean);
+            customerId = normalizeCustomerId(customer);
+        }
+    }
+    catch (externalResolveErr) {
+        const msgExternalResolve = externalResolveErr instanceof Error ? externalResolveErr.message : String(externalResolveErr);
+        console.warn("[Hub] resolveExternalCustomer falhou, tentando fallback admin:", msgExternalResolve);
+    }
+    try {
+        if (!customerId) {
+            const customer = await HubBillingService_1.HubBillingService.createCustomer({
+                personType,
+                legalName: empresa.razao_social || empresa.nome_fantasia,
+                document: docClean,
+                email: emailParaHub,
+                phone: (empresa.telefone || "").replace(/\D/g, "") || undefined,
+            });
+            const obj = customer;
+            customerId = typeof obj.id === "string" ? obj.id : null;
+        }
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        // 409 = cliente já existe → busca pelo documento
+        if (msg.includes("409")) {
+            try {
+                const found = await HubBillingService_1.HubBillingService.findCustomerByDocument(docClean);
+                const obj = found;
+                if (typeof obj.id === "string") {
+                    customerId = obj.id;
+                }
+                else if (Array.isArray(obj.data) && obj.data.length > 0) {
+                    const first = obj.data[0];
+                    customerId = typeof first.id === "string" ? first.id : null;
+                }
+            }
+            catch (findErr) {
+                console.warn("[Hub] findCustomerByDocument falhou:", findErr instanceof Error ? findErr.message : findErr);
+            }
+        }
+        else {
+            throw err;
+        }
+    }
+    if (!customerId) {
+        throw new Error("Não foi possível criar ou localizar o cliente no Hub Billing");
+    }
+    empresa.hub_customer_id = customerId;
+    if (!empresa.hub_product_code) {
+        empresa.hub_product_code = process.env.HUB_BILLING_PRODUCT_ID || productCode;
+    }
+    await empresaRepo.save(empresa);
+    return customerId;
+}
+exports.hubBillingRouter.get("/license-status", auth_1.requireAuth, async (req, res) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const repo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+    const empresa = await repo.findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+    const planControlDisabled = HubBillingService_1.HubBillingService.isPlanControlDisabled(empresa);
+    let syncResult = null;
+    if (!planControlDisabled && HubBillingService_1.HubBillingService.isConfigured() && empresa.hub_customer_id) {
+        try {
+            syncResult = await HubBillingService_1.HubBillingService.syncEmpresaLicense(empresa);
+        }
+        catch (err) {
+            console.warn("[Hub] sync em /license-status falhou:", err instanceof Error ? err.message : err);
+        }
+    }
+    // Calcular daysLeft com fallback em cascata: Hub sync → features salvas → hub_expires_at → data_vencimento
+    const daysLeft = syncResult?.daysLeft ?? HubBillingService_1.HubBillingService.getStoredDaysLeft(empresa) ?? (() => {
+        const expiry = empresa.hub_expires_at
+            ?? (empresa.data_vencimento ? new Date(empresa.data_vencimento + "T23:59:59") : null);
+        if (!expiry)
+            return null;
+        const msLeft = expiry.getTime() - Date.now();
+        return msLeft > 0 ? Math.ceil(msLeft / (1000 * 60 * 60 * 24)) : 0;
+    })();
+    // hub_expires_at com fallback para data_vencimento
+    const effectiveHubExpiresAt = empresa.hub_expires_at
+        ?? (empresa.data_vencimento ? new Date(empresa.data_vencimento + "T23:59:59") : null);
+    return res.json({
+        id_empresa: empresa.id_empresa,
+        plano: empresa.plano,
+        data_vencimento: empresa.data_vencimento,
+        hub_customer_id: empresa.hub_customer_id,
+        hub_product_code: empresa.hub_product_code,
+        hub_license_status: empresa.hub_license_status,
+        hub_license_reason: empresa.hub_license_reason,
+        hub_expires_at: effectiveHubExpiresAt,
+        hub_features: (0, license_features_1.getEffectiveFeatures)(empresa.plano, empresa.hub_features ?? {}),
+        hub_last_sync: empresa.hub_last_sync,
+        hub_configured: planControlDisabled ? false : HubBillingService_1.HubBillingService.isConfigured(),
+        plan_control_disabled: planControlDisabled,
+        days_left: planControlDisabled ? null : daysLeft,
+        banner: planControlDisabled ? null : (syncResult?.banner ?? null),
+        access_status: syncResult?.accessStatus ?? empresa.hub_license_status ?? null,
+    });
+});
+exports.hubBillingRouter.get("/assinatura", auth_1.requireAuth, async (req, res) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const empresa = await data_source_1.AppDataSource.getRepository(Empresa_1.Empresa).findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+    if (!HubBillingService_1.HubBillingService.isConfigured() || !empresa.hub_customer_id) {
+        return res.json({ subscriptionId: null, isRecurring: false });
+    }
+    try {
+        const subscriptionId = await findActiveSubscriptionIdForEmpresa(empresa);
+        return res.json({ subscriptionId, isRecurring: !!subscriptionId });
+    }
+    catch (error) {
+        console.warn("[Hub] falha ao consultar assinatura:", error instanceof Error ? error.message : error);
+        return res.json({ subscriptionId: null, isRecurring: false });
+    }
+});
+exports.hubBillingRouter.post("/assinatura/cancelar", auth_1.requireAuth, async (req, res) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const parsed = zod_1.z.object({ reason: zod_1.z.string().max(500).optional() }).safeParse(req.body ?? {});
+    if (!parsed.success) {
+        return res.status(400).json({ error: "Dados inválidos" });
+    }
+    const empresa = await data_source_1.AppDataSource.getRepository(Empresa_1.Empresa).findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+    if (!HubBillingService_1.HubBillingService.isConfigured() || !empresa.hub_customer_id) {
+        return res.status(400).json({ error: "Cobrança não configurada para esta empresa" });
+    }
+    try {
+        const subscriptionId = await findActiveSubscriptionIdForEmpresa(empresa);
+        if (!subscriptionId) {
+            return res.status(404).json({
+                error: "Nenhuma assinatura ativa encontrada para cancelar.",
+            });
+        }
+        await HubBillingService_1.HubBillingService.cancelSubscription(subscriptionId, {
+            reason: parsed.data.reason || "Cancelado pelo cliente no SISLOTE",
+        });
+        await data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent).save(data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent).create({
+            id_empresa: empresa.id_empresa,
+            event_type: "subscription.canceled_by_customer",
+            event_source: "system",
+            charge_id: null,
+            order_id: null,
+            subscription_id: subscriptionId,
+            status: "canceled",
+            amount: null,
+            payload: { reason: parsed.data.reason ?? null },
+        }));
+        return res.json({ ok: true, subscriptionId });
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Falha ao cancelar assinatura";
+        // 400 em vez de 502: o proxy substitui o corpo de respostas 5xx por HTML
+        // genérico e a mensagem real do Hub nunca chega ao usuário.
+        return res.status(400).json({ error: message });
+    }
+});
+exports.hubBillingRouter.post("/sync-license", auth_1.requireAuth, async (req, res) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const repo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+    const empresa = await repo.findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+    if (HubBillingService_1.HubBillingService.isPlanControlDisabled(empresa)) {
+        return res.json({
+            synced: false,
+            allowed: true,
+            reason: "plan_control_disabled",
+            message: "Controle de planos/licença desativado para esta empresa.",
+        });
+    }
+    try {
+        const result = await HubBillingService_1.HubBillingService.syncEmpresaLicense(empresa);
+        return res.json(result);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao sincronizar licença";
+        return res.status(502).json({ error: message });
+    }
+});
+exports.hubBillingRouter.post("/orders", auth_1.requireAuth, async (req, res) => {
+    const parseResult = createOrderSchema.safeParse(req.body);
+    if (!parseResult.success) {
+        return res.status(400).json({ error: "Payload inválido", issues: parseResult.error.issues });
+    }
+    try {
+        const result = await HubBillingService_1.HubBillingService.createOrder(parseResult.data.payload);
+        return res.status(201).json(result);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao criar pedido no Hub Billing";
+        return res.status(502).json({ error: message });
+    }
+});
+exports.hubBillingRouter.post("/orders/:orderId/checkout", auth_1.requireAuth, async (req, res) => {
+    const parseResult = createCheckoutSchema.safeParse(req.body);
+    if (!parseResult.success) {
+        return res.status(400).json({ error: "Payload inválido", issues: parseResult.error.issues });
+    }
+    try {
+        const result = await HubBillingService_1.HubBillingService.createCheckout(req.params.orderId, parseResult.data.payload);
+        return res.json(result);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao gerar checkout no Hub Billing";
+        return res.status(502).json({ error: message });
+    }
+});
+exports.hubBillingRouter.get("/charges", auth_1.requireAuth, async (req, res) => {
+    const parseResult = chargesQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+        return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+    try {
+        const result = await HubBillingService_1.HubBillingService.getCharges(parseResult.data.originType, parseResult.data.originId);
+        return res.json(result);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao consultar cobranças no Hub Billing";
+        return res.status(502).json({ error: message });
+    }
+});
+exports.hubBillingRouter.get("/minhas-cobrancas", auth_1.requireAuth, async (req, res) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const repo = data_source_1.AppDataSource.getRepository(HubBillingCharge_1.HubBillingCharge);
+    const rows = await repo.find({
+        where: { id_empresa: idEmpresa },
+        order: { created_at: "DESC" },
+        take: 30,
+    });
+    return res.json(rows);
+});
+exports.hubBillingRouter.get("/timeline", auth_1.requireAuth, async (req, res) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const chargeId = typeof req.query.chargeId === "string" ? req.query.chargeId : undefined;
+    const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
+    const eventRepo = data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent);
+    const qb = eventRepo
+        .createQueryBuilder("ev")
+        .where("ev.id_empresa = :id_empresa", { id_empresa: idEmpresa })
+        .orderBy("ev.created_at", "DESC")
+        .take(limit);
+    if (chargeId) {
+        qb.andWhere("ev.charge_id = :chargeId", { chargeId });
+    }
+    const rows = await qb.getMany();
+    return res.json(rows);
+});
+exports.hubBillingRouter.post("/minhas-cobrancas/:id/sync", auth_1.requireAuth, async (req, res) => {
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const chargeRepo = data_source_1.AppDataSource.getRepository(HubBillingCharge_1.HubBillingCharge);
+    const eventRepo = data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent);
+    const charge = await chargeRepo.findOne({
+        where: { id_hub_charge: Number(req.params.id), id_empresa: idEmpresa },
+    });
+    if (!charge) {
+        return res.status(404).json({ error: "Cobrança não encontrada" });
+    }
+    try {
+        const result = await HubBillingService_1.HubBillingService.getCharges(charge.origin_type, charge.origin_id);
+        const payload = result;
+        const list = Array.isArray(result)
+            ? result
+            : Array.isArray(payload.data)
+                ? payload.data
+                : Array.isArray(payload.items)
+                    ? payload.items
+                    : [];
+        const resolveStatus = (item) => {
+            const explicit = pickString(item, ["status"]);
+            if (explicit)
+                return explicit;
+            const paidAt = pickString(item, ["paidAt", "paid_at"]);
+            if (paidAt)
+                return "paid";
+            const canceledAt = pickString(item, ["canceledAt", "canceled_at"]);
+            if (canceledAt)
+                return "canceled";
+            return null;
+        };
+        const matched = list.find((item) => pickString(item, ["chargeId", "id", "externalChargeId", "external_charge_id"]) === charge.charge_id) ||
+            list[0] ||
+            null;
+        if (matched) {
+            const oldStatus = charge.status;
+            const newStatus = resolveStatus(matched);
+            const newAmount = pickNumber(matched, ["amount", "value"]);
+            const planCode = parsePlanCodeFromChargePayload(charge.payload);
+            const fallbackByPlan = planCode ? PLAN_PRICES[planCode] ?? null : null;
+            const fallbackByCurrent = toAmountNumber(charge.amount);
+            const normalizedAmount = normalizeHubAmount(newAmount, fallbackByPlan ?? fallbackByCurrent ?? 0);
+            charge.status = newStatus ?? charge.status;
+            charge.amount = toAmountString(normalizedAmount) ?? charge.amount;
+            charge.payload = { ...(charge.payload ?? {}), sync: matched };
+            await chargeRepo.save(charge);
+            const event = eventRepo.create({
+                id_empresa: idEmpresa,
+                event_type: "payment.synced",
+                event_source: "sync",
+                charge_id: charge.charge_id,
+                order_id: charge.order_id,
+                subscription_id: charge.subscription_id,
+                status: charge.status,
+                amount: charge.amount,
+                payload: {
+                    oldStatus,
+                    newStatus: charge.status,
+                    syncPayload: matched,
+                },
+            });
+            await eventRepo.save(event);
+            // Notifica no Telegram quando a cobrança passa a "paid" (novo pagamento confirmado)
+            if (oldStatus !== "paid" && charge.status === "paid") {
+                const empresa = await data_source_1.AppDataSource.getRepository(Empresa_1.Empresa).findOne({ where: { id_empresa: idEmpresa } });
+                void TelegramService_1.TelegramService.notifyPagamento({
+                    empresa: empresa?.nome_fantasia || `Empresa #${idEmpresa}`,
+                    cnpj: empresa?.cnpj || null,
+                    valor: charge.amount,
+                    plano: planCode || empresa?.plano || null,
+                });
+            }
+        }
+        return res.json(charge);
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao sincronizar cobrança";
+        return res.status(502).json({ error: message });
+    }
+});
+exports.hubBillingRouter.post("/planos/checkout", auth_1.requireAuth, async (req, res) => {
+    const parseResult = planoCheckoutSchema.safeParse(req.body);
+    if (!parseResult.success) {
+        return res.status(400).json({ error: "Payload inválido", issues: parseResult.error.issues });
+    }
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const empresaRepo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+    const chargeRepo = data_source_1.AppDataSource.getRepository(HubBillingCharge_1.HubBillingCharge);
+    const eventRepo = data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent);
+    const empresa = await empresaRepo.findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+    try {
+        await ensureHubCustomer(empresa, empresaRepo);
+    }
+    catch (autoErr) {
+        const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
+        console.error("[Hub] ensureHubCustomer falhou:", msg);
+        // 400 em vez de 502: o proxy troca o corpo de respostas 5xx por HTML
+        // genérico e a mensagem real nunca chega ao usuário.
+        return res.status(400).json({ error: msg });
+    }
+    const payload = parseResult.data;
+    const productCode = payload.planCode || empresa.hub_product_code;
+    if (!productCode) {
+        return res.status(400).json({ error: "Hub Product Code não configurado para a empresa" });
+    }
+    try {
+        const created = await createPlanCheckoutForEmpresa({
+            empresa,
+            chargeRepo,
+            planCode: payload.planCode,
+            amount: payload.amount,
+            paymentMethod: payload.paymentMethod,
+            currency: payload.currency,
+            orderPayload: payload.orderPayload,
+            checkoutPayload: payload.checkoutPayload,
+            returnUrl: resolveReturnUrl(req),
+            metadata: { mode: "new_plan_checkout" },
+        });
+        await eventRepo.save(eventRepo.create({
+            id_empresa: empresa.id_empresa,
+            event_type: "payment.checkout_created",
+            event_source: "system",
+            charge_id: created.chargeId,
+            order_id: created.orderId,
+            subscription_id: null,
+            status: created.status ?? "created",
+            amount: toAmountString(created.amount),
+            payload: {
+                planCode: payload.planCode,
+            },
+        }));
+        return res.status(201).json({
+            ok: true,
+            ...created,
+        });
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao criar checkout do plano";
+        console.error("[Hub] /planos/checkout falhou:", message);
+        // 400 em vez de 502: o proxy troca o corpo de respostas 5xx por HTML
+        // genérico e a mensagem real nunca chega ao usuário.
+        return res.status(400).json({ error: message });
+    }
+});
+exports.hubBillingRouter.post("/planos/subscription/checkout", auth_1.requireAuth, async (req, res) => {
+    const parseResult = subscriptionCheckoutSchema.safeParse(req.body);
+    if (!parseResult.success) {
+        return res.status(400).json({ error: "Payload inválido", issues: parseResult.error.issues });
+    }
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const empresaRepo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+    const chargeRepo = data_source_1.AppDataSource.getRepository(HubBillingCharge_1.HubBillingCharge);
+    const eventRepo = data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent);
+    const empresa = await empresaRepo.findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+    try {
+        await ensureHubCustomer(empresa, empresaRepo);
+    }
+    catch (autoErr) {
+        const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
+        console.error("[Hub] ensureHubCustomer falhou:", msg);
+        // 400 em vez de 502: o proxy troca o corpo de respostas 5xx por HTML
+        // genérico e a mensagem real nunca chega ao usuário.
+        return res.status(400).json({ error: msg });
+    }
+    const payload = parseResult.data;
+    const planCode = payload.planCode.toUpperCase();
+    const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || "";
+    if (!hubProductId) {
+        return res.status(500).json({ error: "HUB_BILLING_PRODUCT_ID não configurado" });
+    }
+    // Resolve planId dinamicamente pelo code do hub (suporta qualquer plano cadastrado)
+    const hubPlanMap = getHubPlanMap();
+    const hubPlanStatic = hubPlanMap[planCode];
+    const dynamicPlan = !hubPlanStatic?.planId
+        ? await resolveHubPlanDynamicByCode(planCode, hubProductId)
+        : null;
+    const resolvedPlanId = hubPlanStatic?.planId || dynamicPlan?.planId || null;
+    const resolvedAmount = hubPlanStatic?.amountCents
+        ? hubPlanStatic.amountCents
+        : dynamicPlan?.amount != null
+            ? Math.round(dynamicPlan.amount * 100)
+            : 0;
+    if (!resolvedPlanId) {
+        return res.status(400).json({ error: `Plano '${planCode}' não encontrado no Hub Billing` });
+    }
+    try {
+        const subscription = await HubBillingService_1.HubBillingService.createSubscription({
+            customerId: empresa.hub_customer_id,
+            productId: hubProductId,
+            planId: resolvedPlanId,
+            contractedAmount: resolvedAmount,
+            ...(payload.subscriptionPayload ?? {}),
+        });
+        const subscriptionObj = subscription;
+        const subscriptionId = pickString(subscriptionObj, ["id", "subscriptionId"]);
+        if (!subscriptionId) {
+            return res.status(502).json({ error: "Hub Billing não retornou subscriptionId" });
+        }
+        const checkout = await createSubscriptionCharge({
+            subscriptionId,
+            paymentMethod: payload.paymentMethod,
+            checkoutPayload: payload.checkoutPayload,
+            returnUrl: resolveReturnUrl(req),
+        });
+        const checkoutObj = checkout;
+        const artifacts = extractCheckoutArtifacts(checkoutObj);
+        const chargeId = artifacts.chargeId;
+        const status = artifacts.status;
+        const amountRaw = artifacts.amountRaw;
+        const amount = normalizeHubAmount(amountRaw, resolvedAmount / 100);
+        const checkoutUrl = artifacts.checkoutUrl;
+        const pixCode = artifacts.pixCode;
+        const pixQrCode = artifacts.pixQrCode;
+        const localCharge = chargeRepo.create({
+            id_empresa: empresa.id_empresa,
+            origin_type: "subscription",
+            origin_id: subscriptionId,
+            order_id: null,
+            subscription_id: subscriptionId,
+            charge_id: chargeId,
+            status,
+            amount: toAmountString(amount),
+            payload: {
+                mode: "subscription_checkout",
+                planCode,
+                subscription: subscriptionObj,
+                checkout: checkoutObj,
+            },
+        });
+        const saved = await chargeRepo.save(localCharge);
+        await eventRepo.save(eventRepo.create({
+            id_empresa: empresa.id_empresa,
+            event_type: "subscription.checkout_created",
+            event_source: "system",
+            charge_id: chargeId,
+            order_id: null,
+            subscription_id: subscriptionId,
+            status: status ?? "created",
+            amount: toAmountString(amount),
+            payload: { planCode },
+        }));
+        return res.status(201).json({
+            ok: true,
+            subscriptionId,
+            chargeId,
+            status,
+            amount,
+            checkoutUrl,
+            pixCode,
+            pixQrCode,
+            localChargeId: saved.id_hub_charge,
+        });
+    }
+    catch (error) {
+        const raw = error instanceof Error ? error.message : "Erro ao criar assinatura";
+        // 409 = já tem assinatura ativa → informa de forma amigável
+        if (raw.includes("409") || raw.toLowerCase().includes("já possui assinatura")) {
+            return res.status(409).json({
+                error: "Este cliente já possui uma assinatura ativa para este produto.",
+                hint: "Use Upgrade/Downgrade para alterar o plano existente.",
+            });
+        }
+        return res.status(502).json({ error: raw });
+    }
+});
+exports.hubBillingRouter.post("/planos/alterar", auth_1.requireAuth, async (req, res) => {
+    const parseResult = changePlanSchema.safeParse(req.body);
+    if (!parseResult.success) {
+        return res.status(400).json({ error: "Payload inválido", issues: parseResult.error.issues });
+    }
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) {
+        return res.status(400).json({ error: "Empresa não definida para o usuário" });
+    }
+    const empresaRepo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+    const chargeRepo = data_source_1.AppDataSource.getRepository(HubBillingCharge_1.HubBillingCharge);
+    const eventRepo = data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent);
+    const empresa = await empresaRepo.findOne({ where: { id_empresa: idEmpresa } });
+    if (!empresa) {
+        return res.status(404).json({ error: "Empresa não encontrada" });
+    }
+    try {
+        await ensureHubCustomer(empresa, empresaRepo);
+    }
+    catch (autoErr) {
+        const msg = autoErr instanceof Error ? autoErr.message : "Erro ao criar cliente no Hub Billing";
+        console.error("[Hub] ensureHubCustomer falhou:", msg);
+        // 400 em vez de 502: o proxy troca o corpo de respostas 5xx por HTML
+        // genérico e a mensagem real nunca chega ao usuário.
+        return res.status(400).json({ error: msg });
+    }
+    const payload = parseResult.data;
+    const currentPlan = (empresa.plano || "BASICO").toUpperCase();
+    const targetPlan = payload.targetPlanCode.toUpperCase();
+    const isTrialConversion = currentPlan === "TESTE" && targetPlan !== "TESTE";
+    const hubPlan = getHubPlanMap()[targetPlan];
+    const proration = calculateProration({
+        currentPlan,
+        targetPlan,
+        currentEndDate: empresa.hub_expires_at ?? null,
+        cycleDays: payload.cycleDays,
+    });
+    if (targetPlan === currentPlan) {
+        // Durante trial, ou quando a licença está bloqueada/suspensa/vencida,
+        // permite gerar cobrança no plano atual — senão o cliente não teria
+        // como pagar e reativar o próprio plano (ficava só a mensagem
+        // "Plano atual já é o selecionado", sem nenhum link de pagamento).
+        if (isTrialLicenseStatus(empresa) || HubBillingService_1.HubBillingService.isLicenseDenied(empresa)) {
+            try {
+                const hubProductId = process.env.HUB_BILLING_PRODUCT_ID || empresa.hub_product_code || "";
+                const dynamicPlan = await resolveHubPlanDynamicByCode(targetPlan, hubProductId);
+                const fullAmount = dynamicPlan?.amount ?? PLAN_PRICES[targetPlan] ?? 1;
+                const created = await createPlanCheckoutForEmpresa({
+                    empresa,
+                    chargeRepo,
+                    planCode: targetPlan,
+                    amount: fullAmount,
+                    paymentMethod: payload.paymentMethod,
+                    currency: payload.currency,
+                    returnUrl: resolveReturnUrl(req),
+                    metadata: {
+                        mode: "trial_same_plan_checkout",
+                        currentPlan,
+                        targetPlan,
+                    },
+                });
+                return res.status(201).json({
+                    ok: true,
+                    changed: false,
+                    currentPlan,
+                    targetPlan,
+                    proration: {
+                        ...proration,
+                        ratio: 1,
+                        amountToCharge: fullAmount,
+                        credit: 0,
+                    },
+                    ...created,
+                    message: "Checkout do plano atual criado com sucesso",
+                });
+            }
+            catch (error) {
+                const message = error instanceof Error ? error.message : "Erro ao gerar checkout do plano atual";
+                return res.status(502).json({ error: message });
+            }
+        }
+        return res.json({
+            ok: true,
+            message: "Plano atual já é o selecionado",
+            currentPlan,
+            targetPlan,
+            proration,
+        });
+    }
+    // Fluxo oficial da documentação: se existir assinatura ativa/trialing/overdue,
+    // altera plano na assinatura e gera checkout da própria assinatura.
+    if (hubPlan?.planId) {
+        try {
+            const subscriptionId = await findActiveSubscriptionIdForEmpresa(empresa);
+            if (subscriptionId) {
+                try {
+                    await HubBillingService_1.HubBillingService.changeSubscriptionPlan(subscriptionId, {
+                        planId: hubPlan.planId,
+                    });
+                }
+                catch (planErr) {
+                    // Compatibilidade com variações de payload em ambientes diferentes do Hub.
+                    await HubBillingService_1.HubBillingService.changeSubscriptionPlan(subscriptionId, {
+                        targetPlanId: hubPlan.planId,
+                    });
+                }
+                const checkout = await createSubscriptionCharge({
+                    subscriptionId,
+                    paymentMethod: payload.paymentMethod,
+                    returnUrl: resolveReturnUrl(req),
+                });
+                const checkoutObj = checkout;
+                const artifacts = extractCheckoutArtifacts(checkoutObj);
+                const chargeId = artifacts.chargeId;
+                const status = artifacts.status;
+                const checkoutUrl = artifacts.checkoutUrl;
+                const pixCode = artifacts.pixCode;
+                const pixQrCode = artifacts.pixQrCode;
+                const amountRaw = artifacts.amountRaw;
+                const fallbackAmount = isTrialConversion
+                    ? PLAN_PRICES[targetPlan] ?? 0
+                    : proration.amountToCharge;
+                const amount = normalizeHubAmount(amountRaw, fallbackAmount);
+                const saved = await chargeRepo.save(chargeRepo.create({
+                    id_empresa: empresa.id_empresa,
+                    origin_type: "subscription",
+                    origin_id: subscriptionId,
+                    order_id: null,
+                    subscription_id: subscriptionId,
+                    charge_id: chargeId,
+                    status,
+                    amount: toAmountString(amount),
+                    payload: {
+                        mode: "subscription_change_plan_checkout",
+                        currentPlan,
+                        targetPlan,
+                        subscriptionId,
+                        checkout: checkoutObj,
+                    },
+                }));
+                await eventRepo.save(eventRepo.create({
+                    id_empresa: empresa.id_empresa,
+                    event_type: "subscription.plan_change_checkout_created",
+                    event_source: "system",
+                    charge_id: chargeId,
+                    order_id: null,
+                    subscription_id: subscriptionId,
+                    status: status ?? "created",
+                    amount: toAmountString(amount),
+                    payload: {
+                        currentPlan,
+                        targetPlan,
+                        mode: "subscription_change_plan_checkout",
+                    },
+                }));
+                return res.status(201).json({
+                    ok: true,
+                    changed: false,
+                    currentPlan,
+                    targetPlan,
+                    proration,
+                    chargeId,
+                    status,
+                    amount,
+                    checkoutUrl,
+                    pixCode,
+                    pixQrCode,
+                    localChargeId: saved.id_hub_charge,
+                    subscriptionId,
+                    message: "Checkout de mudança de plano criado na assinatura existente",
+                });
+            }
+        }
+        catch (subFlowError) {
+            console.warn("[Hub] change-plan via assinatura falhou, usando fallback por pedido:", subFlowError instanceof Error ? subFlowError.message : subFlowError);
+        }
+    }
+    // Conversão de trial para plano pago: cobra valor cheio do plano alvo
+    if (isTrialConversion) {
+        try {
+            const fullAmount = PLAN_PRICES[targetPlan] ?? 0;
+            const created = await createPlanCheckoutForEmpresa({
+                empresa,
+                chargeRepo,
+                planCode: targetPlan,
+                amount: fullAmount,
+                paymentMethod: payload.paymentMethod,
+                currency: payload.currency,
+                returnUrl: resolveReturnUrl(req),
+                metadata: {
+                    mode: "trial_conversion",
+                    currentPlan,
+                    targetPlan,
+                },
+            });
+            return res.status(201).json({
+                ok: true,
+                changed: false,
+                currentPlan,
+                targetPlan,
+                proration: {
+                    ...proration,
+                    ratio: 1,
+                    amountToCharge: fullAmount,
+                    credit: 0,
+                },
+                ...created,
+                message: "Checkout de conversão do trial criado com sucesso",
+            });
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : "Erro ao converter trial";
+            return res.status(502).json({ error: message });
+        }
+    }
+    if (proration.amountToCharge <= 0) {
+        const previousPlan = empresa.plano;
+        empresa.plano = targetPlan;
+        empresa.hub_cache_until = new Date();
+        empresa.hub_last_sync = new Date();
+        await empresaRepo.save(empresa);
+        await eventRepo.save(eventRepo.create({
+            id_empresa: empresa.id_empresa,
+            event_type: "subscription.plan_changed",
+            event_source: "system",
+            charge_id: null,
+            order_id: null,
+            subscription_id: null,
+            status: "changed",
+            amount: null,
+            payload: {
+                mode: "downgrade_without_charge",
+                previousPlan,
+                targetPlan,
+                proration,
+            },
+        }));
+        return res.json({
+            ok: true,
+            changed: true,
+            currentPlan,
+            targetPlan,
+            proration,
+            message: "Downgrade aplicado sem cobrança adicional",
+        });
+    }
+    try {
+        const created = await createPlanCheckoutForEmpresa({
+            empresa,
+            chargeRepo,
+            planCode: targetPlan,
+            amount: proration.amountToCharge,
+            paymentMethod: payload.paymentMethod,
+            currency: payload.currency,
+            returnUrl: resolveReturnUrl(req),
+            metadata: {
+                mode: "plan_change_proration",
+                currentPlan,
+                targetPlan,
+                ratio: proration.ratio,
+            },
+        });
+        return res.status(201).json({
+            ok: true,
+            changed: false,
+            currentPlan,
+            targetPlan,
+            proration,
+            ...created,
+            message: "Checkout de proration criado para mudança de plano",
+        });
+    }
+    catch (error) {
+        const message = error instanceof Error ? error.message : "Erro ao alterar plano";
+        return res.status(502).json({ error: message });
+    }
+});
+exports.hubBillingRouter.post("/webhook", async (req, res) => {
+    const rawBody = (req.rawBody ?? "").trim();
+    const signature = req.header("X-Hub-Signature");
+    if (!HubBillingService_1.HubBillingService.verifyWebhookSignature(rawBody, signature)) {
+        return res.status(401).json({ error: "Assinatura inválida" });
+    }
+    const bodySchema = zod_1.z.object({
+        id: zod_1.z.string().optional(),
+        type: zod_1.z.string(),
+        productId: zod_1.z.string().optional(),
+        customerId: zod_1.z.string().optional(),
+        payload: zod_1.z.record(zod_1.z.unknown()).optional(),
+        createdAt: zod_1.z.string().optional(),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+        return res.status(400).json({ error: "Evento inválido", issues: parsed.error.issues });
+    }
+    const event = parsed.data;
+    const webhookEventId = event.id ?? null;
+    const customerId = event.customerId;
+    // Idempotência: ignora evento já processado
+    if (webhookEventId) {
+        const eventRepo = data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent);
+        const existing = await eventRepo.findOne({ where: { webhook_event_id: webhookEventId } });
+        if (existing) {
+            return res.status(200).json({ ok: true, duplicate: true });
+        }
+    }
+    if (!customerId) {
+        return res.status(200).json({ ok: true });
+    }
+    const repo = data_source_1.AppDataSource.getRepository(Empresa_1.Empresa);
+    const chargeRepo = data_source_1.AppDataSource.getRepository(HubBillingCharge_1.HubBillingCharge);
+    const eventRepo = data_source_1.AppDataSource.getRepository(HubBillingEvent_1.HubBillingEvent);
+    const empresa = await repo.findOne({ where: { hub_customer_id: customerId } });
+    if (!empresa) {
+        return res.status(200).json({ ok: true });
+    }
+    const payloadObj = (event.payload ?? {});
+    const chargeId = pickString(payloadObj, ["chargeId", "id"]);
+    const status = pickString(payloadObj, ["status"]);
+    const amountRaw = pickNumber(payloadObj, ["amount", "value"]);
+    const subscriptionId = pickString(payloadObj, ["subscriptionId", "subscription_id"]);
+    let linkedCharge = null;
+    if (chargeId) {
+        const existingCharge = await chargeRepo.findOne({
+            where: { id_empresa: empresa.id_empresa, charge_id: chargeId },
+            order: { created_at: "DESC" },
+        });
+        if (existingCharge) {
+            const fallbackByPlan = (() => {
+                const planCode = parsePlanCodeFromChargePayload(existingCharge.payload);
+                return planCode ? PLAN_PRICES[planCode] ?? null : null;
+            })();
+            const fallbackByCurrent = toAmountNumber(existingCharge.amount);
+            const normalizedAmount = normalizeHubAmount(amountRaw, fallbackByPlan ?? fallbackByCurrent ?? 0);
+            existingCharge.status = status ?? existingCharge.status;
+            existingCharge.amount = toAmountString(normalizedAmount) ?? existingCharge.amount;
+            existingCharge.subscription_id = subscriptionId ?? existingCharge.subscription_id;
+            existingCharge.payload = {
+                ...(existingCharge.payload ?? {}),
+                webhookEvent: event.type,
+                webhookPayload: payloadObj,
+            };
+            await chargeRepo.save(existingCharge);
+            linkedCharge = existingCharge;
+        }
+        else {
+            const normalizedAmount = normalizeHubAmount(amountRaw, 0);
+            const created = chargeRepo.create({
+                id_empresa: empresa.id_empresa,
+                origin_type: subscriptionId ? "subscription" : "order",
+                origin_id: subscriptionId ?? chargeId,
+                order_id: null,
+                subscription_id: subscriptionId,
+                charge_id: chargeId,
+                status: status ?? event.type,
+                amount: toAmountString(normalizedAmount),
+                payload: {
+                    webhookEvent: event.type,
+                    webhookPayload: payloadObj,
+                },
+            });
+            linkedCharge = await chargeRepo.save(created);
+        }
+    }
+    const timelineAmount = normalizeHubAmount(amountRaw, toAmountNumber(linkedCharge?.amount) ?? 0);
+    await eventRepo.save(eventRepo.create({
+        id_empresa: empresa.id_empresa,
+        event_type: event.type,
+        event_source: "webhook",
+        charge_id: chargeId,
+        order_id: null,
+        subscription_id: subscriptionId,
+        status: status ?? event.type,
+        amount: toAmountString(timelineAmount),
+        payload: payloadObj,
+        webhook_event_id: webhookEventId,
+    }));
+    if (event.type === "payment.approved") {
+        empresa.hub_license_status = "licensed";
+        empresa.hub_license_reason = null;
+        // Força refresh imediato para buscar licença com vencimento completo no Hub.
+        empresa.hub_cache_until = new Date(0);
+        // Fallback local: aplica plano pago e ciclo completo a partir da confirmação.
+        const paidPlan = parsePlanCodeFromChargePayload(linkedCharge?.payload);
+        if (paidPlan) {
+            const now = new Date();
+            const fullCycleEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            empresa.plano = paidPlan;
+            empresa.hub_expires_at = fullCycleEnd;
+            empresa.data_vencimento = fullCycleEnd.toISOString().slice(0, 10);
+        }
+        try {
+            await repo.save(empresa);
+            await HubBillingService_1.HubBillingService.syncEmpresaLicense(empresa);
+        }
+        catch (syncErr) {
+            console.warn("[Hub] sync após payment.approved falhou:", syncErr instanceof Error ? syncErr.message : syncErr);
+        }
+        empresa.hub_last_sync = new Date();
+        await repo.save(empresa);
+        return res.status(200).json({ ok: true });
+    }
+    else if (event.type === "payment.failed" || event.type === "pix.expired") {
+        empresa.hub_license_status = "license_suspended";
+        empresa.hub_license_reason = event.type;
+        empresa.hub_cache_until = new Date();
+    }
+    else if (event.type === "subscription.canceled" || event.type === "payment.chargeback") {
+        empresa.hub_license_status = "license_revoked";
+        empresa.hub_license_reason = event.type;
+        empresa.hub_cache_until = new Date();
+    }
+    empresa.hub_last_sync = new Date();
+    await repo.save(empresa);
+    return res.status(200).json({ ok: true });
+});
