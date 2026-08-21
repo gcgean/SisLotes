@@ -17,8 +17,6 @@ Especificação do back-end para o sistema SISLOTE, incluindo modelo de dados, A
 | Cache | Redis (opcional) | Sessions, rate limiting |
 | Storage | S3 / Supabase Storage | Arquivos de retorno bancário |
 
-**Alternativa rápida:** Lovable Cloud (Supabase) para MVP com banco, auth e storage integrados.
-
 ---
 
 ## 3. Modelo de Dados (DDL)
@@ -616,14 +614,8 @@ VALUES ('admin', '$2b$12$...hash...', true);
 
 ## 13. Deploy
 
-### Opção 1: Lovable Cloud
-- Banco, auth e storage integrados
-- Zero configuração
-- Ideal para MVP e produção inicial
-
-### Opção 2: VPS / Cloud
-- PostgreSQL gerenciado (RDS, Supabase, Neon)
+### VPS / Cloud
+- PostgreSQL em container Docker
 - API em container Docker
 - Nginx como reverse proxy
 - SSL via Let's Encrypt
-- CI/CD via GitHub Actions
