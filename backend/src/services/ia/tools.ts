@@ -303,10 +303,11 @@ const listarPlanoDeContas: Ferramenta = {
 const criarContaAPagar: Ferramenta = {
   nome: "criar_conta_a_pagar",
   descricao:
-    "Cadastra uma nova conta a pagar (despesa) e gera as parcelas. Use quando o usuário pedir para " +
-    "lançar, cadastrar ou registrar uma despesa. Antes de chamar, use listar_plano_de_contas para " +
-    "escolher a categoria e listar_loteamentos se o usuário citar um loteamento. GRAVA no sistema.",
-  risco: "escrita",
+    "Prepara o cadastro de uma nova conta a pagar (despesa) com as parcelas calculadas. Use quando o " +
+    "usuário pedir para lançar, cadastrar ou registrar uma despesa. Antes de chamar, use " +
+    "listar_plano_de_contas para escolher a categoria e listar_loteamentos se o usuário citar um " +
+    "loteamento. NÃO grava sozinho: gera um preview para o usuário confirmar na tela.",
+  risco: "critica",
   schema: z.object({
     descricao: z.string().min(1).max(200),
     valor_total: z.number().positive().max(99_999_999),
@@ -393,10 +394,11 @@ const criarContaAPagar: Ferramenta = {
 const criarLancamento: Ferramenta = {
   nome: "criar_lancamento",
   descricao:
-    "Registra um lançamento manual de entrada (receita) ou saída (despesa) numa conta. Use quando o " +
+    "Prepara um lançamento manual de entrada (receita) ou saída (despesa) numa conta. Use quando o " +
     "usuário pedir para lançar uma entrada/saída avulsa no caixa ou banco. Antes, use saldo_das_contas " +
-    "para pegar o id da conta e listar_plano_de_contas para a categoria. GRAVA no sistema.",
-  risco: "escrita",
+    "para pegar o id da conta e listar_plano_de_contas para a categoria. NÃO grava sozinho: gera um " +
+    "preview para o usuário confirmar na tela.",
+  risco: "critica",
   schema: z.object({
     tipo: z.enum(["receita", "despesa"]),
     descricao: z.string().min(1).max(200),
@@ -455,6 +457,41 @@ const criarLancamento: Ferramenta = {
   },
 };
 
+const criarCliente: Ferramenta = {
+  nome: "criar_cliente",
+  descricao:
+    "Prepara o cadastro de um novo cliente (pessoa física ou jurídica). Use quando o usuário pedir para " +
+    "cadastrar, criar ou adicionar um cliente novo. Antes de chamar, use buscar_cliente para conferir se " +
+    "já não existe alguém com o mesmo nome/documento. NÃO grava sozinho: gera um preview para o usuário " +
+    "confirmar e completar na tela.",
+  risco: "critica",
+  permissao: "clientes_cadastrar",
+  schema: z
+    .object({
+      tipo: z.enum(["f", "j"]).describe("f = pessoa física, j = pessoa jurídica."),
+      nome: z.string().min(1).max(200).describe("Nome completo (pessoa física) ou nome do responsável (jurídica)."),
+      cpf: z.string().optional().describe("Obrigatório quando tipo = f."),
+      cnpj: z.string().optional().describe("Obrigatório quando tipo = j."),
+      razao_social: z.string().optional(),
+      telefone: z.string().optional().describe("Telefone de contato, residencial ou celular."),
+      cidade: z.string().optional(),
+      estado: z.string().optional().describe("UF, 2 letras."),
+    })
+    .superRefine((data, ctx) => {
+      if (data.tipo === "f" && !data.cpf?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CPF é obrigatório para pessoa física.", path: ["cpf"] });
+      }
+      if (data.tipo === "j" && !data.cnpj?.trim()) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "CNPJ é obrigatório para pessoa jurídica.", path: ["cnpj"] });
+      }
+    }),
+  async executar() {
+    // risco "critica": o orquestrador nunca chega a chamar isto — sempre vira
+    // proposta, e quem grava de verdade é o formulário real de Clientes.
+    throw new Error("criar_cliente não executa diretamente; deveria ter virado proposta.");
+  },
+};
+
 export const FERRAMENTAS: Ferramenta[] = [
   listarLoteamentos,
   dividaPorLoteamento,
@@ -464,6 +501,7 @@ export const FERRAMENTAS: Ferramenta[] = [
   listarPlanoDeContas,
   criarContaAPagar,
   criarLancamento,
+  criarCliente,
 ];
 
 export function ferramentasPara(usuario: Usuario): Ferramenta[] {

@@ -87,9 +87,11 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   editing: Lancamento | null;
   contaPadraoId?: number;
+  /** Pré-preenche o formulário de um novo lançamento — usado pelo preview do assistente de IA. */
+  initialValues?: Partial<typeof emptyForm>;
 }
 
-export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }: Props) {
+export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId, initialValues }: Props) {
   const { token } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -162,12 +164,16 @@ export function LancamentoDialog({ open, onOpenChange, editing, contaPadraoId }:
           : []
       );
     } else {
-      setForm({ ...emptyForm, id_conta: contaPadraoId ? String(contaPadraoId) : contas[0] ? String(contas[0].id_conta) : "" });
+      setForm({
+        ...emptyForm,
+        id_conta: contaPadraoId ? String(contaPadraoId) : contas[0] ? String(contas[0].id_conta) : "",
+        ...initialValues,
+      });
       setRatear(false);
       setRateio([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, editing, contaPadraoId, contas.length]);
+  }, [open, editing, contaPadraoId, contas.length, initialValues]);
 
   const contasSinteticas = new Set(planoContas.map((p) => p.id_pai).filter((id): id is number => id !== null));
   const contaContabilOptions: ComboboxOption[] = planoContas

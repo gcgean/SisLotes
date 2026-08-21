@@ -40,6 +40,7 @@ const SUGESTOES = [
   "Qual o saldo das minhas contas?",
   "Quais contas estão atrasadas?",
   "Lance uma despesa de energia de R$ 300 vencendo dia 10",
+  "Cadastre um cliente novo chamado João Silva",
 ];
 
 const moeda = (v: unknown) =>
@@ -54,7 +55,7 @@ function fmtData(iso: unknown) {
 /** Resumo legível da proposta, para o usuário conferir antes de confirmar. */
 function ResumoProposta({ proposta }: { proposta: PropostaPendente }) {
   const d = proposta.dados;
-  if (proposta.tipoProposta === "conta_a_pagar") {
+  if (proposta.tipoProposta === "criar_conta_a_pagar") {
     return (
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
         <dt className="text-muted-foreground">Descrição</dt>
@@ -65,6 +66,32 @@ function ResumoProposta({ proposta }: { proposta: PropostaPendente }) {
         <dd className="font-medium">{fmtData(d.data_primeiro_vencimento)}</dd>
         <dt className="text-muted-foreground">Parcelas</dt>
         <dd className="font-medium">{String(d.numero_parcelas ?? 1)}</dd>
+      </dl>
+    );
+  }
+  if (proposta.tipoProposta === "criar_lancamento") {
+    return (
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+        <dt className="text-muted-foreground">Tipo</dt>
+        <dd className="font-medium">{d.tipo === "receita" ? "Entrada" : "Saída"}</dd>
+        <dt className="text-muted-foreground">Descrição</dt>
+        <dd className="font-medium">{String(d.descricao ?? "—")}</dd>
+        <dt className="text-muted-foreground">Valor</dt>
+        <dd className="font-medium">{moeda(d.valor)}</dd>
+        <dt className="text-muted-foreground">Data</dt>
+        <dd className="font-medium">{fmtData(d.data)}</dd>
+      </dl>
+    );
+  }
+  if (proposta.tipoProposta === "criar_cliente") {
+    return (
+      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+        <dt className="text-muted-foreground">Tipo</dt>
+        <dd className="font-medium">{d.tipo === "j" ? "Pessoa jurídica" : "Pessoa física"}</dd>
+        <dt className="text-muted-foreground">Nome</dt>
+        <dd className="font-medium">{String(d.nome ?? "—")}</dd>
+        <dt className="text-muted-foreground">{d.tipo === "j" ? "CNPJ" : "CPF"}</dt>
+        <dd className="font-medium">{String((d.tipo === "j" ? d.cnpj : d.cpf) ?? "—")}</dd>
       </dl>
     );
   }
@@ -179,13 +206,23 @@ export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpen
 
   /** Ação crítica: sai do chat e vai para a tela real, com o formulário preenchido. */
   function revisarProposta(proposta: PropostaPendente) {
-    if (proposta.tipoProposta === "conta_a_pagar") {
-      const params = new URLSearchParams({ tab: "despesas", nova: "1" });
-      Object.entries(proposta.dados).forEach(([k, v]) => {
-        if (v !== null && v !== undefined) params.set(k, String(v));
-      });
-      onOpenChange(false);
+    const params = new URLSearchParams();
+    Object.entries(proposta.dados).forEach(([k, v]) => {
+      if (v !== null && v !== undefined) params.set(k, String(v));
+    });
+    onOpenChange(false);
+
+    if (proposta.tipoProposta === "criar_conta_a_pagar") {
+      params.set("tab", "despesas");
+      params.set("nova", "1");
       navigate(`/despesas?${params.toString()}`);
+    } else if (proposta.tipoProposta === "criar_lancamento") {
+      params.set("tab", "lancamentos");
+      params.set("novo", "1");
+      navigate(`/despesas?${params.toString()}`);
+    } else if (proposta.tipoProposta === "criar_cliente") {
+      params.set("novo_cliente", "1");
+      navigate(`/clientes?${params.toString()}`);
     }
   }
 
@@ -198,8 +235,8 @@ export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpen
             Assistente
           </DialogTitle>
           <DialogDescription>
-            Consulta seus dados e executa cadastros por você. Ações irreversíveis (estorno, exclusão,
-            fechamento) continuam exigindo sua confirmação.
+            Consulta seus dados e monta o cadastro para você. Antes de gravar qualquer coisa, sempre
+            mostra um preview na tela real para você revisar e confirmar.
           </DialogDescription>
         </DialogHeader>
 
@@ -290,7 +327,7 @@ export function AssistenteDialog({ open, onOpenChange }: { open: boolean; onOpen
               />
               <div className="flex items-center justify-between gap-2">
                 <span className="text-[11px] text-muted-foreground">
-                  A IA executa cadastros por você e pode errar — confira o que ela gravar.
+                  A IA monta o cadastro para você conferir e confirmar antes de gravar.
                 </span>
                 <Button size="sm" onClick={() => enviar(texto)} disabled={!texto.trim() || perguntar.isPending}>
                   <Send className="h-3.5 w-3.5 mr-1.5" />

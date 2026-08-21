@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -75,13 +76,44 @@ export function LancamentosTab() {
   const [tipoFiltro, setTipoFiltro] = useState("todos");
   const [busca, setBusca] = useState("");
 
+  const [searchParams, setSearchParams] = useSearchParams();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Lancamento | null>(null);
+  const [previewIaLancamento, setPreviewIaLancamento] = useState<Record<string, string> | undefined>();
   const [transferenciaOpen, setTransferenciaOpen] = useState(false);
   const [editingTransferencia, setEditingTransferencia] = useState<TransferenciaConta | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [deletingTransferenciaId, setDeletingTransferenciaId] = useState<number | null>(null);
   const [usarTimbrado, setUsarTimbrado] = useState(true);
+
+  // ── Proposta vinda do assistente de IA: abre o lançamento já preenchido para
+  // o usuário conferir e confirmar. A IA nunca grava — a gravação é este submit.
+  const propostaLancamentoAplicadaRef = useRef(false);
+  useEffect(() => {
+    if (propostaLancamentoAplicadaRef.current) return;
+    if (searchParams.get("tab") !== "lancamentos" || searchParams.get("novo") !== "1") return;
+    propostaLancamentoAplicadaRef.current = true;
+
+    const num = (v: string | null) => (v && !Number.isNaN(Number(v)) ? String(Number(v)) : "");
+    setEditing(null);
+    setPreviewIaLancamento({
+      tipo: searchParams.get("tipo") === "despesa" ? "despesa" : "receita",
+      descricao: searchParams.get("descricao") ?? "",
+      valor: num(searchParams.get("valor")),
+      data: searchParams.get("data") ?? hojeIso(),
+      id_conta: num(searchParams.get("id_conta")),
+      id_conta_contabil: num(searchParams.get("id_conta_contabil")),
+      id_loteamento: num(searchParams.get("id_loteamento")),
+    });
+    setDialogOpen(true);
+
+    const limpos = new URLSearchParams(searchParams);
+    ["novo", "tipo", "descricao", "valor", "data", "id_conta", "id_conta_contabil", "id_loteamento"].forEach((k) =>
+      limpos.delete(k),
+    );
+    setSearchParams(limpos, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const { data: empresaInfo } = useQuery<ReciboEmpresa>({
     queryKey: ["minha-empresa"],
@@ -159,12 +191,14 @@ export function LancamentosTab() {
 
   function openNew() {
     setEditing(null);
+    setPreviewIaLancamento(undefined);
     setDialogOpen(true);
   }
   function openEdit(idLancamento: number) {
     const l = lancamentos.find((x) => x.id_lancamento === idLancamento);
     if (!l) return;
     setEditing(l);
+    setPreviewIaLancamento(undefined);
     setDialogOpen(true);
   }
   function openEditTransferencia(idTransferencia: number) {
@@ -396,7 +430,12 @@ export function LancamentosTab() {
         </table>
       </div>
 
-      <LancamentoDialog open={dialogOpen} onOpenChange={setDialogOpen} editing={editing} />
+      <LancamentoDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        editing={editing}
+        initialValues={previewIaLancamento}
+      />
       <TransferenciaDialog open={transferenciaOpen} onOpenChange={setTransferenciaOpen} editing={editingTransferencia} />
 
       <DestructiveConfirmationDialog

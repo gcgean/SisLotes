@@ -120,6 +120,8 @@ interface NovoClienteDialogProps {
   title?: string;
   description?: string;
   submitLabel?: string;
+  /** Pré-preenche o formulário ao abrir — usado pelo preview do assistente de IA. */
+  initialValues?: Partial<NovoClienteFormValues>;
 }
 
 export function NovoClienteDialog({
@@ -130,6 +132,7 @@ export function NovoClienteDialog({
   title = "Novo Cliente",
   description = "Preencha os dados do cliente. Campos não obrigatórios podem ficar em branco.",
   submitLabel = "Cadastrar cliente",
+  initialValues,
 }: NovoClienteDialogProps) {
   const [tab, setTab] = useState<NovoClienteTab>("dados");
   const [form, setForm] = useState<NovoClienteFormValues>(defaultNovoClienteValues);
@@ -138,9 +141,10 @@ export function NovoClienteDialog({
   useEffect(() => {
     if (open) {
       setTab("dados");
-      setForm(defaultNovoClienteValues);
+      setForm({ ...defaultNovoClienteValues, ...initialValues });
       setErrors({});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   function clearError(field: keyof NovoClienteFormValues) {
