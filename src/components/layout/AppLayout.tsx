@@ -5,6 +5,7 @@ import { BottomNav } from "./BottomNav";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Menu, LogOut, Sun, Moon, Building2, CreditCard, Lock } from "lucide-react";
+import { SisloteLogo } from "@/components/brand/SisloteLogo";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
@@ -222,7 +223,8 @@ export function AppLayout({ children }: AppLayoutProps) {
             </SidebarTrigger>
 
             <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sm font-semibold text-foreground shrink-0">SISLOTE</span>
+              <SisloteLogo className="h-5 w-auto max-w-[105px] shrink-0 dark:hidden" />
+              <SisloteLogo variant="negative" className="hidden h-5 w-auto max-w-[105px] shrink-0 dark:block" />
               {empresa && (
                 <span className="hidden sm:flex items-center gap-1 text-xs text-muted-foreground border-l border-border pl-3 ml-1">
                   <Building2 className="h-3.5 w-3.5 shrink-0" />

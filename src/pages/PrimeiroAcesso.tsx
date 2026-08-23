@@ -29,6 +29,7 @@ import {
   CreditCard,
   Loader2,
 } from "lucide-react";
+import { SisloteLogo } from "@/components/brand/SisloteLogo";
 
 // ─── Schemas ───────────────────────────────────────────────────────────────────
 const usuarioSchema = z.object({
@@ -273,12 +274,10 @@ const PrimeiroAcesso = () => {
       <div className="w-full max-w-lg glass-card rounded-xl p-6 sm:p-8 space-y-6">
         {/* Header */}
         <div className="text-center space-y-1">
-          <div className="flex justify-center mb-3">
-            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
-              <Building2 className="h-6 w-6 text-primary-foreground" />
-            </div>
+          <div className="flex justify-center mb-4">
+            <SisloteLogo className="h-16 w-auto max-w-[280px] dark:hidden" />
+            <SisloteLogo variant="negative" className="hidden h-16 w-auto max-w-[280px] dark:block" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">SISLOTE</h1>
           <p className="text-sm text-muted-foreground">Configuração inicial — Primeiro Acesso</p>
         </div>
 

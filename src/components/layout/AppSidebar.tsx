@@ -16,7 +16,6 @@ import {
   Landmark,
   ScrollText,
   Settings,
-  Building2,
   Activity,
   ShieldAlert,
   MessageSquare,
@@ -48,6 +47,7 @@ import {
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { SisloteLogo } from "@/components/brand/SisloteLogo";
 
 const mainItems = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -125,14 +125,9 @@ export function AppSidebar({ onOpenTutorial }: { onOpenTutorial?: () => void }) 
   return (
     <Sidebar className="border-r border-sidebar-border">
       <SidebarHeader className="p-4 border-b border-sidebar-border">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-sidebar-primary flex items-center justify-center">
-            <Building2 className="h-5 w-5 text-sidebar-primary-foreground" />
-          </div>
-          <div>
-            <h1 className="text-sm font-bold text-sidebar-accent-foreground tracking-tight">SISLOTE</h1>
-            <p className="text-[11px] text-sidebar-foreground">Gestão de Loteamentos</p>
-          </div>
+        <div className="flex flex-col items-start gap-1.5">
+          <SisloteLogo variant="negative" className="h-9 w-auto max-w-[180px]" />
+          <p className="text-[11px] text-sidebar-foreground">Gestão de Negócios</p>
         </div>
       </SidebarHeader>
 

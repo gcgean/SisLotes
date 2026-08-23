@@ -18,7 +18,8 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
-import { Eye, EyeOff, KeyRound, Building2 } from "lucide-react";
+import { Eye, EyeOff, Building2 } from "lucide-react";
+import { SisloteLogo } from "@/components/brand/SisloteLogo";
 import { sanitizeAuthRedirect } from "@/lib/auth-redirect";
 
 const loginSchema = z.object({
@@ -207,12 +208,10 @@ const Login = () => {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-background/80">
       <div className="w-full max-w-md glass-card rounded-xl p-8 space-y-6">
         <div className="space-y-2 text-center">
-          <div className="flex justify-center mb-2">
-            <div className="h-12 w-12 rounded-xl bg-primary flex items-center justify-center">
-              <KeyRound className="h-6 w-6 text-primary-foreground" />
-            </div>
+          <div className="flex justify-center mb-4">
+            <SisloteLogo className="h-16 w-auto max-w-[260px] dark:hidden" />
+            <SisloteLogo variant="negative" className="hidden h-16 w-auto max-w-[260px] dark:block" />
           </div>
-          <h1 className="text-2xl font-bold tracking-tight">SISLOTE</h1>
           <p className="text-sm text-muted-foreground">Acesse o sistema com seu usuário</p>
         </div>
 
