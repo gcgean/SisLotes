@@ -147,6 +147,13 @@
   .hero-badges { margin-top: 44px; display: flex; gap: 26px; justify-content: center; flex-wrap: wrap; color: var(--muted); font-size: 14px; font-weight: 600; }
   .hero-badges span { display: inline-flex; align-items: center; gap: 8px; }
 
+  .hero-trust {
+    margin: 20px auto 0; display: none; justify-content: center; align-items: center;
+    gap: 22px; color: var(--muted); font-size: 14px; font-weight: 600;
+  }
+  .hero-trust span { display: inline-flex; align-items: center; gap: 7px; }
+  .hero-trust svg { width: 18px; height: 18px; color: var(--green-dark); flex: 0 0 auto; }
+
   /* Hero — mockup do sistema */
   .hero-shot { margin: 54px auto 0; max-width: 960px; }
   .browser {
@@ -300,17 +307,44 @@
     .price-grid { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 720px) {
-    .section { padding: 60px 0; }
+    .wrap { padding: 0 18px; }
+    .section { padding: 52px 0; }
+    .nav-inner { height: 60px; }
+    .logo-img { height: 40px; }
     .nav-cta-desktop { display: none; }
     .stat-grid { grid-template-columns: 1fr; }
     .feat-grid { grid-template-columns: 1fr; }
     .price-grid { grid-template-columns: 1fr; }
     .guar-grid { grid-template-columns: 1fr; }
-    .hero-badges { gap: 14px 20px; }
-    .kpi-row { grid-template-columns: 1fr; }
-    .shot-lists { grid-template-columns: 1fr; }
-    .kpi .num { font-size: 22px; }
-    .browser-body { padding: 16px; }
+    .hero {
+      padding: 34px 0 56px; text-align: left;
+      background: linear-gradient(180deg, #fff 0%, #fff 72%, var(--bg-soft) 100%);
+    }
+    .hero .eyebrow { display: none; }
+    .hero h1 { font-size: clamp(36px, 10.6vw, 46px); line-height: 1.04; letter-spacing: -.045em; }
+    .hero .sub { margin-top: 18px; font-size: 17px; line-height: 1.5; }
+    .hero-cta { margin-top: 24px; display: block; }
+    .hero-cta .btn { width: 100%; min-height: 58px; padding: 15px 18px; font-size: 17px; }
+    .hero-note { margin-top: 12px; text-align: center; font-size: 13px; }
+    .hero-badges { display: none; }
+    .hero-trust { display: flex; margin-top: 22px; gap: 10px; justify-content: space-between; font-size: 11.5px; }
+    .hero-trust span { flex: 1; gap: 5px; align-items: flex-start; }
+    .hero-trust svg { width: 16px; height: 16px; }
+    .hero-shot { margin-top: 30px; padding: 0 22px; }
+    .browser {
+      max-width: 330px; margin: 0 auto; border-radius: 34px 34px 18px 18px;
+      border: 8px solid #111827; box-shadow: 0 30px 55px -24px rgba(15,23,42,.5);
+    }
+    .browser-bar { display: none; }
+    .browser-body { padding: 18px 14px 20px; background: #0f1b31; color: #fff; }
+    .shot-title { color: #fff; font-size: 19px; }
+    .shot-sub { color: #94a3b8; margin-bottom: 12px; }
+    .kpi-row { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .kpi { padding: 11px 10px; border-radius: 10px; gap: 1px; }
+    .kpi .lbl { font-size: 8.5px; }
+    .kpi .num { font-size: 18px; }
+    .kpi .foot { display: none; }
+    .shot-lists { display: none; }
     .mobile-cta { display: block; }
     body { padding-bottom: 78px; }
   }
@@ -324,28 +358,25 @@
     <a href="#topo" class="logo" aria-label="SISLOTE — início">
       <img class="logo-img" src="assets/brand/sislote-logo-horizontal.png" alt="SISLOTE">
     </a>
-    <a href="#planos" class="btn btn-primary nav-cta-desktop">Testar Grátis por 15 Dias</a>
+    <a href="#" class="btn btn-primary nav-cta-desktop" data-cta="nav-trial">Começar teste grátis</a>
   </div>
 </header>
 
 <!-- ══════════ HERO ══════════ -->
 <section class="hero" id="topo" data-sec="hero">
   <div class="wrap">
-    <span class="eyebrow">Para donos de loteamentos que ainda controlam parcelas no caderno, na planilha ou na cabeça</span>
-    <h1>Chega de perder dinheiro porque você não sabe <span class="hl">quem deve, quanto deve e quando vence</span></h1>
+    <h1>Controle vendas, parcelas e <span class="hl">cobranças sem depender de planilhas.</span></h1>
     <p class="sub">
-      O SISLOTE é o sistema online completo para loteadoras e imobiliárias que precisam controlar
-      vendas, parcelas, inadimplência e emissão de contratos — tudo em um só lugar, com acesso de qualquer dispositivo.
+      Veja quem deve, quanto deve e quando vence — pelo computador ou celular.
     </p>
     <div class="hero-cta">
-      <a href="#planos" class="btn btn-primary btn-lg">➡️ Experimente Grátis por 15 Dias — Sem Cartão</a>
+      <a href="#" class="btn btn-primary btn-lg" data-cta="hero-trial">Começar meu teste grátis</a>
     </div>
-    <p class="hero-note">Acesso imediato após o cadastro • Sem cartão de crédito • Cancele quando quiser</p>
+    <p class="hero-note">15 dias grátis • Sem cartão de crédito</p>
     <div class="hero-badges">
-      <span>✅ Sem cartão de crédito</span>
-      <span>📱 Funciona no celular</span>
-      <span>⚡ Comece em minutos</span>
-      <span>🛡️ Dados seguros na nuvem</span>
+      <span>⚡ Configuração rápida</span>
+      <span>📱 Acesso pelo celular</span>
+      <span>🛡️ Cancele quando quiser</span>
     </div>
 
     <!-- Mockup do sistema -->
@@ -391,6 +422,11 @@
           </div>
         </div>
       </div>
+    </div>
+    <div class="hero-trust" aria-label="Vantagens do teste grátis">
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2 3 14h8l-1 8 10-12h-8l1-8Z"/></svg>Configuração rápida</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M10 18h4"/></svg>Acesso pelo celular</span>
+      <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/><path d="m9 12 2 2 4-4"/></svg>Cancele quando quiser</span>
     </div>
   </div>
 </section>
@@ -670,7 +706,7 @@
 
 <!-- ══════════ STICKY MOBILE CTA ══════════ -->
 <div class="mobile-cta">
-  <a href="#planos" class="btn btn-primary" data-cta="mobile-sticky">Testar Grátis por 15 Dias</a>
+  <a href="#" class="btn btn-primary" data-cta="mobile-sticky">Começar teste grátis</a>
 </div>
 
 <script>
