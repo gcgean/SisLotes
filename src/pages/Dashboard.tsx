@@ -58,6 +58,8 @@ interface LicenseStatus {
   hub_license_status?: string | null;
   days_left?: number | null;
   hub_expires_at?: string | null;
+  /** Empresa fora do controle de planos: nenhum aviso de cobrança deve aparecer. */
+  plan_control_disabled?: boolean;
 }
 interface PlanoCatalogo {
   code: string;
@@ -276,7 +278,7 @@ const Dashboard = () => {
                   Plano {planoAtualLabel}
                 </Badge>
               )}
-              {licenca?.hub_license_status && (
+              {!licenca?.plan_control_disabled && licenca?.hub_license_status && (
                 <Badge
                   variant={licenca.hub_license_status === "active" ? "default" : "destructive"}
                   className="capitalize"
@@ -284,13 +286,15 @@ const Dashboard = () => {
                   {licenca.hub_license_status}
                 </Badge>
               )}
-              <Badge variant="secondary">
-                {formatLicenseRemainingTime({
-                  daysLeft: licenca?.days_left ?? null,
-                  expiresAt: licenca?.hub_expires_at ?? null,
-                  nowMs,
-                })}
-              </Badge>
+              {!licenca?.plan_control_disabled && (
+                <Badge variant="secondary">
+                  {formatLicenseRemainingTime({
+                    daysLeft: licenca?.days_left ?? null,
+                    expiresAt: licenca?.hub_expires_at ?? null,
+                    nowMs,
+                  })}
+                </Badge>
+              )}
             </p>
           ) : (
             <p className="text-sm text-muted-foreground mt-1">Visão geral do sistema</p>

@@ -9,7 +9,7 @@ import { SisloteLogo } from "@/components/brand/SisloteLogo";
 import { useAuth } from "@/hooks/useAuth";
 import { useTheme } from "next-themes";
 import { useQuery } from "@tanstack/react-query";
-import { formatLicenseRemainingTime } from "@/lib/license-time";
+import { avaliarLicenca, formatLicenseRemainingTime } from "@/lib/license-time";
 import { formatDateBR } from "@/lib/date-br";
 import { TableExportMenu } from "./TableExportMenu";
 import { ScreenHelp } from "./ScreenHelp";
@@ -31,6 +31,8 @@ interface LicenseStatus {
   days_left?: number | null;
   banner?: string | null;
   access_status?: string | null;
+  /** Empresa fora do controle de planos: nenhum aviso de cobrança deve aparecer. */
+  plan_control_disabled?: boolean;
 }
 
 interface PlanoCatalogo {
@@ -150,7 +152,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   }
 
   const blocked = isLicenseBlocked(licenseData);
-  const expiresDate = licenseData?.hub_expires_at ? formatDateBR(licenseData.hub_expires_at, "") : null;
   const daysLeft = typeof licenseData?.days_left === "number" ? licenseData.days_left : null;
   const planLabel = getPlanLabel(licenseData, planosDisponiveis);
   const licenseTimeLabel = formatLicenseRemainingTime({
@@ -159,14 +160,24 @@ export function AppLayout({ children }: AppLayoutProps) {
     nowMs,
   });
   const onPlanosPage = location.pathname.startsWith("/planos");
-  // A licença é considerada vencida pela data real de expiração, não só pelo
-  // days_left — os dois podem divergir (ex.: days_left zerado enquanto a data
-  // já passou), e aí o aviso dizia "vence em breve (expirada há 72 dias)".
-  const expiresAtMs = licenseData?.hub_expires_at ? new Date(licenseData.hub_expires_at).getTime() : null;
-  const isExpired =
-    (daysLeft != null && daysLeft < 0) ||
-    (expiresAtMs != null && !Number.isNaN(expiresAtMs) && expiresAtMs < nowMs);
-  const isDueSoon = !isExpired && daysLeft != null && daysLeft >= 0 && daysLeft <= 5;
+
+  // Empresa com controle de planos desativado no admin não é cobrada: nenhum
+  // aviso de vencimento, banner ou pedido de pagamento aparece para ela.
+  const {
+    semControleDePlano,
+    vencida: isExpired,
+    venceEmBreve: isDueSoon,
+  } = avaliarLicenca({
+    planControlDisabled: licenseData?.plan_control_disabled,
+    daysLeft,
+    expiresAt: licenseData?.hub_expires_at ?? null,
+    nowMs,
+  });
+
+  const expiresDate =
+    !semControleDePlano && licenseData?.hub_expires_at
+      ? formatDateBR(licenseData.hub_expires_at, "")
+      : null;
   const screenTutorial = getScreenTutorial(location.pathname, location.search);
 
   useEffect(() => {
@@ -241,9 +252,11 @@ export function AppLayout({ children }: AppLayoutProps) {
                   {expiresDate && (
                     <span className="text-muted-foreground/70">· até {expiresDate}</span>
                   )}
-                  <span className={daysLeft != null && daysLeft <= 5 ? "text-amber-600 font-medium" : "text-muted-foreground/70"}>
-                    · {licenseTimeLabel.toLowerCase()}
-                  </span>
+                  {!semControleDePlano && (
+                    <span className={daysLeft != null && daysLeft <= 5 ? "text-amber-600 font-medium" : "text-muted-foreground/70"}>
+                      · {licenseTimeLabel.toLowerCase()}
+                    </span>
+                  )}
               </Link>
             </div>
 
