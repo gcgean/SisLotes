@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { LoadingState } from "@/components/ui/loading-state";
 import {
@@ -172,13 +173,13 @@ export function MapaLotesTab() {
                   <td className="px-4 py-3 text-right">
                     <Button
                       size="sm"
-                      variant={mapaDe?.id_loteamento === d.id_loteamento ? "default" : "outline"}
+                      variant="outline"
                       className="gap-1.5"
                       disabled={d.totalLotes === 0}
-                      onClick={() => setMapaDe(mapaDe?.id_loteamento === d.id_loteamento ? null : d)}
+                      onClick={() => setMapaDe(d)}
                     >
                       <MapIcon className="h-3.5 w-3.5" />
-                      {mapaDe?.id_loteamento === d.id_loteamento ? "Fechar" : "Ver mapa"}
+                      Ver mapa
                     </Button>
                   </td>
                 </tr>
@@ -188,25 +189,29 @@ export function MapaLotesTab() {
         </table>
       </div>
 
-      {/* Mapa visual: lotes agrupados por quadra */}
-      {mapaDe && (
-        <div className="rounded-lg border p-4 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h3 className="font-semibold flex items-center gap-2">
-                <MapIcon className="h-4 w-4 text-primary" />
-                Mapa de lotes — {mapaDe.nome}
-              </h3>
-              {localDe(mapaDe) && <p className="text-xs text-muted-foreground mt-0.5">{localDe(mapaDe)}</p>}
-            </div>
-            <div className="flex items-center gap-4 text-xs">
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-emerald-500 inline-block" /> Disponível
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-3 w-3 rounded bg-orange-500 inline-block" /> Vendido
-              </span>
-            </div>
+      {/* Mapa visual: lotes agrupados por quadra.
+          Fica em diálogo porque a lista de loteamentos é longa — renderizado
+          abaixo da tabela, o mapa abria fora da tela e parecia que o botão
+          não fazia nada. */}
+      <Dialog open={mapaDe !== null} onOpenChange={(aberto) => { if (!aberto) setMapaDe(null); }}>
+        <DialogContent className="sm:max-w-4xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapIcon className="h-4 w-4 text-primary" />
+              Mapa de lotes — {mapaDe?.nome}
+            </DialogTitle>
+            {mapaDe && localDe(mapaDe) && (
+              <p className="text-xs text-muted-foreground">{localDe(mapaDe)}</p>
+            )}
+          </DialogHeader>
+
+          <div className="flex items-center gap-4 text-xs">
+            <span className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded bg-emerald-500 inline-block" /> Disponível
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="h-3 w-3 rounded bg-orange-500 inline-block" /> Vendido
+            </span>
           </div>
 
           {carregandoLotes ? (
@@ -254,8 +259,8 @@ export function MapaLotesTab() {
               </div>
             </TooltipProvider>
           )}
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

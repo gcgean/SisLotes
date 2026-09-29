@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MapaLotesTab } from "@/components/loteamentos/MapaLotesTab";
 import { DividaPorLoteamentoTab } from "@/components/loteamentos/DividaPorLoteamentoTab";
@@ -51,6 +51,33 @@ describe("abas de loteamentos", () => {
     expect(await screen.findByText(/Quadra A/)).toBeInTheDocument();
     expect(screen.getByText("01")).toBeInTheDocument();
     expect(screen.getByText("02")).toBeInTheDocument();
+  });
+
+  // Regressão: o mapa era renderizado depois da tabela inteira. Com muitos
+  // loteamentos na lista ele abria fora da tela, e o usuário via o botão
+  // reagir sem nada aparecer. Em diálogo, aparece independente do scroll.
+  it("MapaLotesTab abre o mapa em diálogo, não no fim da página", async () => {
+    mockFetch({
+      "/api/relatorios/lotes-por-loteamento": [
+        { ...LOTEAMENTOS[0], totalLotes: 1, vendidos: 0, disponiveis: 1, percentualVendido: 0 },
+      ],
+      "/api/loteamentos/1/lotes": [
+        { id_lote: 10, lote: "01", quadra: "A", status: "disponivel", cliente: null, status_venda: null },
+      ],
+    });
+
+    renderComQuery(<MapaLotesTab />);
+
+    // Nada de diálogo antes do clique.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: /ver mapa/i }));
+
+    const dialogo = await screen.findByRole("dialog");
+    expect(dialogo).toHaveTextContent(/Mapa de lotes — ARACAPE I/);
+    // Os lotes chegam depois do diálogo abrir — espera o conteúdo do mapa.
+    await within(dialogo).findByText(/Quadra A/);
+    expect(within(dialogo).getByText("01")).toBeInTheDocument();
   });
 
   it("MapaLotesTab não quebra com quadra vazia", async () => {
