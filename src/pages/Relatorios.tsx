@@ -108,6 +108,12 @@ const reportTypes = [
     icon: Users,
   },
   {
+    id: "posicao-cliente",
+    title: "Posição por Cliente",
+    description: "Todo mundo que comprou no período: total contratado e quanto já pagou",
+    icon: Users,
+  },
+  {
     id: "resultado-loteamento",
     title: "Resultado por Loteamento",
     description: "Receita menos despesas de obra — margem de cada empreendimento",
@@ -180,6 +186,56 @@ interface TituloEmAtraso {
   juros: number;
   total: number;
 }
+
+interface PosicaoClienteItem {
+  id_venda: number;
+  id_cliente: number;
+  cliente: string;
+  cpf: string | null;
+  loteamento: string;
+  lote: string;
+  dataVenda: string;
+  status: string;
+  totalContratado: number;
+  totalPago: number;
+  saldoDevedor: number;
+  totalAtrasado: number;
+  totalAVencer: number;
+  qtdParcelas: number;
+  qtdPagas: number;
+  percentualPago: number;
+  quitado: boolean;
+}
+
+interface PosicaoClienteResposta {
+  itens: PosicaoClienteItem[];
+  totais: {
+    totalContratado: number;
+    totalPago: number;
+    saldoDevedor: number;
+    totalAtrasado: number;
+    totalAVencer: number;
+    percentualPago: number;
+    qtdVendas: number;
+    qtdClientes: number;
+    qtdQuitadas: number;
+  };
+}
+
+const POSICAO_CLIENTE_VAZIO: PosicaoClienteResposta = {
+  itens: [],
+  totais: {
+    totalContratado: 0,
+    totalPago: 0,
+    saldoDevedor: 0,
+    totalAtrasado: 0,
+    totalAVencer: 0,
+    percentualPago: 0,
+    qtdVendas: 0,
+    qtdClientes: 0,
+    qtdQuitadas: 0,
+  },
+};
 
 interface EnderecoCarne {
   id_cliente: number;
@@ -331,9 +387,13 @@ const Relatorios = () => {
   const [hasSearchedFluxoCaixa, setHasSearchedFluxoCaixa] = useState(() => selectedReport === "fluxo-caixa");
   const [hasSearchedDespesasCategoria, setHasSearchedDespesasCategoria] = useState(() => selectedReport === "despesas-categoria");
   const [hasSearchedDreMensal, setHasSearchedDreMensal] = useState(() => selectedReport === "dre-mensal");
+  const [hasSearchedPosicaoCliente, setHasSearchedPosicaoCliente] = useState(() => selectedReport === "posicao-cliente");
 
   const [apenasAtrasoInput, setApenasAtrasoInput] = useState(false);
   const [apenasAtraso, setApenasAtraso] = useState(false);
+
+  const [situacaoPosicaoInput, setSituacaoPosicaoInput] = useState<"todos" | "quitados" | "em_aberto">("todos");
+  const [situacaoPosicao, setSituacaoPosicao] = useState<"todos" | "quitados" | "em_aberto">("todos");
 
   useEffect(() => {
     if (!selectedReport) return;
@@ -347,6 +407,7 @@ const Relatorios = () => {
     else if (selectedReport === "fluxo-caixa") setHasSearchedFluxoCaixa(true);
     else if (selectedReport === "despesas-categoria") setHasSearchedDespesasCategoria(true);
     else if (selectedReport === "dre-mensal") setHasSearchedDreMensal(true);
+    else if (selectedReport === "posicao-cliente") setHasSearchedPosicaoCliente(true);
   }, [selectedReport]);
 
   const [pageEntradas, setPageEntradas] = useState(1);
@@ -354,6 +415,7 @@ const Relatorios = () => {
   const [pageEnderecos, setPageEnderecos] = useState(1);
   const [pageTotalConta, setPageTotalConta] = useState(1);
   const [pageContasPagar, setPageContasPagar] = useState(1);
+  const [pagePosicaoCliente, setPagePosicaoCliente] = useState(1);
 
   const printRef = useRef<HTMLDivElement | null>(null);
 
@@ -363,7 +425,8 @@ const Relatorios = () => {
     setPageEnderecos(1);
     setPageTotalConta(1);
     setPageContasPagar(1);
-  }, [ano, loteamentoId, dataIni, dataFim, diasAtraso, cliente, selectedReport]);
+    setPagePosicaoCliente(1);
+  }, [ano, loteamentoId, dataIni, dataFim, diasAtraso, cliente, situacaoPosicao, selectedReport]);
 
   const { data: loteamentosData = [] } = useQuery<Loteamento[]>({
     queryKey: ["loteamentos"],
@@ -461,6 +524,32 @@ const Relatorios = () => {
     },
     enabled: selectedReport === "atraso" && hasSearchedAtraso,
   });
+
+  const { data: posicaoClienteData = POSICAO_CLIENTE_VAZIO, isLoading: loadingPosicaoCliente } =
+    useQuery<PosicaoClienteResposta>({
+      queryKey: ["relatorios", "posicao-por-cliente", dataIni, dataFim, loteamentoId, cliente, situacaoPosicao],
+      queryFn: async () => {
+        const params = new URLSearchParams();
+        const fromIso = toIsoFromBr(dataIni);
+        const toIso = toIsoFromBr(dataFim);
+        if (fromIso) params.set("from", fromIso);
+        if (toIso) params.set("to", toIso);
+        if (loteamentoId !== "all") params.set("id_loteamento", loteamentoId);
+        if (cliente.trim() !== "") params.set("cliente", cliente.trim());
+        if (situacaoPosicao !== "todos") params.set("situacao", situacaoPosicao);
+
+        const response = await fetch(`/api/relatorios/posicao-por-cliente?${params.toString()}`, {
+          headers: { ...getAuthHeaders() },
+        });
+
+        if (!response.ok) {
+          throw new Error("Erro ao carregar relatório de posição por cliente");
+        }
+
+        return response.json();
+      },
+      enabled: selectedReport === "posicao-cliente" && hasSearchedPosicaoCliente,
+    });
 
   const { data: enderecosCarneData = [], isLoading: loadingEnderecosCarne } = useQuery<EnderecoCarne[]>({
     queryKey: ["relatorios", "enderecos-carne", loteamentoId],
@@ -663,6 +752,18 @@ const Relatorios = () => {
     currentPageEntradas * entradasPageSize,
   );
 
+  const posicaoClientePageSize = 50;
+  const posicaoClienteItens = posicaoClienteData.itens;
+  const totalPagesPosicaoCliente = Math.max(
+    1,
+    Math.ceil(posicaoClienteItens.length / posicaoClientePageSize),
+  );
+  const currentPagePosicaoCliente = Math.min(pagePosicaoCliente, totalPagesPosicaoCliente || 1);
+  const posicaoClientePage = posicaoClienteItens.slice(
+    (currentPagePosicaoCliente - 1) * posicaoClientePageSize,
+    currentPagePosicaoCliente * posicaoClientePageSize,
+  );
+
   const atrasoPageSize = 50;
   const totalPagesAtraso = Math.max(1, Math.ceil(atrasadosData.length / atrasoPageSize));
   const currentPageAtraso = Math.min(pageAtraso, totalPagesAtraso || 1);
@@ -743,7 +844,11 @@ const Relatorios = () => {
     (selectedReport === "dre-mensal" &&
       hasSearchedDreMensal &&
       !loadingDreMensal &&
-      dreMensalData.length > 0);
+      dreMensalData.length > 0) ||
+    (selectedReport === "posicao-cliente" &&
+      hasSearchedPosicaoCliente &&
+      !loadingPosicaoCliente &&
+      posicaoClienteItens.length > 0);
 
   const handlePrint = () => {
     if (!canExportPdf) return;
@@ -932,6 +1037,31 @@ const Relatorios = () => {
                     />
                   </>
                 )}
+                {selectedReport === "posicao-cliente" && (
+                  <>
+                    <Input
+                      className="w-full sm:w-[200px]"
+                      value={clienteInput}
+                      onChange={(e) => setClienteInput(e.target.value)}
+                      placeholder="Cliente ou CPF"
+                    />
+                    <Select
+                      value={situacaoPosicaoInput}
+                      onValueChange={(v) =>
+                        setSituacaoPosicaoInput(v as "todos" | "quitados" | "em_aberto")
+                      }
+                    >
+                      <SelectTrigger className="w-full sm:w-[180px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="todos">Todos</SelectItem>
+                        <SelectItem value="em_aberto">Com saldo devedor</SelectItem>
+                        <SelectItem value="quitados">Somente quitados</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </>
+                )}
                 {selectedReport === "contas-pagar" && (
                   <Select
                     value={apenasAtrasoInput ? "atraso" : "todas"}
@@ -997,6 +1127,11 @@ const Relatorios = () => {
                     if (selectedReport === "dre-mensal") {
                       setHasSearchedDreMensal(true);
                     }
+                    if (selectedReport === "posicao-cliente") {
+                      setSituacaoPosicao(situacaoPosicaoInput);
+                      setHasSearchedPosicaoCliente(true);
+                      setPagePosicaoCliente(1);
+                    }
                   }}
                 >
                   Buscar
@@ -1017,7 +1152,8 @@ const Relatorios = () => {
                       selectedReport === "contas-pagar" && contasPagarData.length > 0 ||
                       selectedReport === "fluxo-caixa" && fluxoCaixaData.length > 0 ||
                       selectedReport === "despesas-categoria" && despesasCategoriaData.length > 0 ||
-                      selectedReport === "dre-mensal" && dreMensalData.length > 0
+                      selectedReport === "dre-mensal" && dreMensalData.length > 0 ||
+                      selectedReport === "posicao-cliente" && posicaoClienteItens.length > 0
                     )
                   }
                   onClick={() => {
@@ -1042,6 +1178,26 @@ const Relatorios = () => {
                           nov: r.nov,
                           dez: r.dez,
                           total: r.total,
+                        })),
+                      );
+                    } else if (selectedReport === "posicao-cliente") {
+                      filename = "posicao-por-cliente.csv";
+                      rows.push(
+                        ...posicaoClienteItens.map((r) => ({
+                          cliente: r.cliente,
+                          cpf: r.cpf ?? "",
+                          loteamento: r.loteamento,
+                          lote: r.lote,
+                          dataVenda: r.dataVenda,
+                          parcelas: r.qtdParcelas,
+                          parcelasPagas: r.qtdPagas,
+                          totalContratado: r.totalContratado,
+                          totalPago: r.totalPago,
+                          saldoDevedor: r.saldoDevedor,
+                          totalAtrasado: r.totalAtrasado,
+                          totalAVencer: r.totalAVencer,
+                          percentualPago: Number(r.percentualPago.toFixed(2)),
+                          situacao: r.quitado ? "Quitado" : "Em aberto",
                         })),
                       );
                     } else if (selectedReport === "atraso") {
@@ -1358,6 +1514,160 @@ const Relatorios = () => {
                   )}
                 </div>
               )}
+
+            {selectedReport === "posicao-cliente" && (
+              <div className="glass-card rounded-lg overflow-hidden">
+                <div className="p-5 border-b border-border">
+                  <h2 className="font-semibold">Posição por Cliente</h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Vendas com data no período — quem pagou e quem não pagou. O período filtra pela data
+                    da venda, não pelo vencimento das parcelas.
+                  </p>
+                </div>
+
+                {!loadingPosicaoCliente && posicaoClienteItens.length > 0 && (
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-px bg-border border-b border-border">
+                    <div className="bg-card p-4">
+                      <div className="text-xs text-muted-foreground">Total contratado</div>
+                      <div className="text-lg font-bold mt-0.5">
+                        {formatCurrency(posicaoClienteData.totais.totalContratado)}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {posicaoClienteData.totais.qtdVendas} venda(s) ·{" "}
+                        {posicaoClienteData.totais.qtdClientes} cliente(s)
+                      </div>
+                    </div>
+                    <div className="bg-card p-4">
+                      <div className="text-xs text-muted-foreground">Total pago</div>
+                      <div className="text-lg font-bold mt-0.5 text-emerald-600">
+                        {formatCurrency(posicaoClienteData.totais.totalPago)}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {posicaoClienteData.totais.percentualPago.toFixed(1)}% do contratado
+                      </div>
+                    </div>
+                    <div className="bg-card p-4">
+                      <div className="text-xs text-muted-foreground">Saldo devedor</div>
+                      <div className="text-lg font-bold mt-0.5 text-warning">
+                        {formatCurrency(posicaoClienteData.totais.saldoDevedor)}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        {posicaoClienteData.totais.qtdQuitadas} venda(s) quitada(s)
+                      </div>
+                    </div>
+                    <div className="bg-card p-4">
+                      <div className="text-xs text-muted-foreground">Em atraso</div>
+                      <div className="text-lg font-bold mt-0.5 text-destructive">
+                        {formatCurrency(posicaoClienteData.totais.totalAtrasado)}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">
+                        A vencer: {formatCurrency(posicaoClienteData.totais.totalAVencer)}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {loadingPosicaoCliente ? (
+                  <div className="p-5 text-sm text-muted-foreground">Carregando dados...</div>
+                ) : posicaoClienteItens.length === 0 ? (
+                  <div className="p-5 text-sm text-muted-foreground">
+                    Nenhuma venda encontrada no período.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-border bg-muted/50">
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Cliente</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Loteamento</th>
+                          <th className="text-left px-5 py-3 font-medium text-muted-foreground">Lote</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Parcelas</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Total</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Pago</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Saldo</th>
+                          <th className="text-right px-5 py-3 font-medium text-muted-foreground">Situação</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border">
+                        {posicaoClientePage.map((row) => (
+                          <tr key={row.id_venda} className="hover:bg-muted/30 transition-colors">
+                            <td className="px-5 py-3 font-medium">{row.cliente}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.loteamento}</td>
+                            <td className="px-5 py-3 text-muted-foreground">{row.lote}</td>
+                            <td className="px-5 py-3 text-right text-muted-foreground">
+                              {row.qtdPagas}/{row.qtdParcelas}
+                            </td>
+                            <td className="px-5 py-3 text-right">{formatCurrency(row.totalContratado)}</td>
+                            <td className="px-5 py-3 text-right text-emerald-600 font-medium">
+                              {formatCurrency(row.totalPago)}
+                            </td>
+                            <td
+                              className={`px-5 py-3 text-right font-bold ${
+                                row.saldoDevedor > 0 ? "text-warning" : "text-muted-foreground"
+                              }`}
+                            >
+                              {formatCurrency(row.saldoDevedor)}
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              {row.quitado ? (
+                                <span className="text-xs font-medium text-emerald-600">Quitado</span>
+                              ) : row.totalAtrasado > 0 ? (
+                                <span className="text-xs font-medium text-destructive">Em atraso</span>
+                              ) : (
+                                <span className="text-xs font-medium text-muted-foreground">Em dia</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-border bg-muted/50 font-bold">
+                          <td className="px-5 py-3" colSpan={4}>
+                            Total geral
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            {formatCurrency(posicaoClienteData.totais.totalContratado)}
+                          </td>
+                          <td className="px-5 py-3 text-right text-emerald-600">
+                            {formatCurrency(posicaoClienteData.totais.totalPago)}
+                          </td>
+                          <td className="px-5 py-3 text-right text-warning">
+                            {formatCurrency(posicaoClienteData.totais.saldoDevedor)}
+                          </td>
+                          <td className="px-5 py-3" />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+
+                {posicaoClienteItens.length > 0 && (
+                  <div className="flex items-center justify-between px-5 py-3 border-t border-border text-xs text-muted-foreground">
+                    <span>
+                      Página {currentPagePosicaoCliente} de {totalPagesPosicaoCliente}
+                    </span>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPagePosicaoCliente <= 1}
+                        onClick={() => setPagePosicaoCliente(currentPagePosicaoCliente - 1)}
+                      >
+                        Anterior
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={currentPagePosicaoCliente >= totalPagesPosicaoCliente}
+                        onClick={() => setPagePosicaoCliente(currentPagePosicaoCliente + 1)}
+                      >
+                        Próxima
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {selectedReport === "atraso" && (
               <div className="glass-card rounded-lg overflow-hidden">

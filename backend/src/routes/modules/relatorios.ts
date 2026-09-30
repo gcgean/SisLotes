@@ -54,6 +54,18 @@ const agingQuerySchema = z.object({
   data_referencia: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data de referência inválida").optional(),
 });
 
+const posicaoClienteQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inicial inválida").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data final inválida").optional(),
+  id_loteamento: z
+    .string()
+    .regex(/^\d+$/, "Loteamento inválido")
+    .transform((value) => parseInt(value, 10))
+    .optional(),
+  cliente: z.string().optional(),
+  situacao: z.enum(["todos", "quitados", "em_aberto"]).optional(),
+});
+
 type AgingRow = { faixa: string; quantidade: string | number; total: string | number };
 const FAIXAS_AGING = ["0–30", "31–60", "61–90", "+90"] as const;
 
@@ -1024,6 +1036,155 @@ relatoriosRouter.get(
     });
 
     return res.json(resultado);
+  },
+);
+
+// ─── GET /posicao-por-cliente ────────────────────────────────────────────────
+// Posição resumida de cada venda: quanto foi contratado e quanto já foi pago.
+// Traz quem pagou e quem não pagou — quem não pagou aparece com pago = 0, e não
+// some do relatório, que é o ponto: é a lista completa de quem gerou dívida.
+//
+// O período filtra pela DATA DA VENDA (quando a dívida foi gerada), não pelo
+// vencimento das parcelas.
+//
+// Total contratado = SUM(p.valor). A entrada é gravada como parcela 0 em
+// pagamentos, então já está incluída — somar v.valor_entrada aqui contaria a
+// entrada duas vezes.
+relatoriosRouter.get(
+  "/posicao-por-cliente",
+  requireAuth,
+  async (req: AuthRequest, res: Response) => {
+    const parseResult = posicaoClienteQuerySchema.safeParse(req.query);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: "Parâmetros inválidos", issues: parseResult.error.issues });
+    }
+
+    const idEmpresa = req.user?.id_empresa;
+    if (!idEmpresa) return res.status(400).json({ error: "Empresa não definida para o usuário" });
+
+    const { from, to, id_loteamento, cliente, situacao } = parseResult.data;
+
+    const params: unknown[] = [idEmpresa];
+    const conditions = ["v.id_empresa = $1", "v.status <> 'cancelada'"];
+
+    if (from) {
+      params.push(from);
+      conditions.push(`v.data_venda >= $${params.length}`);
+    }
+    if (to) {
+      params.push(to);
+      conditions.push(`v.data_venda <= $${params.length}`);
+    }
+    if (typeof id_loteamento === "number") {
+      params.push(id_loteamento);
+      conditions.push(`lo.id_loteamento = $${params.length}`);
+    }
+    if (cliente && cliente.trim() !== "") {
+      params.push(`%${cliente.trim()}%`);
+      conditions.push(`(c.nome ILIKE $${params.length} OR c.cpf ILIKE $${params.length})`);
+    }
+
+    // Quitado / em aberto é decidido sobre o agregado, então vai no HAVING.
+    let having = "";
+    if (situacao === "quitados") {
+      having = `HAVING COALESCE(SUM(CASE WHEN p.situacao = 'aberto' THEN p.valor ELSE 0 END), 0) = 0`;
+    } else if (situacao === "em_aberto") {
+      having = `HAVING COALESCE(SUM(CASE WHEN p.situacao = 'aberto' THEN p.valor ELSE 0 END), 0) > 0`;
+    }
+
+    const rows = await AppDataSource.query(
+      `
+      SELECT
+        v.id_venda,
+        c.id_cliente,
+        c.nome AS cliente,
+        c.cpf,
+        lo.nome AS loteamento,
+        CONCAT('Q.', l.quadra, ' - L.', l.lote) AS lote,
+        TO_CHAR(v.data_venda, 'DD/MM/YYYY') AS data_venda,
+        v.status,
+        COALESCE(SUM(p.valor), 0) AS total_contratado,
+        COALESCE(SUM(CASE WHEN p.situacao = 'pago' THEN COALESCE(p.valor_pago, p.valor) ELSE 0 END), 0) AS total_pago,
+        COALESCE(SUM(CASE WHEN p.situacao = 'aberto' AND p.vencimento < CURRENT_DATE THEN p.valor ELSE 0 END), 0) AS total_atrasado,
+        COALESCE(SUM(CASE WHEN p.situacao = 'aberto' AND p.vencimento >= CURRENT_DATE THEN p.valor ELSE 0 END), 0) AS total_a_vencer,
+        COUNT(p.id_pagamento) AS qtd_parcelas,
+        COUNT(p.id_pagamento) FILTER (WHERE p.situacao = 'pago') AS qtd_pagas
+      FROM vendas v
+      JOIN clientes c ON c.id_cliente = v.id_cliente
+      JOIN lotes l ON l.id_lote = v.id_lote
+      JOIN loteamentos lo ON lo.id_loteamento = l.id_loteamento
+      LEFT JOIN pagamentos p ON p.id_venda = v.id_venda
+      WHERE ${conditions.join(" AND ")}
+      GROUP BY v.id_venda, c.id_cliente, c.nome, c.cpf, lo.nome, l.quadra, l.lote, v.data_venda, v.status
+      ${having}
+      ORDER BY c.nome ASC, lo.nome ASC, l.quadra ASC, l.lote ASC
+      `,
+      params
+    );
+
+    type Row = {
+      id_venda: number;
+      id_cliente: number;
+      cliente: string;
+      cpf: string | null;
+      loteamento: string;
+      lote: string;
+      data_venda: string;
+      status: string;
+      total_contratado: string | number;
+      total_pago: string | number;
+      total_atrasado: string | number;
+      total_a_vencer: string | number;
+      qtd_parcelas: string | number;
+      qtd_pagas: string | number;
+    };
+
+    const itens = (rows as Row[]).map((r) => {
+      const totalContratado = Number(r.total_contratado ?? 0);
+      const totalPago = Number(r.total_pago ?? 0);
+      const saldoDevedor = totalContratado - totalPago;
+      return {
+        id_venda: Number(r.id_venda),
+        id_cliente: Number(r.id_cliente),
+        cliente: r.cliente,
+        cpf: r.cpf,
+        loteamento: r.loteamento,
+        lote: r.lote,
+        dataVenda: r.data_venda,
+        status: r.status,
+        totalContratado,
+        totalPago,
+        saldoDevedor,
+        totalAtrasado: Number(r.total_atrasado ?? 0),
+        totalAVencer: Number(r.total_a_vencer ?? 0),
+        qtdParcelas: Number(r.qtd_parcelas ?? 0),
+        qtdPagas: Number(r.qtd_pagas ?? 0),
+        percentualPago: totalContratado > 0 ? (totalPago / totalContratado) * 100 : 0,
+        quitado: saldoDevedor <= 0 && totalContratado > 0,
+      };
+    });
+
+    const totais = itens.reduce(
+      (acc, i) => ({
+        totalContratado: acc.totalContratado + i.totalContratado,
+        totalPago: acc.totalPago + i.totalPago,
+        saldoDevedor: acc.saldoDevedor + i.saldoDevedor,
+        totalAtrasado: acc.totalAtrasado + i.totalAtrasado,
+        totalAVencer: acc.totalAVencer + i.totalAVencer,
+      }),
+      { totalContratado: 0, totalPago: 0, saldoDevedor: 0, totalAtrasado: 0, totalAVencer: 0 }
+    );
+
+    return res.json({
+      itens,
+      totais: {
+        ...totais,
+        percentualPago: totais.totalContratado > 0 ? (totais.totalPago / totais.totalContratado) * 100 : 0,
+        qtdVendas: itens.length,
+        qtdClientes: new Set(itens.map((i) => i.id_cliente)).size,
+        qtdQuitadas: itens.filter((i) => i.quitado).length,
+      },
+    });
   },
 );
 
