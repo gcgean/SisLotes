@@ -774,7 +774,6 @@ const Pagamentos = () => {
           loteNum: p.loteNum ?? "",
           quadraNum: p.quadra ?? "",
           enderecoLoteamento: p.loteamento,
-          jurosPct: 1,
           reajustado: apenasReajustadas || p.reajustado,
         });
       }

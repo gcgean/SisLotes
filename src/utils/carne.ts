@@ -3,7 +3,12 @@
 // padrão: cada parcela vira um carnê com 2 vias (Cliente / Empresa), código de
 // barras e campos de encargos. Layout fixo em 3 carnês (parcelas) por folha A4.
 
-export interface CarneEmpresa {
+import { descreverEncargos, type ConfigEncargos } from "@/lib/encargos";
+
+// Os campos de encargos vêm de /api/empresas/minha e alimentam a frase
+// impressa no carnê. Antes o texto era fixo ("juros de 1% ao mês, multa de
+// 2%") e não tinha relação com o que o sistema cobra de fato.
+export interface CarneEmpresa extends ConfigEncargos {
   nome_fantasia?: string | null;
   cnpj?: string | null;
   endereco?: string | null;
@@ -24,7 +29,6 @@ export interface CarneSlip {
   loteNum: string;
   quadraNum: string;
   enderecoLoteamento?: string;
-  jurosPct?: number;
   situacao?: string;
   reajustado?: boolean;
 }
@@ -54,10 +58,13 @@ export function imprimirCarneDetalhado(
     [empresa?.cidade, empresa?.estado].filter(Boolean).join(" - "),
   ].filter(Boolean).join(", ");
 
+  // A frase sai da configuração real de encargos da empresa. Vazia quando
+  // não há encargo configurado — melhor omitir do que imprimir condição falsa.
+  const textoEncargos = descreverEncargos(empresa);
+
   function buildSlip(p: CarneSlip, via: string): string {
     const docNum = `${String(p.idVenda).padStart(6, "0")}${String(p.numero_parcela).padStart(2, "0")}`;
     const isPago = p.situacao === "pago";
-    const jurosPct = p.jurosPct ?? 1;
     return `
       <div class="carne${isPago ? " pago" : ""}">
         <div class="header">
@@ -83,7 +90,7 @@ export function imprimirCarneDetalhado(
         <div class="field-row">
           <div class="field full"><span class="flabel">ENDEREÇO DO LOTEAMENTO</span><span class="fvalue">${p.enderecoLoteamento || p.loteamentoNome}</span></div>
         </div>
-        <div class="instrucoes">Após o vencimento cobrar juros de ${jurosPct}% ao mês e multa de 2% sobre o valor da parcela.</div>
+        ${textoEncargos ? `<div class="instrucoes">${textoEncargos}</div>` : ""}
         <div class="calc-section">
           <div class="calc-row"><span class="calc-label">(+) Juros</span><span class="calc-line"></span></div>
           <div class="calc-row"><span class="calc-label">(+) Multa</span><span class="calc-line"></span></div>

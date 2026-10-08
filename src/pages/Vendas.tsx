@@ -56,6 +56,7 @@ import {
 import { toast } from "@/hooks/use-toast";
 import { gerarReciboParcela, ReciboEmpresa } from "@/utils/reciboParcela";
 import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
+import type { ConfigEncargos } from "@/lib/encargos";
 import { ContratoDialog } from "@/components/contratos/ContratoDialog";
 import { NovoClienteDialog, NovoClienteFormValues } from "@/components/clientes/NovoClienteDialog";
 import { NovoLoteDialog } from "@/components/lotes/NovoLoteDialog";
@@ -373,7 +374,7 @@ const Vendas = () => {
     staleTime: 2 * 60 * 1000,
   });
 
-  const { data: empresaConfig } = useQuery<ReciboEmpresa | null>({
+  const { data: empresaConfig } = useQuery<(ReciboEmpresa & ConfigEncargos) | null>({
     queryKey: ["minha-empresa"],
     queryFn: async () => {
       const r = await fetch("/api/empresas/minha", { headers: { ...getAuthHeaders() } });
@@ -956,7 +957,6 @@ const Vendas = () => {
     const loteamentoNome = vendaCriada.lote?.loteamento?.nome ?? "";
     const enderecoLoteamento = [vendaCriada.lote?.loteamento?.cidade, vendaCriada.lote?.loteamento?.estado]
       .filter(Boolean).join(" - ");
-    const jurosPct = Number(vendaCriada.porcentagem) || 1;
 
     const slips: CarneSlip[] = parcelas.map((p) => ({
       idVenda: vendaCriada.id_venda,
@@ -969,7 +969,6 @@ const Vendas = () => {
       loteNum: String(vendaCriada.lote?.lote ?? ""),
       quadraNum: String(vendaCriada.lote?.quadra ?? ""),
       enderecoLoteamento,
-      jurosPct,
       situacao: p.situacao,
       reajustado: p.reajustado,
     }));
@@ -996,7 +995,6 @@ const Vendas = () => {
 
     const enderecoLoteamento = [vendaDetalhe.lote?.loteamento?.cidade, vendaDetalhe.lote?.loteamento?.estado]
       .filter(Boolean).join(" - ");
-    const jurosPct = Number(vendaDetalheInfo.porcentagem) || 1;
 
     const slips: CarneSlip[] = parcelas.map((p) => ({
       idVenda: vendaDetalheInfo.id_venda,
@@ -1009,7 +1007,6 @@ const Vendas = () => {
       loteNum: String(vendaDetalhe.lote?.lote ?? ""),
       quadraNum: String(vendaDetalhe.lote?.quadra ?? ""),
       enderecoLoteamento,
-      jurosPct,
       situacao: p.situacao,
       reajustado: p.reajustado,
     }));

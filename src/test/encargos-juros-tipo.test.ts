@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   calcularEncargos,
   calcularJuros,
+  descreverEncargos,
   descreverJuros,
   diasCobraveis,
   type ConfigEncargos,
@@ -118,5 +119,41 @@ describe("descreverJuros", () => {
   it("descreve valor em reais ao dia", () => {
     expect(descreverJuros(VALOR)).toContain("1,50");
     expect(descreverJuros(VALOR)).toContain("/dia");
+  });
+});
+
+// A frase vai impressa no carnê entregue ao cliente. Antes era fixa
+// ("juros de 1% ao mês e multa de 2%") e não tinha relação com o que o
+// sistema cobra — 0,2% ao dia dá ~6% ao mês, seis vezes o que estava escrito.
+describe("descreverEncargos — texto do carnê", () => {
+  it("descreve multa e juros percentuais ao dia", () => {
+    expect(descreverEncargos(PERCENTUAL)).toBe(
+      "Após o vencimento: multa de 2% sobre o valor da parcela e juros de 0,2% ao dia.",
+    );
+  });
+
+  it("descreve juros em reais por dia", () => {
+    const texto = descreverEncargos(VALOR);
+    expect(texto).toContain("multa de 2% sobre o valor da parcela");
+    expect(texto).toContain("por dia de atraso");
+    expect(texto).toContain("1,50");
+    expect(texto).not.toContain("ao dia.");
+  });
+
+  it("menciona a carência quando houver", () => {
+    expect(descreverEncargos({ ...PERCENTUAL, carencia_dias: 5 })).toContain("Após 5 dias do vencimento");
+    expect(descreverEncargos({ ...PERCENTUAL, carencia_dias: 1 })).toContain("Após 1 dia do vencimento");
+  });
+
+  it("omite a multa quando ela é zero", () => {
+    const texto = descreverEncargos({ ...PERCENTUAL, multa_percentual: 0 });
+    expect(texto).not.toContain("multa");
+    expect(texto).toContain("juros de 0,2% ao dia");
+  });
+
+  it("devolve vazio quando não há encargo — melhor nada que condição falsa", () => {
+    expect(descreverEncargos({ multa_percentual: 0, juros_percentual_dia: 0 })).toBe("");
+    expect(descreverEncargos(null)).toBe("");
+    expect(descreverEncargos(undefined)).toBe("");
   });
 });

@@ -84,6 +84,47 @@ export function calcularEncargos(
   };
 }
 
+const brl = (v: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+
+/** 2 → "2", 0.2 → "0,2", 0.25 → "0,25" (sem zeros à toa). */
+function pct(v: number): string {
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 4 }).format(v);
+}
+
+/**
+ * Frase que descreve os encargos cobrados, para documentos entregues ao
+ * cliente (carnê). É montada a partir da configuração real da empresa — o
+ * texto impresso precisa bater com o que o sistema de fato cobra.
+ *
+ * Devolve string vazia quando não há encargo configurado: melhor não imprimir
+ * nada do que imprimir uma condição que não é cobrada.
+ */
+export function descreverEncargos(config?: ConfigEncargos | null): string {
+  const multa = num(config?.multa_percentual, 0);
+  const carencia = num(config?.carencia_dias, 0);
+
+  const partes: string[] = [];
+  if (multa > 0) partes.push(`multa de ${pct(multa)}% sobre o valor da parcela`);
+
+  if (config?.juros_tipo === "valor") {
+    const valorDia = num(config?.juros_valor_dia, 0);
+    if (valorDia > 0) partes.push(`juros de ${brl(valorDia)} por dia de atraso`);
+  } else {
+    const percDia = num(config?.juros_percentual_dia, 0);
+    if (percDia > 0) partes.push(`juros de ${pct(percDia)}% ao dia`);
+  }
+
+  if (partes.length === 0) return "";
+
+  const inicio =
+    carencia > 0
+      ? `Após ${carencia} ${carencia === 1 ? "dia" : "dias"} do vencimento`
+      : "Após o vencimento";
+
+  return `${inicio}: ${partes.join(" e ")}.`;
+}
+
 /** Rótulo curto do juros configurado, para telas e avisos. */
 export function descreverJuros(config?: ConfigEncargos | null): string {
   if (config?.juros_tipo === "valor") {
