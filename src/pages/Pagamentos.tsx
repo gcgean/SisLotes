@@ -46,6 +46,7 @@ import {
   FileText,
   RefreshCw,
   Trash2,
+  ChevronDown,
 } from "lucide-react";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -64,6 +65,7 @@ import {
   type JurosTipo,
 } from "@/lib/encargos";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { AReceberPorLoteTab } from "@/components/pagamentos/AReceberPorLoteTab";
 import { contaRecebimentoValida } from "@/lib/financeiro";
 
@@ -217,6 +219,10 @@ const Pagamentos = () => {
 
   // ── Dialog de reajuste anual ──
   const [reajusteOpen, setReajusteOpen] = useState(false);
+  // Intervalo e abrangência ficam recolhidos: o caminho comum é aplicar em
+  // todas as parcelas em aberto do cliente, e os cinco blocos de controle
+  // deixavam a tela pesada para esse caso.
+  const [reajusteAlcanceAberto, setReajusteAlcanceAberto] = useState(false);
   const [reajustePercentual, setReajustePercentual] = useState("5");
   const [reajusteConfirmado, setReajusteConfirmado] = useState(false);
   const [reajusteDe, setReajusteDe] = useState<number>(1);
@@ -691,6 +697,25 @@ const Pagamentos = () => {
       : Math.max(0, parseFloat(baixaValorNegociado.replace(/\./g, "").replace(",", ".")) || 0);
     return distribuirAbatimento(base, pedido);
   }
+
+  /** Resume intervalo + abrangência numa frase, para a linha recolhida. */
+  const descricaoAlcanceReajuste = (() => {
+    const intervalo =
+      reajusteIntervalTipo === "data"
+        ? `vencimento ${reajusteDataDe || "início"}${reajusteDataAte ? ` a ${reajusteDataAte}` : " em diante"}`
+        : reajusteDe === 1 && reajusteAte >= 9999
+          ? `todas as ${parcelasNoReajusteRange.length} parcelas em aberto`
+          : reajusteAte >= 9999
+            ? `da parcela ${reajusteDe} em diante`
+            : `parcelas ${reajusteDe} a ${reajusteAte}`;
+    const quem =
+      reajusteEscopo === "cliente"
+        ? "deste cliente"
+        : reajusteEscopo === "loteamento"
+          ? "deste loteamento"
+          : "de todos os clientes";
+    return `${intervalo} · ${quem}`;
+  })();
 
   const estornoMutation = useMutation({
     mutationFn: async (id_pagamento: number) => {
@@ -1696,6 +1721,91 @@ const Pagamentos = () => {
           ) : (
             <>
               <div className="space-y-4 py-2">
+                {/* Cliente — linha compacta, não mais um cartão */}
+                <div className="flex items-center gap-2 text-sm">
+                  <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span className="font-semibold">{clienteSelecionado?.nome}</span>
+                </div>
+
+                {/* ── Percentual ── */}
+                <div>
+                  <Label htmlFor="reajuste-pct" className="text-sm font-medium">
+                    Percentual de Reajuste (%)
+                  </Label>
+                  <div className="flex items-center gap-3 mt-1.5">
+                    <Input
+                      id="reajuste-pct"
+                      type="number"
+                      min="0.01"
+                      max="100"
+                      step="0.01"
+                      value={reajustePercentual}
+                      onChange={(e) => { setReajustePercentual(e.target.value); setReajusteConfirmado(false); }}
+                      className="w-28"
+                      placeholder="5.00"
+                    />
+                    <span className="text-sm text-muted-foreground">%</span>
+                    <div className="flex gap-1 ml-auto">
+                      {[5, 7, 10, 15].map((v) => (
+                        <Button key={v} type="button" variant="outline" size="sm" className="text-xs h-7 px-2"
+                          onClick={() => { setReajustePercentual(String(v)); setReajusteConfirmado(false); }}>
+                          {v}%
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Preview */}
+                {Number(reajustePercentual) > 0 && (
+                  <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 space-y-1.5 text-sm">
+                    <p className="font-semibold text-amber-800 dark:text-amber-300 text-xs uppercase tracking-wide">Prévia do reajuste</p>
+                    <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                      <span>
+                        Intervalo:{" "}
+                        {reajusteIntervalTipo === "data"
+                          ? `vencimento ${reajusteDataDe || "início"}${reajusteDataAte ? ` a ${reajusteDataAte}` : " em diante"}`
+                          : reajusteDe === 1 && reajusteAte === 9999
+                            ? "todas as parcelas"
+                            : reajusteAte === 9999
+                              ? `parcela ${reajusteDe} em diante`
+                              : `parcelas ${reajusteDe} a ${reajusteAte}`}
+                      </span>
+                      <span className="font-medium">{parcelasNoReajusteRange.length} parcelas</span>
+                    </div>
+                    <div className="flex justify-between text-amber-700 dark:text-amber-400">
+                      <span>Reajuste</span>
+                      <span className="font-medium">+{reajustePercentual}%</span>
+                    </div>
+                    <div className="flex justify-between border-t border-amber-200 dark:border-amber-700 pt-1.5">
+                      <span className="font-semibold text-amber-800 dark:text-amber-300">Total no intervalo após reajuste</span>
+                      <span className="font-bold text-amber-800 dark:text-amber-300">
+                        {formatCurrency(totalNoReajusteRange * (1 + Number(reajustePercentual) / 100))}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Alcance (intervalo + abrangência), recolhido ── */}
+                <Collapsible open={reajusteAlcanceAberto} onOpenChange={setReajusteAlcanceAberto}>
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex w-full items-center justify-between rounded-lg border px-3 py-2 text-xs hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="text-muted-foreground">
+                        Alcance:{" "}
+                        <span className="text-foreground font-medium">{descricaoAlcanceReajuste}</span>
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          "h-4 w-4 text-muted-foreground transition-transform",
+                          reajusteAlcanceAberto && "rotate-180",
+                        )}
+                      />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-4 pt-3">
                 {/* Cliente */}
                 <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/40 border">
                   <User className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -1833,65 +1943,8 @@ const Pagamentos = () => {
                     </p>
                   )}
                 </div>
-
-                {/* ── Percentual ── */}
-                <div>
-                  <Label htmlFor="reajuste-pct" className="text-sm font-medium">
-                    Percentual de Reajuste (%)
-                  </Label>
-                  <div className="flex items-center gap-3 mt-1.5">
-                    <Input
-                      id="reajuste-pct"
-                      type="number"
-                      min="0.01"
-                      max="100"
-                      step="0.01"
-                      value={reajustePercentual}
-                      onChange={(e) => { setReajustePercentual(e.target.value); setReajusteConfirmado(false); }}
-                      className="w-28"
-                      placeholder="5.00"
-                    />
-                    <span className="text-sm text-muted-foreground">%</span>
-                    <div className="flex gap-1 ml-auto">
-                      {[5, 7, 10, 15].map((v) => (
-                        <Button key={v} type="button" variant="outline" size="sm" className="text-xs h-7 px-2"
-                          onClick={() => { setReajustePercentual(String(v)); setReajusteConfirmado(false); }}>
-                          {v}%
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Preview */}
-                {Number(reajustePercentual) > 0 && (
-                  <div className="rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 space-y-1.5 text-sm">
-                    <p className="font-semibold text-amber-800 dark:text-amber-300 text-xs uppercase tracking-wide">Prévia do reajuste</p>
-                    <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                      <span>
-                        Intervalo:{" "}
-                        {reajusteIntervalTipo === "data"
-                          ? `vencimento ${reajusteDataDe || "início"}${reajusteDataAte ? ` a ${reajusteDataAte}` : " em diante"}`
-                          : reajusteDe === 1 && reajusteAte === 9999
-                            ? "todas as parcelas"
-                            : reajusteAte === 9999
-                              ? `parcela ${reajusteDe} em diante`
-                              : `parcelas ${reajusteDe} a ${reajusteAte}`}
-                      </span>
-                      <span className="font-medium">{parcelasNoReajusteRange.length} parcelas</span>
-                    </div>
-                    <div className="flex justify-between text-amber-700 dark:text-amber-400">
-                      <span>Reajuste</span>
-                      <span className="font-medium">+{reajustePercentual}%</span>
-                    </div>
-                    <div className="flex justify-between border-t border-amber-200 dark:border-amber-700 pt-1.5">
-                      <span className="font-semibold text-amber-800 dark:text-amber-300">Total no intervalo após reajuste</span>
-                      <span className="font-bold text-amber-800 dark:text-amber-300">
-                        {formatCurrency(totalNoReajusteRange * (1 + Number(reajustePercentual) / 100))}
-                      </span>
-                    </div>
-                  </div>
-                )}
+                  </CollapsibleContent>
+                </Collapsible>
 
                 {/* Aviso / Confirmação */}
                 {!reajusteConfirmado ? (
