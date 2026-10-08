@@ -12,6 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useSearchParams } from "react-router-dom";
 import { Plus, Edit, Trash2, Shield, Building2, Upload, X, FileText, RotateCcw, AlertCircle, ToggleLeft, ToggleRight } from "lucide-react";
 import {
