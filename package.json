@@ -10,6 +10,8 @@
     "build:all": "npm run build && cd backend && npm run build",
     "start": "cd backend && npm start",
     "lint": "eslint .",
+    "_comment_typecheck": "tsconfig.json tem files:[] e so aponta references — tsc -p tsconfig.json nao checa NADA. Use este script.",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
