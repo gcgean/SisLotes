@@ -38,8 +38,10 @@ describe("usabilidade financeira — fase 4", () => {
 
   it("abre recebíveis consolidados e oferece extrato pesquisável e exportável", () => {
     const pagamentos = fonte("src/pages/Pagamentos.tsx");
-    expect(pagamentos).toContain('searchParams.get("view") === "cliente" ? "cliente" : "lote"');
+    // A tela abre em "Buscar cliente" por padrão; ?view=lote leva à visão geral.
+    expect(pagamentos).toContain('searchParams.get("view") === "lote" ? "lote" : "cliente"');
     expect(pagamentos).toContain('value="lote">Visão geral');
+    expect(pagamentos).toContain('value="cliente">Buscar cliente');
     const extrato = fonte("src/components/financeiro/LancamentosTab.tsx");
     expect(extrato).toContain("function exportarCsv()");
     expect(extrato).toContain("Buscar descrição, conta ou categoria");

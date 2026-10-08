@@ -443,7 +443,11 @@ const Pagamentos = () => {
   // ─── Handlers ────────────────────────────────────────────────────────────
 
   // Aba principal da tela; não confundir com `aba` (sub-abas Abertas/Pagas).
-  const [abaPrincipal, setAbaPrincipal] = useState(() => searchParams.get("view") === "cliente" ? "cliente" : "lote");
+  // Abre em "Buscar cliente" por padrão: é por onde o atendimento começa.
+  // A visão geral continua acessível pela aba e por ?view=lote.
+  const [abaPrincipal, setAbaPrincipal] = useState(() =>
+    searchParams.get("view") === "lote" ? "lote" : "cliente",
+  );
 
   function selecionarCliente(c: ClienteApi) {
     setClienteSelecionado(c);

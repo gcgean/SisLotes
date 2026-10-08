@@ -1821,7 +1821,9 @@ const Vendas = () => {
             </table>
           </div>
 
-          <DialogFooter className="border-t border-border pt-3 flex-col gap-3 items-stretch sm:items-stretch">
+          {/* sm:flex-col pelo mesmo motivo do diálogo de detalhe: sem isso o
+              rodapé vira linha em tela larga e espreme a seção Documentos. */}
+          <DialogFooter className="border-t border-border pt-3 flex-col sm:flex-col sm:space-x-0 gap-3 items-stretch sm:items-stretch">
             {/* Impressão de Documentos */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -2001,7 +2003,10 @@ const Vendas = () => {
             )}
           </div>
 
-          <DialogFooter className="border-t border-border pt-3 flex-col gap-3">
+          {/* sm:flex-col anula o sm:flex-row da base do DialogFooter. Sem isso, em
+              tela larga o rodapé virava linha e a seção Documentos era espremida
+              ao lado das ações — os botões saíam cortados e sumiam da vista. */}
+          <DialogFooter className="border-t border-border pt-3 flex-col sm:flex-col sm:space-x-0 gap-3">
             {/* Documentos */}
             <div className="w-full space-y-2">
               <div className="flex items-center justify-between">
@@ -2036,8 +2041,8 @@ const Vendas = () => {
                 </Button>
               </div>
             </div>
-            {/* Ações */}
-            <div className="flex w-full gap-2 justify-end">
+            {/* Ações — quebram linha em diálogo estreito em vez de cortar. */}
+            <div className="flex w-full flex-wrap gap-2 justify-end">
               {vendaDetalheInfo?.status === "aberta" ? <>
                 <Button variant="outline" onClick={() => { setAcordoTipo("renegociacao"); setAcordoMotivo(""); }}>Renegociar</Button>
                 <Button variant="destructive" onClick={() => { setAcordoTipo("distrato"); setAcordoMotivo(""); }}>Distratar</Button>

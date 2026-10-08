@@ -12,7 +12,9 @@ const TabsList = React.forwardRef<
   <TabsPrimitive.List
     ref={ref}
     className={cn(
-      "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
+      // A borda dá contorno ao grupo: sem ela o bloco cinza se confundia com
+      // um rótulo estático em vez de um controle.
+      "inline-flex h-10 items-center justify-center rounded-md border border-border bg-muted p-1 text-muted-foreground",
       className,
     )}
     {...props}
@@ -27,7 +29,17 @@ const TabsTrigger = React.forwardRef<
   <TabsPrimitive.Trigger
     ref={ref}
     className={cn(
-      "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+      "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all",
+      // A aba inativa era cinza-claro demais e parecia texto desabilitado;
+      // agora fica legível, lendo-se como opção disponível.
+      "cursor-pointer data-[state=inactive]:text-foreground/70",
+      // Sem hover nada reagia ao mouse e as abas não se liam como clicáveis —
+      // era a razão de o usuário não perceber que dava para alternar.
+      "data-[state=inactive]:hover:bg-background/70 data-[state=inactive]:hover:text-foreground",
+      // Ativa com o verde do sistema: o contraste com as inativas é o que
+      // mostra de relance que isto é um seletor, não um rótulo.
+      "data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:font-semibold data-[state=active]:shadow-sm",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed",
       className,
     )}
     {...props}
