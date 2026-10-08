@@ -84,6 +84,106 @@ export function calcularEncargos(
   };
 }
 
+// ─── Negociação de encargos ──────────────────────────────────────────────────
+
+export interface ParcelaParaNegociar {
+  id: number;
+  /** Principal da parcela, sem encargos. */
+  valor: number;
+  multa: number;
+  juros: number;
+}
+
+export interface ParcelaNegociada extends ParcelaParaNegociar {
+  /** valor + multa + juros, já com o abatimento aplicado. */
+  total: number;
+}
+
+export interface ResultadoNegociacao {
+  parcelas: ParcelaNegociada[];
+  /** Soma de valor + multa + juros antes de negociar. */
+  totalOriginal: number;
+  /** Piso: só o principal. Abaixo disso seria perdoar a dívida, não o encargo. */
+  minimo: number;
+  /** Quanto de encargo foi abatido. */
+  abatimento: number;
+  /** Total efetivamente cobrado (pode diferir do pedido se saiu da faixa). */
+  totalNegociado: number;
+}
+
+const emCentavos = (v: number) => Math.round(v * 100);
+const deCentavos = (c: number) => c / 100;
+
+/**
+ * Distribui um abatimento entre as parcelas selecionadas para chegar a um
+ * total negociado.
+ *
+ * O abatimento sai **só dos encargos**, proporcionalmente ao encargo de cada
+ * parcela, e nunca do principal — perdoar principal é distrato/renegociação de
+ * contrato, outra operação. Por isso `valorNegociado` é limitado entre o
+ * principal (mínimo) e o total com encargos (máximo).
+ *
+ * A conta é feita em centavos inteiros e a sobra do arredondamento vai para a
+ * última parcela, de modo que a soma final bate exatamente com o negociado —
+ * mesma técnica usada no rateio de parcelas de venda.
+ */
+export function distribuirAbatimento(
+  parcelas: ParcelaParaNegociar[],
+  valorNegociado: number,
+): ResultadoNegociacao {
+  const principalC = parcelas.reduce((a, p) => a + emCentavos(p.valor), 0);
+  const encargosC = parcelas.reduce((a, p) => a + emCentavos(p.multa) + emCentavos(p.juros), 0);
+  const totalC = principalC + encargosC;
+
+  const alvoC = Math.min(Math.max(emCentavos(valorNegociado), principalC), totalC);
+  const abatimentoC = totalC - alvoC;
+
+  // Sem encargo não há o que abater: devolve as parcelas como estão.
+  if (encargosC === 0 || abatimentoC === 0) {
+    return {
+      parcelas: parcelas.map((p) => ({ ...p, total: p.valor + p.multa + p.juros })),
+      totalOriginal: deCentavos(totalC),
+      minimo: deCentavos(principalC),
+      abatimento: deCentavos(abatimentoC),
+      totalNegociado: deCentavos(alvoC),
+    };
+  }
+
+  let abatidoAcumuladoC = 0;
+  const resultado: ParcelaNegociada[] = parcelas.map((p, i) => {
+    const encargoPC = emCentavos(p.multa) + emCentavos(p.juros);
+
+    // A última absorve a sobra, para a soma fechar no centavo.
+    const abaterC =
+      i === parcelas.length - 1
+        ? abatimentoC - abatidoAcumuladoC
+        : Math.min(encargoPC, Math.round((abatimentoC * encargoPC) / encargosC));
+    abatidoAcumuladoC += abaterC;
+
+    // Abate primeiro dos juros, depois da multa.
+    const jurosC = emCentavos(p.juros);
+    const jurosFinalC = Math.max(0, jurosC - abaterC);
+    const restanteC = abaterC - (jurosC - jurosFinalC);
+    const multaFinalC = Math.max(0, emCentavos(p.multa) - restanteC);
+
+    return {
+      id: p.id,
+      valor: p.valor,
+      multa: deCentavos(multaFinalC),
+      juros: deCentavos(jurosFinalC),
+      total: deCentavos(emCentavos(p.valor) + multaFinalC + jurosFinalC),
+    };
+  });
+
+  return {
+    parcelas: resultado,
+    totalOriginal: deCentavos(totalC),
+    minimo: deCentavos(principalC),
+    abatimento: deCentavos(abatimentoC),
+    totalNegociado: deCentavos(alvoC),
+  };
+}
+
 const brl = (v: number) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
 

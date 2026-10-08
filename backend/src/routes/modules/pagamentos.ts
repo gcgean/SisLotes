@@ -22,6 +22,8 @@ const baixaSchema = z.object({
   multa_override: z.number().min(0).optional().nullable(),
   juros_override: z.number().min(0).optional().nullable(),
   desconto: z.number().min(0).optional().nullable(),
+  // Justificativa quando houve abatimento de encargos negociado com o cliente.
+  motivo: z.string().trim().max(500).optional().nullable(),
 });
 
 const listPagamentosQuerySchema = z.object({
@@ -244,7 +246,7 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
     return res.status(400).json({ error: "Dados inválidos", issues: parseResult.error.issues });
   }
 
-  const { pago_data, valor_pago, id_conta, multa_override, juros_override, desconto } = parseResult.data;
+  const { pago_data, valor_pago, id_conta, multa_override, juros_override, desconto, motivo } = parseResult.data;
   const bloqueio=await verificarPeriodoFinanceiro(req.user!.id_empresa,pago_data,id_conta);if(bloqueio)return res.status(409).json({error:bloqueio});
   const retroativo=await verificarPermissaoRetroativa(req.user!,pago_data);if(retroativo)return res.status(403).json({error:retroativo});
 
@@ -329,9 +331,21 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
   });
 
   await logRepo.save(log);
+  // O encargo calculado entra na auditoria junto com o cobrado: e a diferenca
+  // entre os dois que mostra quanto foi abatido na negociacao.
+  const encargoCalculado = Number((valor * multaPerc + jurosDoPeriodo).toFixed(2));
+  const encargoCobrado = Number((multa + juros).toFixed(2));
+  const houveAbatimento = encargoCobrado < encargoCalculado;
+
   await AuditoriaService.registrar(req, "pagamentos", "UPDATE", saved.id_pagamento, valoresAntigos, {
     situacao: saved.situacao, pago_data: saved.pago_data, valor_pago: saved.valor_pago, id_conta: saved.id_conta,
-  }, `Recebimento confirmado — parcela ${saved.numero_parcela}, valor ${saved.valor_pago}`);
+    multa: saved.multa, juros: saved.juros,
+    encargo_calculado: encargoCalculado,
+    abatimento: houveAbatimento ? Number((encargoCalculado - encargoCobrado).toFixed(2)) : 0,
+    motivo_negociacao: motivo ?? null,
+  }, houveAbatimento
+    ? `Recebimento com abatimento de encargos — parcela ${saved.numero_parcela}, cobrado ${saved.valor_pago} (encargo calculado ${encargoCalculado}, cobrado ${encargoCobrado})${motivo ? ` — motivo: ${motivo}` : ""}`
+    : `Recebimento confirmado — parcela ${saved.numero_parcela}, valor ${saved.valor_pago}`);
 
   return res.json(saved);
 });

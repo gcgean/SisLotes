@@ -59,6 +59,7 @@ import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
 import { compareDateOnly, formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
 import {
   calcularEncargos as calcularEncargosLib,
+  distribuirAbatimento,
   descreverJuros,
   type JurosTipo,
 } from "@/lib/encargos";
@@ -199,8 +200,12 @@ const Pagamentos = () => {
   const [baixaData, setBaixaData] = useState(todayStr());
   const [baixaDispensarMulta, setBaixaDispensarMulta] = useState(false);
   const [baixaDispensarJuros, setBaixaDispensarJuros] = useState(false);
-  const [baixaDesconto, setBaixaDesconto] = useState("");
-  const [baixaDescontoTipo, setBaixaDescontoTipo] = useState<"valor" | "percentual">("valor");
+  // Negociação de encargos: o usuário informa quanto o cliente vai pagar pelo
+  // conjunto e distribuirAbatimento() reparte o abatimento entre as parcelas.
+  // Substituiu o campo "Desconto", que subtraía o desconto do lote inteiro de
+  // CADA parcela — com 10 parcelas, descontava 10x o pretendido.
+  const [baixaValorNegociado, setBaixaValorNegociado] = useState("");
+  const [baixaMotivo, setBaixaMotivo] = useState("");
   const [baixaContaId, setBaixaContaId] = useState("");
 
   // ── Dialog de recibo (reimprimir do histórico) ──
@@ -415,7 +420,7 @@ const Pagamentos = () => {
   // ─── Mutação de baixa ────────────────────────────────────────────────────
 
   const baixaMutation = useMutation({
-    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number; multa_override?: number; juros_override?: number; desconto?: number }) => {
+    mutationFn: async (payload: { id_pagamento: number; pago_data: string; valor_pago: number; id_conta: number; multa_override?: number; juros_override?: number; desconto?: number; motivo?: string }) => {
       const res = await fetch(`/api/pagamentos/${payload.id_pagamento}/baixa`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
@@ -426,6 +431,7 @@ const Pagamentos = () => {
           multa_override: payload.multa_override,
           juros_override: payload.juros_override,
           desconto: payload.desconto,
+          motivo: payload.motivo,
         }),
       });
       if (!res.ok) throw new Error("Erro ao baixar pagamento");
@@ -517,8 +523,8 @@ const Pagamentos = () => {
     setBaixaContaId("");
     setBaixaDispensarMulta(false);
     setBaixaDispensarJuros(false);
-    setBaixaDesconto("");
-    setBaixaDescontoTipo("valor");
+    setBaixaValorNegociado("");
+    setBaixaMotivo("");
     setBaixaOpen(true);
   }
 
@@ -535,39 +541,39 @@ const Pagamentos = () => {
       return;
     }
     const parcSelecionadas = pagamentosAbertosFiltered.filter((p) => selecionados.has(p.id));
-    const descontoRaw = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
-    const totalBaixaConf = parcSelecionadas.reduce((acc, p) => {
-      const dias = getDiasAtraso(p.vencimento);
-      const enc = calcularEncargos(p.valor, dias, encargosConfig);
-      return acc + p.valor + (baixaDispensarMulta ? 0 : enc.multa) + (baixaDispensarJuros ? 0 : enc.juros);
-    }, 0);
-    const descontoVal = baixaDescontoTipo === "percentual"
-      ? totalBaixaConf * (Math.min(descontoRaw, 100) / 100)
-      : descontoRaw;
+    const negociacao = negociarSelecionadas();
+    const porId = new Map(negociacao.parcelas.map((n) => [n.id, n]));
+    const motivo = baixaMotivo.trim();
+
+    if (negociacao.abatimento > 0 && !motivo) {
+      toast({
+        title: "Informe o motivo",
+        description: "Negociações com abatimento de encargos exigem justificativa.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     try {
       for (const parc of parcSelecionadas) {
-        const dias = getDiasAtraso(parc.vencimento);
-        const enc = calcularEncargos(parc.valor, dias, encargosConfig);
-        const multaFinal = baixaDispensarMulta ? 0 : enc.multa;
-        const jurosFinal = baixaDispensarJuros ? 0 : enc.juros;
-        const totalFinal = Math.max(0, parc.valor + multaFinal + jurosFinal - descontoVal);
+        const n = porId.get(parc.id);
+        if (!n) continue;
         await baixaMutation.mutateAsync({
           id_pagamento: parc.id,
           pago_data: pagoIso,
-          valor_pago: totalFinal,
+          valor_pago: n.total,
           id_conta: contaSelecionada.id_conta,
-          multa_override: multaFinal,
-          juros_override: jurosFinal,
-          desconto: descontoVal,
+          multa_override: n.multa,
+          juros_override: n.juros,
+          desconto: 0,
+          motivo: motivo || undefined,
         });
-        // Gera recibo para cada parcela recebida
         gerarReciboParcela(
           parc,
           baixaData,
-          totalFinal,
-          multaFinal,
-          jurosFinal,
+          n.total,
+          n.multa,
+          n.juros,
           contaSelecionada?.apelido ?? "",
           empresaInfo ?? null
         );
@@ -662,6 +668,29 @@ const Pagamentos = () => {
       toast({ title: "Erro", description: err instanceof Error ? err.message : "Erro ao reajustar", variant: "destructive" });
     },
   });
+
+  /**
+   * Parcelas selecionadas com os encargos já ajustados pelos interruptores de
+   * dispensa, e o abatimento distribuído para chegar ao valor negociado.
+   * Dialogo e submissão usam esta mesma função para não divergirem.
+   */
+  function negociarSelecionadas() {
+    const base = parcSelecionadas.map((p) => {
+      const dias = getDiasAtraso(p.vencimento);
+      const enc = calcularEncargos(p.valor, dias, encargosConfig);
+      return {
+        id: p.id,
+        valor: p.valor,
+        multa: baixaDispensarMulta ? 0 : enc.multa,
+        juros: baixaDispensarJuros ? 0 : enc.juros,
+      };
+    });
+    const total = base.reduce((a, p) => a + p.valor + p.multa + p.juros, 0);
+    const pedido = baixaValorNegociado.trim() === ""
+      ? total
+      : Math.max(0, parseFloat(baixaValorNegociado.replace(/\./g, "").replace(",", ".")) || 0);
+    return distribuirAbatimento(base, pedido);
+  }
 
   const estornoMutation = useMutation({
     mutationFn: async (id_pagamento: number) => {
@@ -1962,11 +1991,9 @@ const Pagamentos = () => {
               const jurosF = baixaDispensarJuros ? 0 : enc.juros;
               return acc + p.valor + multaF + jurosF;
             }, 0);
-            const descontoRaw = Math.max(0, parseFloat(baixaDesconto.replace(",", ".")) || 0);
-            const descontoVal = baixaDescontoTipo === "percentual"
-              ? totalBaixa * (Math.min(descontoRaw, 100) / 100)
-              : descontoRaw;
-            const totalFinal = Math.max(0, totalBaixa - descontoVal);
+            const negociacao = negociarSelecionadas();
+            const totalFinal = negociacao.totalNegociado;
+            const precisaMotivo = negociacao.abatimento > 0;
             const temAtraso = parcSelecionadas.some(p => getDiasAtraso(p.vencimento) > encargosConfig.carencia_dias);
 
             return (
@@ -2044,39 +2071,40 @@ const Pagamentos = () => {
                   </div>
                 )}
 
-                {/* Desconto */}
-                <div className="flex items-center gap-3">
-                  <Label className="text-xs whitespace-nowrap">Desconto</Label>
-                  <div className="flex flex-1 gap-1">
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={baixaDescontoTipo === "valor" ? "default" : "outline"}
-                      className="h-8 px-2 text-xs"
-                      onClick={() => { setBaixaDescontoTipo("valor"); setBaixaDesconto(""); }}
-                    >R$</Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant={baixaDescontoTipo === "percentual" ? "default" : "outline"}
-                      className="h-8 px-2 text-xs"
-                      onClick={() => { setBaixaDescontoTipo("percentual"); setBaixaDesconto(""); }}
-                    >%</Button>
-                    {baixaDescontoTipo === "valor" ? (
-                      <MoneyInput value={baixaDesconto} onValueChange={setBaixaDesconto} placeholder="R$ 0,00" className="h-8" />
-                    ) : (
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        max="100"
-                        value={baixaDesconto}
-                        onChange={(e) => setBaixaDesconto(e.target.value)}
-                        placeholder="0%"
-                        className="h-8"
-                      />
-                    )}
+                {/* Valor negociado */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Label className="text-xs whitespace-nowrap">Valor negociado</Label>
+                    <MoneyInput
+                      value={baixaValorNegociado}
+                      onValueChange={setBaixaValorNegociado}
+                      placeholder={formatCurrency(totalBaixa)}
+                      className="h-8 flex-1"
+                    />
                   </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Em branco cobra o total. O abatimento sai dos encargos, nunca do principal —
+                    mínimo {formatCurrency(negociacao.minimo)}.
+                  </p>
+                  {precisaMotivo && (
+                    <>
+                      <div className="flex items-center justify-between rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900 px-3 py-2 text-xs">
+                        <span className="text-amber-700 dark:text-amber-500 font-medium">Abatimento de encargos</span>
+                        <span className="font-bold text-amber-700 dark:text-amber-500">
+                          −{formatCurrency(negociacao.abatimento)}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Motivo da negociação *</Label>
+                        <Input
+                          value={baixaMotivo}
+                          onChange={(e) => setBaixaMotivo(e.target.value)}
+                          placeholder="Ex: acordo com o cliente para quitação"
+                          className="h-8"
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
 
                 {/* Total */}
