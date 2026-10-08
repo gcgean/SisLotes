@@ -59,6 +59,15 @@ export default defineConfig(({ mode }) => ({
       },
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        // Sem estes dois, o service worker novo fica em espera até TODAS as abas
+        // do site fecharem — na prática o usuário continuava vendo a versão
+        // anterior depois do deploy, mesmo com Ctrl+Shift+R. Com eles, a versão
+        // nova assume no primeiro F5.
+        skipWaiting: true,
+        clientsClaim: true,
+        // Apaga os precaches das versões antigas em vez de acumular (o precache
+        // atual passa de 8MB).
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /^\/api\//,
