@@ -54,6 +54,7 @@ import { toast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { gerarReciboParcela } from "@/utils/reciboParcela";
+import type { ReciboEmpresa } from "@/utils/reciboParcela";
 import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
 import { compareDateOnly, formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
 import {
@@ -1266,9 +1267,16 @@ const Pagamentos = () => {
                                   )}
                                 </div>
                                 {dias > 0 && (
-                                  <span className="block text-xs text-destructive">
-                                    c/ encargos: {formatCurrency(enc.total)}
-                                  </span>
+                                  <>
+                                    <span className="block text-xs text-destructive">
+                                      c/ encargos: {formatCurrency(enc.total)}
+                                    </span>
+                                    {/* Abre o total: o usuário precisa saber quanto é
+                                        multa e quanto é juros para explicar ao cliente. */}
+                                    <span className="block text-[11px] text-muted-foreground">
+                                      multa {formatCurrency(enc.multa)} · juros {formatCurrency(enc.juros)}
+                                    </span>
+                                  </>
                                 )}
                               </td>
                               <td className="px-5 py-3">
@@ -1988,8 +1996,8 @@ const Pagamentos = () => {
                           {enc.multa > 0 || enc.juros > 0 ? (
                             <p className="text-xs text-muted-foreground">
                               {formatCurrency(p.valor)}
-                              {enc.multa > 0 && !baixaDispensarMulta && ` + M:${formatCurrency(enc.multa)}`}
-                              {enc.juros > 0 && !baixaDispensarJuros && ` + J:${formatCurrency(enc.juros)}`}
+                              {enc.multa > 0 && !baixaDispensarMulta && ` + multa ${formatCurrency(enc.multa)}`}
+                              {enc.juros > 0 && !baixaDispensarJuros && ` + juros ${formatCurrency(enc.juros)}`}
                             </p>
                           ) : null}
                         </div>
