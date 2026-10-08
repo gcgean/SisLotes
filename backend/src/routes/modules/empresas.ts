@@ -26,7 +26,9 @@ const empresaBodySchema = z.object({
   site: z.string().max(200).optional(),
   salario_minimo: z.number().nonnegative().optional().nullable(),
   multa_percentual: z.number().min(0).max(100).optional(),
+  juros_tipo: z.enum(["percentual", "valor"]).optional(),
   juros_percentual_dia: z.number().min(0).max(100).optional(),
+  juros_valor_dia: z.number().min(0).max(9_999_999).optional(),
   carencia_dias: z.number().int().min(0).optional(),
   logo: z.string().optional().nullable(),
   modelo_contrato: z.string().optional().nullable(),
@@ -92,7 +94,9 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
 
   const encargosAntigos = {
     multa_percentual: empresa.multa_percentual,
+    juros_tipo: empresa.juros_tipo,
     juros_percentual_dia: empresa.juros_percentual_dia,
+    juros_valor_dia: empresa.juros_valor_dia,
     carencia_dias: empresa.carencia_dias,
   };
 
@@ -101,7 +105,9 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
     modelo_contrato,
     salario_minimo,
     multa_percentual,
+    juros_tipo,
     juros_percentual_dia,
+    juros_valor_dia,
     carencia_dias,
     hub_customer_id: _hub_customer_id,
     hub_product_code: _hub_product_code,
@@ -131,11 +137,19 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
 
   // Encargos
   if (multa_percentual !== undefined) empresa.multa_percentual = String(multa_percentual);
+  if (juros_tipo !== undefined) empresa.juros_tipo = juros_tipo;
   if (juros_percentual_dia !== undefined) empresa.juros_percentual_dia = String(juros_percentual_dia);
+  if (juros_valor_dia !== undefined) empresa.juros_valor_dia = String(juros_valor_dia);
   if (carencia_dias !== undefined) empresa.carencia_dias = carencia_dias;
 
   const saved = await repo.save(empresa);
-  if (multa_percentual !== undefined || juros_percentual_dia !== undefined || carencia_dias !== undefined) {
+  if (
+    multa_percentual !== undefined ||
+    juros_tipo !== undefined ||
+    juros_percentual_dia !== undefined ||
+    juros_valor_dia !== undefined ||
+    carencia_dias !== undefined
+  ) {
     await AuditoriaService.registrar(
       req,
       "configuracoes_financeiras",
@@ -144,7 +158,9 @@ empresasRouter.put("/minha", requireAuth, async (req: AuthRequest, res) => {
       encargosAntigos,
       {
         multa_percentual: saved.multa_percentual,
+        juros_tipo: saved.juros_tipo,
         juros_percentual_dia: saved.juros_percentual_dia,
+        juros_valor_dia: saved.juros_valor_dia,
         carencia_dias: saved.carencia_dias,
       },
       "Configuração de multa, juros e carência alterada"
@@ -173,6 +189,7 @@ empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
     salario_minimo: smNum,
     multa_percentual: multaNum,
     juros_percentual_dia: jurosNum,
+    juros_valor_dia: jurosValorNum,
     carencia_dias: carenciaNum,
     hub_expires_at,
     ...restData
@@ -184,6 +201,7 @@ empresasRouter.post("/", requireAuth, async (req: AuthRequest, res) => {
     salario_minimo: smNum != null ? String(smNum) : null,
     multa_percentual: multaNum != null ? String(multaNum) : "2.00",
     juros_percentual_dia: jurosNum != null ? String(jurosNum) : "0.2000",
+    juros_valor_dia: jurosValorNum != null ? String(jurosValorNum) : "0.00",
     carencia_dias: carenciaNum ?? 0,
     ativo: true,
   });

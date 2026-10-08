@@ -95,9 +95,17 @@ export class Empresa {
   @Column({ type: "decimal", precision: 5, scale: 2, name: "multa_percentual", default: 2.00 })
   multa_percentual!: string;
 
-  /** Percentual de juros por dia de atraso (ex: 0.2000 = 0,2%/dia) */
+  /** Como o juros diário é expresso: percentual sobre a parcela ou valor fixo */
+  @Column({ type: "varchar", length: 12, name: "juros_tipo", default: "percentual" })
+  juros_tipo!: "percentual" | "valor";
+
+  /** Percentual de juros por dia de atraso (ex: 0.2000 = 0,2%/dia) — usado quando juros_tipo = 'percentual' */
   @Column({ type: "decimal", precision: 5, scale: 4, name: "juros_percentual_dia", default: 0.2000 })
   juros_percentual_dia!: string;
+
+  /** Valor fixo de juros por dia de atraso em R$ — usado quando juros_tipo = 'valor' */
+  @Column({ type: "decimal", precision: 12, scale: 2, name: "juros_valor_dia", default: 0 })
+  juros_valor_dia!: string;
 
   /** Dias de carência antes de cobrar multa/juros */
   @Column({ type: "integer", name: "carencia_dias", default: 0 })

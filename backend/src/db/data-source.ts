@@ -83,6 +83,7 @@ import { AddComissaoVenda1700000000047 } from "../migrations/1700000000047-AddCo
 import { CreateVendaAcordos1700000000048 } from "../migrations/1700000000048-CreateVendaAcordos";
 import { CreateRelatoriosFechamento1700000000049 } from "../migrations/1700000000049-CreateRelatoriosFechamento";
 import { AddContaFechamentoFinanceiro1700000000050 } from "../migrations/1700000000050-AddContaFechamentoFinanceiro";
+import { AddJurosTipoToEmpresa1700000000052 } from "../migrations/1700000000052-AddJurosTipoToEmpresa";
 
 export const AppDataSource = new DataSource({
   type: "postgres",
@@ -145,6 +146,7 @@ export const AppDataSource = new DataSource({
     CreateVendaAcordos1700000000048,
     CreateRelatoriosFechamento1700000000049,
     AddContaFechamentoFinanceiro1700000000050,
+    AddJurosTipoToEmpresa1700000000052,
   ],
   synchronize: false,
   logging: false,

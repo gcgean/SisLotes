@@ -56,6 +56,11 @@ import { useSearchParams } from "react-router-dom";
 import { gerarReciboParcela } from "@/utils/reciboParcela";
 import { imprimirCarneDetalhado, CarneSlip } from "@/utils/carne";
 import { compareDateOnly, formatDateBR, parseBrDate, toIsoDateFromBR } from "@/lib/date-br";
+import {
+  calcularEncargos as calcularEncargosLib,
+  descreverJuros,
+  type JurosTipo,
+} from "@/lib/encargos";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AReceberPorLoteTab } from "@/components/pagamentos/AReceberPorLoteTab";
 import { contaRecebimentoValida } from "@/lib/financeiro";
@@ -143,18 +148,16 @@ const getDiasAtraso = (vencimentoStr: string) => {
 
 interface EmpresaEncargos {
   multa_percentual: number;   // ex: 2 = 2%
+  juros_tipo: JurosTipo;      // "percentual" ou "valor"
   juros_percentual_dia: number; // ex: 0.2 = 0,2%/dia
+  juros_valor_dia: number;    // ex: 1.5 = R$ 1,50/dia
   carencia_dias: number;
 }
 
+// A regra vive em @/lib/encargos para não divergir do contas a pagar nem do
+// cálculo do backend, que é quem grava o valor cobrado.
 const calcularEncargos = (valor: number, diasAtraso: number, config?: EmpresaEncargos) => {
-  const multaPerc = (config?.multa_percentual ?? 2) / 100;
-  const jurosPercDia = (config?.juros_percentual_dia ?? 0.2) / 100;
-  const carencia = config?.carencia_dias ?? 0;
-  const diasEfetivos = Math.max(0, diasAtraso - carencia);
-  if (diasEfetivos <= 0) return { multa: 0, juros: 0, total: valor };
-  const multa = valor * multaPerc;
-  const juros = valor * jurosPercDia * diasEfetivos;
+  const { multa, juros } = calcularEncargosLib(valor, diasAtraso, config);
   return { multa, juros, total: valor + multa + juros };
 };
 
@@ -302,7 +305,7 @@ const Pagamentos = () => {
 
   // ─── Query: Dados da Empresa ─────────────────────────────────────────────
 
-  const { data: empresaInfo } = useQuery<ReciboEmpresa & { multa_percentual?: string; juros_percentual_dia?: string; carencia_dias?: number } | null>({
+  const { data: empresaInfo } = useQuery<ReciboEmpresa & { multa_percentual?: string; juros_tipo?: JurosTipo; juros_percentual_dia?: string; juros_valor_dia?: string; carencia_dias?: number } | null>({
     queryKey: ["empresa-info"],
     queryFn: async () => {
       const res = await fetch("/api/empresas/minha", { headers: getAuthHeaders() });
@@ -313,7 +316,9 @@ const Pagamentos = () => {
 
   const encargosConfig: EmpresaEncargos = {
     multa_percentual: empresaInfo?.multa_percentual ? Number(empresaInfo.multa_percentual) : 2,
+    juros_tipo: empresaInfo?.juros_tipo === "valor" ? "valor" : "percentual",
     juros_percentual_dia: empresaInfo?.juros_percentual_dia ? Number(empresaInfo.juros_percentual_dia) : 0.2,
+    juros_valor_dia: empresaInfo?.juros_valor_dia ? Number(empresaInfo.juros_valor_dia) : 0,
     carencia_dias: empresaInfo?.carencia_dias ?? 0,
   };
 
@@ -2015,7 +2020,7 @@ const Pagamentos = () => {
                           onChange={(e) => setBaixaDispensarJuros(e.target.checked)}
                           className="rounded" />
                         <Label htmlFor="disp-juros" className="text-sm cursor-pointer">
-                          Dispensar Juros ({encargosConfig.juros_percentual_dia}%/dia)
+                          Dispensar Juros ({descreverJuros(encargosConfig)})
                         </Label>
                       </div>
                       <span className={`text-xs ${baixaDispensarJuros ? "line-through text-muted-foreground" : "text-destructive font-medium"}`}>

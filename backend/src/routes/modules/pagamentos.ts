@@ -282,7 +282,6 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
     ? await empresaRepo.findOne({ where: { id_empresa: req.user.id_empresa } })
     : null;
   const multaPerc = empresa ? Number(empresa.multa_percentual) / 100 : 0.02;
-  const jurosPercDia = empresa ? Number(empresa.juros_percentual_dia) / 100 : 0.002;
   const carenciaDias = empresa ? empresa.carencia_dias : 0;
 
   const dias_atraso = Math.max(0, diferencaDiasCivis(pagamento.vencimento, pago_data));
@@ -290,9 +289,21 @@ pagamentosRouter.post("/:id/baixa", requireAuth, async (req: AuthRequest, res) =
 
   const valor = Number(pagamento.valor);
 
+  // Juros em percentual sobre a parcela ou em R$ fixo por dia — nos dois casos
+  // proporcional aos dias de atraso. Espelha src/lib/encargos.ts no frontend;
+  // mudou aqui, mude lá.
+  const jurosDoPeriodo = (() => {
+    if (dias_efetivos <= 0) return 0;
+    if (empresa?.juros_tipo === "valor") {
+      return Number(empresa.juros_valor_dia ?? 0) * dias_efetivos;
+    }
+    const jurosPercDia = empresa ? Number(empresa.juros_percentual_dia) / 100 : 0.002;
+    return valor * jurosPercDia * dias_efetivos;
+  })();
+
   // Se frontend enviou override, usa; senão calcula com config da empresa
   let multa = multa_override != null ? multa_override : (dias_efetivos > 0 ? valor * multaPerc : 0);
-  let juros = juros_override != null ? juros_override : (dias_efetivos > 0 ? valor * jurosPercDia * dias_efetivos : 0);
+  let juros = juros_override != null ? juros_override : jurosDoPeriodo;
   const descontoVal = desconto ?? 0;
 
   const valorTotalCalculado = valor + multa + juros - descontoVal;

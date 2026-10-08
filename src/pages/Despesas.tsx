@@ -53,6 +53,7 @@ import { FechamentoPeriodoTab } from "@/components/financeiro/FechamentoPeriodoT
 import { RateioLoteamentoEditor, RateioLinha } from "@/components/financeiro/RateioLoteamentoEditor";
 import { ComprovanteInput } from "@/components/financeiro/ComprovanteInput";
 import { imprimirContasPagar } from "@/utils/contasPagar";
+import { calcularEncargos, type ConfigEncargos } from "@/lib/encargos";
 import type { ReciboEmpresa } from "@/utils/reciboParcela";
 import {
   Plus,
@@ -157,7 +158,7 @@ interface DespesaParcela {
   pagamentos?: Array<{id_parcela_pagamento:number;pago_data:string;valor_pago:string;conta_apelido:string;iss_retido?:string;irrf_retido?:string;inss_retido?:string;anexo_nome?:string|null;anexo_base64?:string|null}>;
   id_conta: number | null;
 }
-interface EmpresaFinanceira extends ReciboEmpresa { multa_percentual?: string; juros_percentual_dia?: string; carencia_dias?: number }
+interface EmpresaFinanceira extends ReciboEmpresa, ConfigEncargos {}
 
 interface DespesaDetalhe extends DespesaResumo {
   parcelas: DespesaParcela[];
@@ -197,7 +198,28 @@ function fmtMoeda(value: string | number | null | undefined): string {
   if (n == null || !Number.isFinite(n)) return "—";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 }
-export function encargosSugeridos(valor:number,vencimento:string|null,dataPagamento:string,empresa?:EmpresaFinanceira){if(!vencimento||dataPagamento<=vencimento)return{multa:0,juros:0,desconto:0};const dias=Math.floor((Date.UTC(...dataPagamento.split("-").map(Number).map((n,i)=>i===1?n-1:n) as [number,number,number])-Date.UTC(...vencimento.split("-").map(Number).map((n,i)=>i===1?n-1:n) as [number,number,number]))/86400000);const cobraveis=Math.max(0,dias-(empresa?.carencia_dias??0));if(!cobraveis)return{multa:0,juros:0,desconto:0};return{multa:Number((valor*Number(empresa?.multa_percentual??0)/100).toFixed(2)),juros:Number((valor*Number(empresa?.juros_percentual_dia??0)/100*cobraveis).toFixed(2)),desconto:0};}
+/**
+ * Encargos sugeridos ao quitar uma parcela de despesa em atraso.
+ * O cálculo de multa/juros vive em @/lib/encargos, compartilhado com contas a
+ * receber — aqui fica só a contagem de dias entre vencimento e pagamento.
+ */
+export function encargosSugeridos(
+  valor: number,
+  vencimento: string | null,
+  dataPagamento: string,
+  empresa?: EmpresaFinanceira,
+) {
+  if (!vencimento || dataPagamento <= vencimento) return { multa: 0, juros: 0, desconto: 0 };
+
+  const emUTC = (iso: string) => {
+    const [ano, mes, dia] = iso.split("-").map(Number);
+    return Date.UTC(ano, mes - 1, dia);
+  };
+  const dias = Math.floor((emUTC(dataPagamento) - emUTC(vencimento)) / 86400000);
+
+  const { multa, juros } = calcularEncargos(valor, dias, empresa);
+  return { multa, juros, desconto: 0 };
+}
 
 async function parseJson(response: Response) {
   try {
