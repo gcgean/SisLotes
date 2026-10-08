@@ -117,9 +117,15 @@ export function imprimirCarneDetalhado(
 <link href="https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  @page { size: A4 portrait; margin: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #000; padding: 8mm; }
-  .page { height: 280mm; display: flex; flex-direction: column; gap: 4mm; page-break-after: always; }
+  /* A margem fica no @page, não em padding do body: com margin 0 a impressora
+     corta o que cai na área não-imprimível dela (tipicamente 4–10mm), e era o
+     que cortava a coluna da direita. 10mm é a folga que o resto do sistema já
+     usa e nenhuma impressora comum invade. */
+  @page { size: A4 portrait; margin: 10mm; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #fff; color: #000; padding: 0; }
+  /* Área útil com margem de 10mm = 190 x 277mm. 270mm deixa 7mm de sobra, para
+     arredondamento não empurrar a última linha para uma página extra. */
+  .page { height: 270mm; display: flex; flex-direction: column; gap: 4mm; page-break-after: always; }
   .page:last-child { page-break-after: avoid; }
   .row-pair { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .carne { border: 1px dashed #555; border-radius: 3px; padding: 5px 8px; font-size: 8px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
